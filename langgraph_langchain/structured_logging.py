@@ -218,6 +218,23 @@ class StructuredLogger:
             metadata={"success": success, "error": error} if error else {"success": success},
         )
 
+    def log_tool_result(
+        self,
+        tool_name: str,
+        success: bool = True,
+        outputs: Optional[dict] = None,
+    ) -> None:
+        """Log the result of a tool call (outputs/artifacts produced)."""
+        level = "INFO" if success else "ERROR"
+        message = f"Tool result: {tool_name}"
+        self.log(
+            level,
+            "tool_result",
+            message,
+            tool_name=tool_name,
+            metadata={"success": success, "outputs": outputs or {}},
+        )
+
     def log_report_rejection(
         self,
         reason: str,

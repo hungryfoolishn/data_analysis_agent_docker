@@ -11,9 +11,41 @@ from langgraph_langchain.tools._shared import (
     _validate_python_repl_step,
     _validate_tool_stage_factory,
 )
+from langgraph_langchain.config import (
+    CONVERGENCE_NUDGE_MIN_FINDINGS as _NUDGE_MIN_FINDINGS,
+    CONVERGENCE_NUDGE_MIN_STEPS as _NUDGE_MIN_STEPS,
+)
 from langgraph_langchain.tracing import get_trace_context
 
 logger = logging.getLogger(__name__)
+
+
+def _build_convergence_nudge(session) -> str:
+    """Return a convergence nudge string, or '' if no nudge is warranted.
+
+    The agent tends to diverge (keep opening new python_repl analysis dimensions
+    instead of calling finish_report). Injecting a state-based nudge into the
+    tool result - earlier and gentler than a hard stop - steers it to converge.
+
+    Two triggers (whichever fires first):
+      - enough findings recorded (primary): "time to organize and finish"
+      - enough steps taken without enough findings (secondary): "focus and finish"
+    """
+    findings_count = len(session.findings)
+    steps = getattr(session, "total_steps", 0)
+    if findings_count >= _NUDGE_MIN_FINDINGS:
+        return (
+            f"\n[系统提示] 已记录 {findings_count} 个发现,已具备生成最终报告的条件。"
+            "建议下一步整理这些发现并调用 finish_report 生成报告,"
+            "不要再开启新的分析维度(继续 python_repl 属于无效发散)。"
+        )
+    if steps >= _NUDGE_MIN_STEPS:
+        return (
+            f"\n[系统提示] 已执行 {steps} 步。建议聚焦回答用户问题,"
+            "尽快 record_finding 记录关键发现并调用 finish_report 收敛,"
+            "避免继续开启新的分析维度。"
+        )
+    return ""
 
 
 def _factory(session):
@@ -87,7 +119,14 @@ def _factory(session):
                     "relative_path": str(rel),
                     "url": f"/workspace/files/{rel}",
                 })
-        return output if output.strip() else "(no output)"
+        result = output if output.strip() else "(no output)"
+        # Only nudge toward finish_report on successful steps - on error the
+        # priority is fixing the code, not converging.
+        if not has_error:
+            nudge = _build_convergence_nudge(session)
+            if nudge:
+                result = result + nudge
+        return result
 
     return python_repl
 

@@ -24,6 +24,7 @@ from langchain_core.messages import HumanMessage
 # @tool no longer imported here — tools are in langgraph_langchain/tools/ package
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
+from langgraph.errors import GraphRecursionError
 
 from langgraph_langchain.schemas import (
     AnalysisStage,
@@ -74,6 +75,7 @@ from langgraph_langchain.config import (
     MAX_CONSECUTIVE_PYTHON_ERRORS as _MAX_CONSECUTIVE_PYTHON_ERRORS,
     REQUIRED_STEP_MARKER_ALIASES as _REQUIRED_STEP_MARKER_ALIASES,
     MAX_RETAINED_ARTIFACTS as _MAX_RETAINED_ARTIFACTS,
+    SYNTHESIZED_REPORT_MIN_FINDINGS as _SYNTH_REPORT_MIN_FINDINGS,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -1086,6 +1088,179 @@ def _save_session_metadata(session: _Session, total_steps: int, duration_seconds
         pass  # Best effort
 
 
+# ── Safety-net report synthesis ──────────────────────────────────────────────
+def _synthesize_report_from_findings(session: "_Session", reason: str) -> str:
+    """Build a fallback markdown report from recorded findings + process log.
+
+    Used when the agent terminates without calling ``finish_report`` itself
+    (step budget exhausted / recursion limit / silent termination). The report
+    is built ONLY from real recorded findings, so callers must ensure
+    ``len(session.findings) >= _SYNTH_REPORT_MIN_FINDINGS`` first.
+
+    Bypasses ``finish_report``'s strict validator on purpose - the goal is to
+    guarantee the user gets *some* structured output rather than none. The
+    ``reason`` string is surfaced in the report header for transparency.
+    """
+    lines: List[str] = []
+    lines.append("# 数据分析报告(基于已记录发现自动生成)")
+    lines.append("")
+    lines.append(
+        f"> 注:agent 未显式调用 finish_report 即结束,系统基于 "
+        f"{len(session.findings)} 条已记录发现自动整理生成本报告。"
+    )
+    lines.append(f"> 生成原因:{reason}。")
+    lines.append("")
+
+    # Summary
+    lines.append("## Summary / 摘要")
+    lines.append("")
+    task = session.user_question or "(未提供分析任务)"
+    lines.append(f"**分析任务**:{task}")
+    lines.append("")
+    lines.append(f"**数据文件**:`{session.source_path}`")
+    lines.append("")
+    lines.append("**核心结论**:")
+    for f in session.findings:
+        flag = "(假设,待验证)" if f.hypothesis_flag else ""
+        lines.append(f"- {f.statement} {flag}")
+    lines.append("")
+
+    # Data Context
+    lines.append("## Data Context / 数据说明")
+    lines.append("")
+    if session.metric_definitions:
+        lines.append("**指标定义**:")
+        for m in session.metric_definitions:
+            bits = []
+            if m.time_window:
+                bits.append(f"时间窗口:{m.time_window}")
+            if m.dedup_rule:
+                bits.append(f"去重规则:{m.dedup_rule}")
+            tail = (";" + " · ".join(bits)) if bits else ""
+            lines.append(f"- **{m.metric_name}**:{m.definition_text}{tail}")
+        lines.append("")
+    if session.assumptions:
+        lines.append("**分析假设**:")
+        for a in session.assumptions:
+            lines.append(f"- (风险:{a.risk_level}) {a.assumption_text}")
+        lines.append("")
+    lines.append("")
+
+    # Key Findings
+    lines.append("## Key Findings / 关键发现")
+    lines.append("")
+    for f in session.findings:
+        lines.append(f"### {f.finding_id} - {f.statement}")
+        lines.append("")
+        meta_bits = [f"证据等级:{f.evidence_level}", f"置信度:{f.confidence_level}"]
+        if f.category:
+            meta_bits.append(f"类别:{f.category}")
+        if f.hypothesis_flag:
+            meta_bits.append("假设(待验证)")
+        lines.append(f"*{' · '.join(meta_bits)}*")
+        lines.append("")
+        for ev in f.evidence:
+            lines.append(f"- {ev.evidence_text}")
+            bits = []
+            if ev.time_window:
+                bits.append(f"时间窗口:{ev.time_window}")
+            if ev.group_dimension:
+                bits.append(f"分组维度:{ev.group_dimension}")
+            if ev.source_fields:
+                bits.append(f"字段:{', '.join(ev.source_fields)}")
+            if ev.calculation_method:
+                bits.append(f"计算方法:{ev.calculation_method}")
+            if bits:
+                lines.append(f"  - {' · '.join(bits)}")
+            if ev.stats:
+                try:
+                    stats_str = ", ".join(f"{k}={v}" for k, v in ev.stats.items())
+                    lines.append(f"  - 统计:{stats_str}")
+                except Exception:
+                    pass
+        lines.append("")
+
+    # Data Quality
+    lines.append("## Data Quality / 数据质量")
+    lines.append("")
+    dq_findings = [
+        f for f in session.findings
+        if f.category and "quality" in (f.category or "").lower()
+    ]
+    if dq_findings:
+        for f in dq_findings:
+            lines.append(f"- {f.statement}")
+    else:
+        lines.append("- 数据质量相关发现见 EDA 与关键发现部分;未见显著数据质量阻断问题。")
+    lines.append("")
+
+    # Analysis - bounded excerpt of the process log
+    lines.append("## Analysis / 分析过程")
+    lines.append("")
+    process_text = "".join(session.process_log).strip()
+    if process_text:
+        if len(process_text) > 4000:
+            process_text = process_text[:4000] + "\n\n...(分析过程记录已截断)"
+        lines.append(process_text)
+    else:
+        lines.append("(无详细过程记录)")
+    lines.append("")
+
+    # Recommendations
+    lines.append("## Recommendations / 建议")
+    lines.append("")
+    hyp_findings = [f for f in session.findings if f.hypothesis_flag]
+    if hyp_findings:
+        lines.append("以下为待验证的假设,建议进一步验证:")
+        for f in hyp_findings:
+            lines.append(f"- 验证:{f.statement}")
+        lines.append("")
+    lines.append("- 建议结合业务背景对上述发现进行复核,并在数据口径确认后推进下一步行动。")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def _finalize_synthesized_report(
+    session: "_Session",
+    step: int,
+    start_time: float,
+    trace_context,
+    reason: str,
+    log: logging.Logger,
+    session_id: str,
+):
+    """Build + persist a fallback report, end trace, save metadata.
+
+    Returns ``(report_md, artifacts)``. The caller is responsible for yielding
+    ``report_md`` (and the artifacts) and returning from the generator.
+    """
+    report_md = _synthesize_report_from_findings(session, reason)
+    session.report = report_md
+    artifacts = list(session.new_artifacts)
+    session.new_artifacts.clear()
+    try:
+        report_path = session.workspace_dir / "final_report.md"
+        report_path.write_text(report_md, encoding="utf-8")
+        rel = report_path.relative_to(session.workspace_dir.parent)
+        report_artifact = {
+            "name": report_path.name,
+            "path": str(report_path),
+            "relative_path": str(rel),
+            "url": f"/workspace/files/{rel}",
+        }
+        artifacts = [report_artifact] + [
+            a for a in artifacts if a.get("name") != report_path.name
+        ]
+        log.info("synthesized_report_saved session=%s path=%s", session_id, report_path)
+    except Exception:
+        log.debug("synthesized_report_save_failed session=%s", session_id)
+    _save_session_metadata(session, step, time.monotonic() - start_time)
+    trace_context.end_trace()
+    trace_context.save_to_file(session.workspace_dir)
+    return report_md, artifacts
+
+
 # ── Public async stream ───────────────────────────────────────────────────────
 async def run_analysis_stream(
     instruction: str,
@@ -1199,6 +1374,27 @@ async def run_analysis_stream(
                 step += 1
                 session.total_steps = step  # Update session step count
                 if step > _MAX_AGENT_STEPS:
+                    # P1: if the agent did real analysis (>= min findings), synthesize
+                    # a report from recorded findings instead of failing bare. This
+                    # guarantees the user gets output when the agent doesn't converge.
+                    if len(session.findings) >= _SYNTH_REPORT_MIN_FINDINGS:
+                        report_md, artifacts = _finalize_synthesized_report(
+                            session, step, start_time, trace_context,
+                            f"已达最大步数上限({_MAX_AGENT_STEPS}步)",
+                            log, session_id,
+                        )
+                        log.warning(
+                            "agent_stopped max_steps_synthesized session=%s steps=%d findings=%d",
+                            session_id, step, len(session.findings),
+                        )
+                        yield (
+                            f"\n\n**已达分析步数上限**({step}/{_MAX_AGENT_STEPS}步),"
+                            f"基于已记录的 {len(session.findings)} 个发现生成最终报告。\n\n",
+                            [],
+                        )
+                        yield report_md, artifacts
+                        return
+                    # Not enough findings to build a report -> fail with max_steps_exceeded
                     session.fail_stage(
                         session.current_stage,
                         "max_steps_exceeded",
@@ -1207,7 +1403,10 @@ async def run_analysis_stream(
                         hint="Summarize the strongest validated findings so far in fewer steps.",
                         recovery_action="retry_narrower_scope",
                     )
-                    log.warning("agent_stopped max_steps_exceeded session=%s steps=%d", session_id, step)
+                    log.warning(
+                        "agent_stopped max_steps_exceeded session=%s steps=%d findings=%d",
+                        session_id, step, len(session.findings),
+                    )
                     yield (
                         "\n\n**Analysis stopped:** exceeded the maximum tool-step budget. "
                         "Summarize the strongest validated findings so far in fewer steps.\n",
@@ -1377,6 +1576,76 @@ async def run_analysis_stream(
                     get_session_persistence().save(session)
                 except Exception:
                     log.debug("session_state_save_failed step=%d", step)
+
+        # ── P2: silent-termination safety net ────────────────────────────────
+        # The astream_events loop exited without the agent calling finish_report
+        # and without raising. This is the observed "agent stops mid-run without
+        # finishing" case. If real analysis was done (>= min findings), synthesize
+        # a report so the user still gets output; otherwise surface a clear message
+        # and log loudly so the divergence is visible (not silently swallowed).
+        if not session.report:
+            log.warning(
+                "agent_ended_without_report session=%s steps=%d findings=%d last_marker=%r",
+                session_id, step, len(session.findings),
+                (session.last_progress_marker or "")[:120],
+            )
+            if len(session.findings) >= _SYNTH_REPORT_MIN_FINDINGS:
+                report_md, artifacts = _finalize_synthesized_report(
+                    session, step, start_time, trace_context,
+                    "agent 未显式调用 finish_report 即结束",
+                    log, session_id,
+                )
+                yield (
+                    f"\n\n**分析已结束但未生成报告**,基于已记录的 "
+                    f"{len(session.findings)} 个发现自动整理最终报告。\n\n",
+                    [],
+                )
+                yield report_md, artifacts
+                return
+            # No findings to build a report from - end trace and surface a message.
+            trace_context.end_trace()
+            trace_context.save_to_file(session.workspace_dir)
+            yield (
+                "\n\n**分析结束但未生成报告**:agent 在未调用 finish_report 前结束,"
+                "且未记录足够的发现。建议重新运行或缩小分析范围。\n",
+                [],
+            )
+
+    except GraphRecursionError:
+        # Recursion limit reached before the agent converged. Treat like
+        # max_steps: synthesize from findings if possible, else surface a
+        # max_steps-style failure so the API layer can attempt recovery.
+        log.warning(
+            "agent_stopped recursion_limit session=%s steps=%d findings=%d",
+            session_id, step, len(session.findings),
+        )
+        if len(session.findings) >= _SYNTH_REPORT_MIN_FINDINGS:
+            report_md, artifacts = _finalize_synthesized_report(
+                session, step, start_time, trace_context,
+                "已达递归上限(recursion_limit)",
+                log, session_id,
+            )
+            yield (
+                f"\n\n**已达递归上限**,基于已记录的 {len(session.findings)} 个发现生成最终报告。\n\n",
+                [],
+            )
+            yield report_md, artifacts
+            return
+        session.fail_stage(
+            session.current_stage,
+            "max_steps_exceeded",
+            "recursion limit reached before finish_report",
+            retryable=True,
+            hint="Narrow the analysis scope and finish in fewer steps.",
+            recovery_action="retry_narrower_scope",
+        )
+        trace_context.end_trace()
+        trace_context.save_to_file(session.workspace_dir)
+        yield (
+            "\n\n**Analysis stopped:** exceeded the maximum tool-step budget. "
+            "Narrow the analysis scope and finish in fewer steps.\n",
+            [],
+        )
 
     except Exception as exc:
         error_occurred = True

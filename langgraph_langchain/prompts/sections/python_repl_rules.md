@@ -21,6 +21,7 @@
 - When `explanation_bundle.definition_risk.exploratory_only` is true, the final report must explicitly surface an exploratory / metric-definition caveat in Summary or Data Quality.
 - When `explanation_bundle.recommendations` are only validation/observe types, the final Recommendations section must stay in validation/observe language instead of escalating to strong actions.
 - Variables persist across calls, so build incrementally.
+- **Convergence**: if `record_finding` has already recorded ≥3 findings, your next step should be to organize those findings and call `finish_report` - do NOT start a new analysis dimension unless it is strictly required to answer the user's question. If a `python_repl` result includes a "建议整理并 finish_report" nudge, finish now rather than analyzing more.
 
 ## python_repl notes
 - `WORKSPACE_DIR` (str), `SOURCE_PATH` (str), and `Path` are pre-set - use them directly.

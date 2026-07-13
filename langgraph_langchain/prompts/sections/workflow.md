@@ -21,4 +21,26 @@
      * Level B (Correlations): Observed patterns, trends, or correlations
      * Level C (Causal): Claims about causation - requires temporal ordering, control groups, mechanism explanation, alternatives ruled out
 8. Save all additional charts/files to WORKSPACE_DIR.
-9. When analysis is complete, call `finish_report` with a well-structured markdown report that references your recorded findings.
+9. **Convergence is mandatory** - call `finish_report` as soon as the convergence criteria below are met. Do NOT keep opening new analysis dimensions "just to be thorough".
+
+## Convergence criteria (when analysis is "complete")
+Analysis is complete - and you MUST call `finish_report` - as soon as ALL of these are true:
+- `load_data` and `eda_profile` have both run.
+- You have covered the **required dimensions** for this dataset (see below).
+- You have recorded **at least 3 findings** via `record_finding`, each backed by concrete evidence (numbers, percentages, groups, or time windows).
+- Your recorded findings directly answer the user's question.
+
+**Required dimensions** (cover these, then finish):
+- Data overview: row/column counts, key field types, obvious quality issues.
+- Core metrics: define them with `declare_metric`, then compute them.
+- Grouped comparison: compare the key categorical dimension(s).
+- Trend over time: only if a date/datetime field exists.
+
+**Optional dimensions** (skip unless they directly serve the user's question):
+- Cross-dimensional analysis, anomaly deep-dive, extra visualizations, exhaustive subgroup sweeps.
+
+## Anti-pattern (avoid)
+- Analyzing every possible dimension "to be safe" is a **failure mode**, not thoroughness.
+- Once the required dimensions are done and ≥3 findings are recorded, **stop exploring new dimensions** and call `finish_report`.
+- Focus on answering the user's specific question. Each additional `python_repl` after convergence is wasted effort.
+- If a convergence nudge appears in a `python_repl` result (e.g. "已记录 N 个发现,建议整理并 finish_report"), treat it as a signal to finish now, not as a suggestion to analyze more.

@@ -57,7 +57,7 @@ def _factory(session):
         session.state_machine.record_tool_use("finish_report")
 
         markdown = markdown.strip()
-        if _stage_rank(session.current_stage) < _stage_rank("synthesis"):
+        if _stage_rank(session.current_stage) < _stage_rank("conclusion_synthesis"):
             session.pending_report_markdown = None
             session.fail_stage(
                 session.current_stage,
@@ -75,7 +75,7 @@ def _factory(session):
                 "REPORT REJECTED. Fix the following before calling finish_report again:\n"
                 "- finish_report can only be called after the analysis reaches synthesis/final_report stage"
             )
-        session.start_stage("final_report")
+        session.start_stage("report_generation")
         if session.report is not None:
             if trace_ctx:
                 trace_ctx.end_current_span(status="failed", error_message="Report already submitted")
@@ -85,7 +85,7 @@ def _factory(session):
         if len(session.findings) < 2:
             session.pending_report_markdown = None
             session.fail_stage(
-                "final_report",
+                "report_generation",
                 "report_rejected",
                 "Insufficient structured findings recorded",
                 retryable=True,
@@ -401,7 +401,7 @@ def _factory(session):
         if issues:
             session.pending_report_markdown = None
             session.fail_stage(
-                "final_report",
+                "report_generation",
                 "report_rejected",
                 "finish_report validation failed",
                 retryable=True,
@@ -421,7 +421,7 @@ def _factory(session):
 
             return f"REPORT REJECTED. Fix the following before calling finish_report again:\n- {joined}"
 
-        session.complete_stage("final_report")
+        session.complete_stage("report_generation")
         session.report = markdown
         session.pending_report_markdown = None
 

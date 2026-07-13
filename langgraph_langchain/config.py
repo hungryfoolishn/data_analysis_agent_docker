@@ -32,6 +32,23 @@ MAX_CONSECUTIVE_PYTHON_ERRORS: int = int(
 )
 """After this many consecutive python_repl errors the agent stops."""
 
+# ── Convergence nudges (anti-divergence) ─────────────────────────────────────
+CONVERGENCE_NUDGE_MIN_FINDINGS: int = int(
+    os.environ.get("CONVERGENCE_NUDGE_MIN_FINDINGS", "3")
+)
+"""Once this many findings are recorded, python_repl results nudge toward finish_report."""
+
+CONVERGENCE_NUDGE_MIN_STEPS: int = int(
+    os.environ.get("CONVERGENCE_NUDGE_MIN_STEPS", "15")
+)
+"""Even with fewer findings, start nudging toward finish_report after this many tool steps."""
+
+SYNTHESIZED_REPORT_MIN_FINDINGS: int = int(
+    os.environ.get("SYNTHESIZED_REPORT_MIN_FINDINGS", "2")
+)
+"""Minimum recorded findings required to auto-synthesize a report when the agent
+fails to call finish_report (max_steps / recursion limit / silent termination)."""
+
 # ── Required step markers (bilingual) ────────────────────────────────────────
 REQUIRED_STEP_MARKER_ALIASES: dict[str, tuple[str, ...]] = {
     "step objective": ("step objective", "步骤目标", "目标"),
