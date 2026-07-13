@@ -1,0 +1,38 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Conda / venv
+.venv/
+venv/
+
+# Runtime artifacts (mounted as volumes, not baked in)
+workspace/
+temp_uploads/
+
+# Secrets - never bake into image
+.env
+.env.*
+!.env.example
+
+# Git / IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+
+# Docs / misc
+docs/
+*.md
+!README.md
+!CLAUDE.md
+
+# Build artifacts
+*.log
+.DS_Store

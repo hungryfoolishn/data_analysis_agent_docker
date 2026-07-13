@@ -1,0 +1,29 @@
+services:
+  deepanalyze:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: deepanalyze:latest
+    container_name: deepanalyze
+    ports:
+      - "18888:8888"   # FastAPI backend (host 18888 -> container 8888)
+      - "18501:8501"   # Streamlit frontend (host 18501 -> container 8501)
+    environment:
+      # Required
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      # Optional overrides (defaults match code)
+      DEEPSEEK_MODEL_ID: ${DEEPSEEK_MODEL_ID:-deepseek-chat}
+      DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com/v1}
+      MAX_CONCURRENT_AGENTS: ${MAX_CONCURRENT_AGENTS:-3}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+      # File server base URL shown to users. Set to the host's externally
+      # reachable URL for the backend port (e.g. http://<host_ip>:8888).
+      FILE_SERVER_BASE: ${FILE_SERVER_BASE:-http://localhost:8888}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8888}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-deepseek-chat}
+      # both | backend | frontend
+      START_MODE: ${START_MODE:-both}
+    volumes:
+      - ./workspace:/app/workspace
+      - ./temp_uploads:/app/temp_uploads
+    restart: unless-stopped

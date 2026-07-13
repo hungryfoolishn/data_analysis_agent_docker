@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# Workspace runtime data (sessions, artifacts, logs)
+workspace/
+
+# Temp uploads
+temp_uploads/
+
+# Pytest
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session logs
+*.log
+
+# Benchmark data
+benchmark_data/
+
+# Resume drafts
+docs/resume_*.md
+docs/resume_*.pdf

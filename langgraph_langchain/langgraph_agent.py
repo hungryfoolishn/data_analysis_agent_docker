@@ -1,0 +1,1442 @@
+from __future__ import annotations
+
+import asyncio
+import io
+import logging
+import os
+import re
+import sys
+import threading
+import time
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import AsyncGenerator, Dict, List, Optional
+
+import matplotlib
+matplotlib.use("Agg")
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+import pandas as pd
+from langchain_core.messages import HumanMessage
+# @tool no longer imported here — tools are in langgraph_langchain/tools/ package
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+from langgraph_langchain.schemas import (
+    AnalysisStage,
+    AnalysisAssumption,
+    EvidenceItem,
+    FailureInfo,
+    Finding,
+    MetricDefinition,
+    RecoveryAction,
+    StageResult,
+)
+from langgraph_langchain.rd_efficiency_domain import (
+    get_metric_definition,
+    suggest_related_metrics,
+)
+from langgraph_langchain.rd_metric_library import (
+    validate_velocity_calculation,
+    validate_cycle_time_calculation,
+    validate_defect_rate_calculation,
+    interpret_velocity_trend,
+    interpret_cycle_time,
+    interpret_defect_rate,
+)
+from langgraph_langchain.rd_validators import (
+    validate_rd_metric_definition,
+    validate_rd_finding,
+    validate_rd_analysis_completeness,
+    validate_sprint_data,
+    validate_pr_data,
+    validate_deployment_data,
+)
+from langgraph_langchain.rd_templates import (
+    suggest_template,
+    get_template,
+)
+from langgraph_langchain.tracing import (
+    create_trace_context,
+    get_trace_context,
+    remove_trace_context,
+)
+from langgraph_langchain.structured_logging import StructuredLogger
+from langgraph_langchain.skills_loader import SkillsLoader
+from langgraph_langchain.config import (
+    MAX_OUTPUT_LEN as _MAX_OUTPUT_LEN,
+    CODE_TIMEOUT as _CODE_TIMEOUT,
+    MAX_PYTHON_REPL_LINES as _MAX_PYTHON_REPL_LINES,
+    MAX_AGENT_STEPS as _MAX_AGENT_STEPS,
+    MAX_CONSECUTIVE_PYTHON_ERRORS as _MAX_CONSECUTIVE_PYTHON_ERRORS,
+    REQUIRED_STEP_MARKER_ALIASES as _REQUIRED_STEP_MARKER_ALIASES,
+    MAX_RETAINED_ARTIFACTS as _MAX_RETAINED_ARTIFACTS,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# ── Skills loader (progressive disclosure) ──────────────────────────────────
+_skills_loader = SkillsLoader(Path(__file__).resolve().parent / "skills")
+
+# ── Dynamic prompt builder ──────────────────────────────────────────────────
+from langgraph_langchain.prompts.prompt_builder import PromptBuilder
+_prompt_builder = PromptBuilder(Path(__file__).resolve().parent / "prompts" / "sections")
+
+# ── Shared helpers (moved to tools/_shared.py, re-exported for backward compat) ─
+from langgraph_langchain.tools._shared import (  # noqa: F401 — re-exports
+    _RE_EVIDENCE_MARKER,
+    _RE_QUANTITATIVE_EVIDENCE,
+    _RE_TIME_WINDOW,
+    _RE_GROUP_REFERENCE,
+    _RE_NEXT_HEADING,
+    _safe_workspace_path,
+    _validate_python_repl_step,
+    _contains_evidence_marker,
+    _contains_quantitative_evidence,
+    _has_time_window_reference,
+    _has_group_reference,
+    _extract_section,
+    _stage_rank,
+)
+
+
+def _format_preview_text(text: object) -> str:
+    """Return text for frontend display while preserving full line structure."""
+    return str(text or "").strip()
+
+
+def _extract_event_output_text(raw: object) -> str:
+    """Extract the meaningful tool output text from LangGraph event payloads."""
+    if raw is None:
+        return ""
+    content = getattr(raw, "content", raw)
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                piece = item.get("text") or item.get("content") or ""
+            else:
+                piece = getattr(item, "text", None) or str(item)
+            if piece:
+                parts.append(str(piece))
+        return "\n".join(parts).strip()
+    return str(content).strip()
+
+
+def _make_session_logger(workspace_dir: Path, session_id: str) -> logging.Logger:
+    """Create a logger that writes to both stderr and a per-session log file."""
+    logger = logging.getLogger(f"agent.{session_id}")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.DEBUG)
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+    log_path = workspace_dir / f"agent_{session_id}.log"
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+    logger.propagate = False
+    return logger
+
+# Build system prompt from modular .md sections via PromptBuilder
+# Note: skills index is injected dynamically via build_with_context() at runtime.
+# _SYSTEM_PROMPT is the base prompt without skills/memory (for backward compat).
+_SYSTEM_PROMPT = _prompt_builder.build()
+
+
+
+
+class _Session:
+    def __init__(self, workspace_dir: str, source_path: str, session_id: str = "", user_question: str = "", restore_state: Optional[Dict] = None):
+        self.workspace_dir = Path(workspace_dir)
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+        self.source_path = source_path
+        self.session_id = session_id
+        self.user_question = user_question  # Store user's question for template matching
+        self.current_stage: AnalysisStage = "schema_understanding"
+        self.stage_history: List[StageResult] = []
+        self.stage_failures: List[FailureInfo] = []
+        self.total_steps: int = 0  # Track total tool steps for metrics
+        # Persistent exec namespace - variables survive across python_repl calls
+        _ws = Path(workspace_dir).resolve()
+
+        def _save_fig(filename: str) -> None:
+            """Save current plt figure to WORKSPACE_DIR and close."""
+            import matplotlib.pyplot as _plt
+            safe = _safe_workspace_path(_ws, filename)
+            _plt.savefig(str(safe), bbox_inches="tight", dpi=100)
+            _plt.close()
+            print(f"Saved: {filename}")
+
+        def _load_csv(path):
+            """Read a CSV with automatic encoding detection.
+
+            Tries utf-8, utf-8-sig, gbk, gb2312, latin-1 in order so GBK-encoded
+            Chinese files do not raise UnicodeDecodeError. Prefer the `df`
+            variable (already loaded by load_data) over re-reading; when you do
+            need to read a CSV directly, use this instead of pd.read_csv.
+            """
+            import pandas as _pd
+            p = str(path)
+            for enc in ("utf-8", "utf-8-sig", "gbk", "gb2312", "latin-1"):
+                try:
+                    return _pd.read_csv(p, encoding=enc)
+                except UnicodeDecodeError:
+                    continue
+            return _pd.read_csv(p, encoding="latin-1")
+
+        def _fix_chinese() -> None:
+            """Fix Chinese font rendering in matplotlib using system CJK fonts."""
+            import matplotlib as _mpl
+            import matplotlib.font_manager as _fm
+
+            _candidates = [
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+                "/usr/share/fonts/truetype/arphic/uming.ttc",
+                "/usr/share/fonts/truetype/arphic/ukai.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSerifCJK-Regular.ttc",
+            ]
+            _fallback_names = [
+                "Noto Sans CJK SC",
+                "Noto Serif CJK SC",
+                "WenQuanYi Micro Hei",
+                "WenQuanYi Zen Hei",
+                "AR PL UMing CN",
+                "AR PL UKai CN",
+                "SimHei",
+                "Microsoft YaHei",
+                "PingFang SC",
+                "Heiti SC",
+                "Source Han Sans SC",
+            ]
+            _chosen_name = None
+            for _fp in _candidates:
+                if Path(_fp).exists():
+                    try:
+                        _fm.fontManager.addfont(_fp)
+                        _prop = _fm.FontProperties(fname=_fp)
+                        _chosen_name = _prop.get_name()
+                        break
+                    except Exception:
+                        continue
+
+            _sans = list(dict.fromkeys(([_chosen_name] if _chosen_name else []) + _fallback_names + list(_mpl.rcParams.get("font.sans-serif", []))))
+            if _chosen_name:
+                _mpl.rcParams["font.family"] = [_chosen_name, "sans-serif"]
+            else:
+                _mpl.rcParams["font.family"] = ["sans-serif"]
+            _mpl.rcParams["font.sans-serif"] = _sans
+            _mpl.rcParams["axes.unicode_minus"] = False
+
+        _fix_chinese()
+
+        def _profile_dimension(dataframe, dims, metrics):
+            """Profile grouped metrics with count, sum, mean, median, and share."""
+            import pandas as _pd
+
+            if isinstance(dims, str):
+                dims = [dims]
+            if isinstance(metrics, str):
+                metrics = [metrics]
+            dims = [d for d in dims if d in dataframe.columns]
+            metrics = [m for m in metrics if m in dataframe.columns]
+            if not dims or not metrics:
+                return _pd.DataFrame()
+
+            grouped = dataframe.groupby(dims, dropna=False)
+            rows = []
+            for key, group in grouped:
+                if not isinstance(key, tuple):
+                    key = (key,)
+                row = {dim: value for dim, value in zip(dims, key)}
+                row["row_count"] = len(group)
+                for metric in metrics:
+                    series = _pd.to_numeric(group[metric], errors="coerce").dropna()
+                    row[f"{metric}_non_null"] = int(series.notna().sum())
+                    if not series.empty:
+                        row[f"{metric}_sum"] = float(series.sum())
+                        row[f"{metric}_mean"] = float(series.mean())
+                        row[f"{metric}_median"] = float(series.median())
+                rows.append(row)
+
+            result = _pd.DataFrame(rows)
+            for metric in metrics:
+                sum_col = f"{metric}_sum"
+                if sum_col in result.columns:
+                    total = result[sum_col].sum()
+                    if total:
+                        result[f"{metric}_share"] = result[sum_col] / total
+            return result.sort_values("row_count", ascending=False)
+
+        def _compare_segments(dataframe, dim, metrics, top_n: int = 3):
+            """Compare top and bottom segments for selected metrics."""
+            profile = _profile_dimension(dataframe, dim, metrics)
+            if profile.empty:
+                return {}
+            if isinstance(metrics, str):
+                metrics = [metrics]
+            summary = {}
+            for metric in metrics:
+                mean_col = f"{metric}_mean"
+                if mean_col in profile.columns:
+                    ordered = profile.sort_values(mean_col, ascending=False)
+                    summary[metric] = {
+                        "top": ordered.head(top_n).to_dict("records"),
+                        "bottom": ordered.tail(top_n).to_dict("records"),
+                    }
+            return summary
+
+        def _time_trend(dataframe, date_col, metrics, freq: str = "ME"):
+            """Aggregate metrics over time and compute pct change + rolling mean."""
+            import pandas as _pd
+
+            if date_col not in dataframe.columns:
+                return _pd.DataFrame()
+            if isinstance(metrics, str):
+                metrics = [metrics]
+            metrics = [m for m in metrics if m in dataframe.columns]
+            if not metrics:
+                return _pd.DataFrame()
+            tmp = dataframe[[date_col] + metrics].copy()
+            tmp[date_col] = _pd.to_datetime(tmp[date_col], errors="coerce")
+            tmp = tmp.dropna(subset=[date_col]).sort_values(date_col)
+            if tmp.empty:
+                return _pd.DataFrame()
+            grouped = tmp.set_index(date_col).resample(freq)[metrics].sum(min_count=1)
+            for metric in metrics:
+                grouped[f"{metric}_pct_change"] = grouped[metric].pct_change()
+                grouped[f"{metric}_rolling_mean"] = grouped[metric].rolling(3, min_periods=1).mean()
+            return grouped.reset_index()
+
+        def _detect_anomalies(values, method: str = "iqr"):
+            """Detect anomalies in a series with IQR or z-score."""
+            import pandas as _pd
+            import numpy as _np
+
+            series = _pd.to_numeric(_pd.Series(values), errors="coerce").dropna()
+            if series.empty:
+                return {"count": 0, "indices": [], "lower": None, "upper": None}
+            if method == "zscore":
+                std = series.std(ddof=0)
+                if std == 0 or _np.isnan(std):
+                    return {"count": 0, "indices": [], "lower": None, "upper": None}
+                z = ((series - series.mean()) / std).abs()
+                mask = z > 3
+                return {"count": int(mask.sum()), "indices": series.index[mask].tolist(), "lower": None, "upper": None}
+
+            q1, q3 = series.quantile(0.25), series.quantile(0.75)
+            iqr = q3 - q1
+            lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+            mask = (series < lower) | (series > upper)
+            return {"count": int(mask.sum()), "indices": series.index[mask].tolist(), "lower": float(lower), "upper": float(upper)}
+
+        def _explain_metric_change(before, after):
+            """Return contribution breakdown between two grouped metric snapshots."""
+            import pandas as _pd
+
+            before_df = _pd.DataFrame(before)
+            after_df = _pd.DataFrame(after)
+            if before_df.empty or after_df.empty:
+                return _pd.DataFrame()
+            common_cols = [c for c in before_df.columns if c in after_df.columns]
+            value_cols = [c for c in common_cols if c.endswith("_sum") or c.endswith("_mean")]
+            key_cols = [c for c in common_cols if c not in value_cols]
+            if not key_cols or not value_cols:
+                return _pd.DataFrame()
+            metric = value_cols[0]
+            merged = before_df[key_cols + [metric]].merge(
+                after_df[key_cols + [metric]], on=key_cols, how="outer", suffixes=("_before", "_after")
+            ).fillna(0)
+            merged["change"] = merged[f"{metric}_after"] - merged[f"{metric}_before"]
+            total_change = merged["change"].sum()
+            if total_change:
+                merged["contribution_share"] = merged["change"] / total_change
+            return merged.sort_values("change", ascending=False)
+
+        def _filter_explanation_dims(dataframe, dims, max_unique: int = 12):
+            """Keep business-friendly explanation dimensions and exclude ID-like or overly unique fields."""
+            if isinstance(dims, str):
+                dims = [dims]
+            filtered: list[str] = []
+            for dim in dims:
+                if dim not in dataframe.columns:
+                    continue
+                series = dataframe[dim]
+                non_null = series.dropna()
+                if non_null.empty:
+                    continue
+                dim_lower = str(dim).lower()
+                unique_count = int(non_null.nunique(dropna=True))
+                unique_ratio = unique_count / max(len(non_null), 1)
+                if any(token in dim_lower for token in ["_id", "id_", "uuid", "guid", "identifier", "code"]):
+                    continue
+                if unique_count > max_unique:
+                    continue
+                if unique_ratio > 0.8:
+                    continue
+                filtered.append(dim)
+            return filtered
+
+        def _filter_business_metrics(dataframe, metrics):
+            """Keep business-meaningful numeric metrics and exclude id-like counters."""
+            if isinstance(metrics, str):
+                metrics = [metrics]
+            filtered: list[str] = []
+            for metric in metrics:
+                if metric not in dataframe.columns:
+                    continue
+                series = pd.to_numeric(dataframe[metric], errors="coerce")
+                non_null = series.dropna()
+                if non_null.empty:
+                    continue
+                metric_lower = str(metric).lower()
+                unique_count = int(non_null.nunique(dropna=True))
+                unique_ratio = unique_count / max(len(non_null), 1)
+                is_integer_like = bool(np.isclose(non_null % 1, 0).all())
+                monotonic_increasing = bool(non_null.is_monotonic_increasing)
+                step_diffs = non_null.diff().dropna()
+                looks_like_sequence = bool(
+                    is_integer_like
+                    and monotonic_increasing
+                    and not step_diffs.empty
+                    and np.isclose(step_diffs, step_diffs.iloc[0]).all()
+                )
+                if any(token in metric_lower for token in ["_id", "id_", "uuid", "guid", "identifier", "code", "index", "idx", "rank", "seq"]):
+                    continue
+                if looks_like_sequence and unique_ratio > 0.9:
+                    continue
+                filtered.append(metric)
+            return filtered
+
+        def _support_label(observed_count: int, distinct_units: int | None = None) -> str:
+            """Return a qualitative support label for evidence-bounded wording."""
+            units = distinct_units if distinct_units is not None else observed_count
+            units = int(units or 0)
+            observed_count = int(observed_count or 0)
+            effective = min(observed_count, units) if units > 0 else observed_count
+            if effective < 8:
+                return "very_thin"
+            if effective < 20:
+                return "thin"
+            if effective < 60:
+                return "limited"
+            return "adequate"
+
+        def _decompose_metric_change(dataframe, metric, time_col, dims, compare: str = "mom", top_k: int = 5):
+            """Return period-over-period metric decomposition by dimension/group."""
+            import pandas as _pd
+
+            if metric not in dataframe.columns or time_col not in dataframe.columns:
+                return {}
+            if isinstance(dims, str):
+                dims = [dims]
+            dims = _filter_explanation_dims(dataframe, [d for d in dims if d in dataframe.columns])
+            if not dims:
+                return {}
+
+            tmp = dataframe[[time_col, metric] + dims].copy()
+            tmp[time_col] = _pd.to_datetime(tmp[time_col], errors="coerce")
+            tmp[metric] = _pd.to_numeric(tmp[metric], errors="coerce")
+            tmp = tmp.dropna(subset=[time_col, metric])
+            if tmp.empty:
+                return {}
+
+            if compare == "yoy":
+                tmp["_period"] = tmp[time_col].dt.to_period("Y")
+            elif compare == "qoq":
+                tmp["_period"] = tmp[time_col].dt.to_period("Q")
+            else:
+                tmp["_period"] = tmp[time_col].dt.to_period("M")
+
+            periods = sorted(tmp["_period"].dropna().unique())
+            if len(periods) < 2:
+                return {}
+            previous_period = periods[-2]
+            current_period = periods[-1]
+
+            prev_df = tmp[tmp["_period"] == previous_period]
+            curr_df = tmp[tmp["_period"] == current_period]
+            previous_total = float(prev_df[metric].sum())
+            current_total = float(curr_df[metric].sum())
+            absolute_change = current_total - previous_total
+            relative_change = (absolute_change / previous_total) if previous_total else None
+
+            contributions: list[dict] = []
+            abs_sum = 0.0
+            for dim in dims:
+                prev_grouped = prev_df.groupby(dim, dropna=False)[metric].sum().rename("previous")
+                curr_grouped = curr_df.groupby(dim, dropna=False)[metric].sum().rename("current")
+                merged = _pd.concat([prev_grouped, curr_grouped], axis=1).fillna(0).reset_index()
+                merged["contribution"] = merged["current"] - merged["previous"]
+                for _, row in merged.iterrows():
+                    contribution = float(row["contribution"])
+                    abs_sum += abs(contribution)
+                    contributions.append({
+                        "dimension": dim,
+                        "group": str(row[dim]),
+                        "previous": float(row["previous"]),
+                        "current": float(row["current"]),
+                        "contribution": contribution,
+                    })
+
+            if not contributions:
+                return {}
+
+            ranked = sorted(contributions, key=lambda item: item["contribution"], reverse=True)
+            top_positive = [item for item in ranked if item["contribution"] > 0][:top_k]
+            top_negative = [item for item in sorted(contributions, key=lambda item: item["contribution"]) if item["contribution"] < 0][:top_k]
+            dominant_abs = sorted((abs(item["contribution"]) for item in contributions), reverse=True)
+            top_abs = sum(dominant_abs[:top_k])
+            denominator = abs(absolute_change) if abs(absolute_change) > 0 else abs_sum
+            coverage_ratio = (top_abs / denominator) if denominator else 0.0
+            broad_based = False
+            non_zero = [item for item in contributions if item["contribution"] != 0]
+            if non_zero and absolute_change:
+                aligned = sum(
+                    1 for item in non_zero
+                    if np.sign(item["contribution"]) == np.sign(absolute_change)
+                )
+                broad_based = aligned / len(non_zero) >= 0.6
+
+            result = {
+                "metric": metric,
+                "compare": compare,
+                "current_period": str(current_period),
+                "previous_period": str(previous_period),
+                "current_total": current_total,
+                "previous_total": previous_total,
+                "absolute_change": absolute_change,
+                "relative_change": relative_change,
+                "top_positive_contributors": top_positive,
+                "top_negative_contributors": top_negative,
+                "broad_based": broad_based,
+                "coverage_ratio": float(coverage_ratio),
+            }
+            self.ns.setdefault("explanation_bundle", {})["metric_decomposition"] = result
+            return result
+
+        def _assess_evidence_level(
+            *,
+            has_quantitative_support: bool,
+            has_group_breakdown: bool,
+            has_time_window: bool,
+            cross_slice_consistent: bool,
+            relies_on_unobserved_assumption: bool,
+        ) -> str:
+            """Return A/B/C evidence level for an explanatory claim."""
+            if has_quantitative_support and has_group_breakdown and has_time_window and not relies_on_unobserved_assumption:
+                return "A"
+            if has_quantitative_support and (has_group_breakdown or has_time_window):
+                if cross_slice_consistent or not relies_on_unobserved_assumption:
+                    return "B"
+            return "C"
+
+        def _rank_driver_candidates(dataframe, metric, time_col, dims, compare: str = "mom"):
+            """Rank candidate drivers using contribution strength, coverage, and stability clues."""
+            if isinstance(dims, str):
+                dims = [dims]
+            dims = _filter_explanation_dims(dataframe, [d for d in dims if d in dataframe.columns])
+            if metric not in dataframe.columns or time_col not in dataframe.columns or not dims:
+                return []
+
+            decomposition = _decompose_metric_change(dataframe, metric, time_col, dims, compare=compare, top_k=5)
+            if not decomposition:
+                return []
+
+            candidates: list[dict] = []
+            top_negative = decomposition.get("top_negative_contributors") or []
+            top_positive = decomposition.get("top_positive_contributors") or []
+            focus_groups = top_negative if decomposition.get("absolute_change", 0) < 0 else top_positive
+            compare_has_time = bool(decomposition.get("current_period") and decomposition.get("previous_period"))
+            coverage_ratio = float(decomposition.get("coverage_ratio") or 0.0)
+
+            for item in focus_groups[:5]:
+                contribution = float(item.get("contribution") or 0.0)
+                score = min(1.0, abs(contribution) / (abs(decomposition.get("absolute_change") or 0.0) + 1e-9))
+                if decomposition.get("broad_based"):
+                    score *= 0.9
+                evidence_level = _assess_evidence_level(
+                    has_quantitative_support=True,
+                    has_group_breakdown=True,
+                    has_time_window=compare_has_time,
+                    cross_slice_consistent=coverage_ratio >= 0.5,
+                    relies_on_unobserved_assumption=False,
+                )
+                direction = "decline" if contribution < 0 else "increase"
+                candidates.append({
+                    "driver": f"{item['dimension']}={item['group']} {direction}",
+                    "dimension": item["dimension"],
+                    "group": item["group"],
+                    "contribution": contribution,
+                    "evidence_level": evidence_level,
+                    "score": round(score, 4),
+                    "reason": (
+                        f"{item['dimension']}={item['group']} contributed {contribution:.3g} during "
+                        f"{decomposition['previous_period']} to {decomposition['current_period']}; "
+                        f"coverage_ratio={coverage_ratio:.2f}"
+                    ),
+                })
+
+            candidates.sort(key=lambda item: item["score"], reverse=True)
+            self.ns.setdefault("explanation_bundle", {})["driver_ranking"] = candidates
+            return candidates
+
+        def _check_metric_definition_risk(dataframe, metric, time_col=None):
+            """Check whether metric interpretation should be downgraded due to definition ambiguity."""
+            columns_lower = {str(col).lower(): str(col) for col in dataframe.columns}
+            risk_keywords = {
+                "refund": ["refund", "退款", "return", "chargeback"],
+                "cancellation": ["cancel", "取消", "void"],
+                "duplicate": ["duplicate", "重复", "dup", "order_id", "transaction_id"],
+                "backfill": ["backfill", "补录", "late", "adjustment", "调整"],
+            }
+            matched = {
+                label: [orig for lower, orig in columns_lower.items() if any(keyword in lower for keyword in keywords)]
+                for label, keywords in risk_keywords.items()
+            }
+            has_time_col = bool(time_col and time_col in dataframe.columns)
+            time_granularity_mixed = False
+            if has_time_col:
+                parsed = pd.to_datetime(dataframe[time_col], errors="coerce")
+                non_null = parsed.dropna()
+                if not non_null.empty:
+                    has_day = bool((non_null.dt.day != 1).any())
+                    has_month_boundary = bool((non_null.dt.day == 1).any())
+                    time_granularity_mixed = has_day and has_month_boundary
+
+            duplicate_ratio = 0.0
+            duplicate_fields = matched["duplicate"]
+            for field in duplicate_fields:
+                if field in dataframe.columns:
+                    duplicate_ratio = max(duplicate_ratio, float(dataframe[field].duplicated().mean()))
+
+            risk_count = sum(bool(values) for values in matched.values())
+            if time_granularity_mixed:
+                risk_count += 1
+            if duplicate_ratio > 0.05:
+                risk_count += 1
+
+            result = {
+                "metric": metric,
+                "time_col": time_col,
+                "has_refund_or_return_fields": bool(matched["refund"]),
+                "has_cancellation_fields": bool(matched["cancellation"]),
+                "has_backfill_fields": bool(matched["backfill"]),
+                "possible_duplicate_keys": duplicate_fields,
+                "time_granularity_mixed": time_granularity_mixed,
+                "duplicate_ratio": round(duplicate_ratio, 4),
+                "exploratory_only": risk_count >= 2,
+                "notes": [
+                    f"{label}: {', '.join(values)}" for label, values in matched.items() if values
+                ] + (["mixed time granularity detected"] if time_granularity_mixed else []),
+            }
+            self.ns.setdefault("explanation_bundle", {})["definition_risk"] = result
+            return result
+
+        def _run_counterfactual_checks(dataframe, metric, key_dimension, time_col=None):
+            """Run lightweight robustness checks for explanatory claims."""
+            if metric not in dataframe.columns or key_dimension not in dataframe.columns:
+                return []
+
+            metric_series = pd.to_numeric(dataframe[metric], errors="coerce")
+            base_total = float(metric_series.sum()) if metric_series.notna().any() else 0.0
+            grouped = dataframe.assign(_metric=metric_series).groupby(key_dimension, dropna=False)["_metric"].sum().sort_values(ascending=False)
+            checks: list[dict] = []
+            if grouped.empty:
+                return checks
+
+            lead_group = grouped.index[0]
+            without_top = dataframe[dataframe[key_dimension] != lead_group]
+            without_top_total = float(pd.to_numeric(without_top[metric], errors="coerce").sum()) if not without_top.empty else 0.0
+            checks.append({
+                "check": "remove_top_group",
+                "dimension": key_dimension,
+                "excluded_group": str(lead_group),
+                "base_total": base_total,
+                "adjusted_total": without_top_total,
+                "status": "stable" if np.sign(base_total) == np.sign(without_top_total) else "unstable",
+            })
+
+            if time_col and time_col in dataframe.columns:
+                tmp = dataframe[[time_col, metric]].copy()
+                tmp[time_col] = pd.to_datetime(tmp[time_col], errors="coerce")
+                tmp[metric] = pd.to_numeric(tmp[metric], errors="coerce")
+                tmp = tmp.dropna(subset=[time_col, metric]).sort_values(time_col)
+                if len(tmp) >= 4:
+                    tmp["period"] = tmp[time_col].dt.to_period("M")
+                    monthly = tmp.groupby("period")[metric].sum().sort_index()
+                    if len(monthly) >= 3:
+                        last_change = monthly.iloc[-1] - monthly.iloc[-2]
+                        rolling_change = monthly.iloc[-1] - monthly.iloc[-3]
+                        checks.append({
+                            "check": "alternate_window",
+                            "dimension": key_dimension,
+                            "last_change": float(last_change),
+                            "rolling_change": float(rolling_change),
+                            "status": "stable" if np.sign(last_change) == np.sign(rolling_change) else "partial",
+                        })
+
+            self.ns.setdefault("explanation_bundle", {})["counterfactual_checks"] = checks
+            return checks
+
+        def _generate_recommendation_candidates(findings, drivers):
+            """Generate recommendation candidates constrained by evidence strength and robustness."""
+            findings = findings or []
+            drivers = drivers or []
+            recommendations: list[dict] = []
+            explanation_bundle = self.ns.setdefault("explanation_bundle", {})
+            definition_risk = explanation_bundle.get("definition_risk") or {}
+            counterfactual_checks = explanation_bundle.get("counterfactual_checks") or []
+            metric_decomposition = explanation_bundle.get("metric_decomposition") or {}
+
+            def _normalize_level(item):
+                return str(item.get("evidence_level") or item.get("evidence") or "C").upper()
+
+            stable_checks = [item for item in counterfactual_checks if str(item.get("status") or "").lower() == "stable"]
+            unstable_checks = [item for item in counterfactual_checks if str(item.get("status") or "").lower() not in {"", "stable"}]
+            broad_based = bool(metric_decomposition.get("broad_based"))
+            decomposition_coverage = float(metric_decomposition.get("coverage_ratio") or 0.0)
+            exploratory_only = bool(definition_risk.get("exploratory_only"))
+            absolute_change = abs(float(metric_decomposition.get("absolute_change") or 0.0))
+
+            for idx, driver in enumerate(drivers, start=1):
+                level = _normalize_level(driver)
+                based_on = list(driver.get("based_on") or []) or [f"driver_{idx}"]
+                target = driver.get("driver") or driver.get("dimension") or driver.get("reason") or "current driver"
+                priority = "high" if level == "A" else "medium" if level == "B" else "low"
+                score = float(driver.get("score") or 0.0)
+                contribution = abs(float(driver.get("contribution") or 0.0))
+                contribution_share = (contribution / absolute_change) if absolute_change > 0 else 0.0
+                driver_is_concentrated = (
+                    not broad_based
+                    and decomposition_coverage >= 0.65
+                    and score >= 0.75
+                    and contribution_share >= 0.35
+                )
+                robust_enough = bool(stable_checks) and not unstable_checks
+
+                if level == "A" and driver_is_concentrated and robust_enough and not exploratory_only:
+                    recommendations.append({
+                        "type": "action",
+                        "priority": priority,
+                        "recommendation": f"prioritize review of {target}",
+                        "based_on": based_on,
+                        "evidence_level": level,
+                    })
+                elif level in {"A", "B"}:
+                    recommendations.append({
+                        "type": "validation",
+                        "priority": "medium" if level == "A" else priority,
+                        "recommendation": f"validate whether {target} is a stable driver before taking action",
+                        "based_on": based_on,
+                        "evidence_level": level,
+                    })
+                else:
+                    recommendations.append({
+                        "type": "validation",
+                        "priority": priority,
+                        "recommendation": f"validate whether {target} is a stable driver before taking action",
+                        "based_on": based_on,
+                        "evidence_level": level,
+                    })
+
+            if not recommendations:
+                for idx, finding in enumerate(findings, start=1):
+                    level = _normalize_level(finding)
+                    summary = finding.get("finding") or finding.get("summary") or finding.get("metric") or f"finding_{idx}"
+                    recommendation_type = "observe" if level == "A" and not exploratory_only else "validation"
+                    recommendations.append({
+                        "type": recommendation_type,
+                        "priority": "medium" if level in {"A", "B"} else "low",
+                        "recommendation": f"continue monitoring {summary}" if recommendation_type == "observe" else f"validate {summary} before operationalizing it",
+                        "based_on": [f"finding_{idx}"],
+                        "evidence_level": level,
+                    })
+
+            explanation_bundle["recommendations"] = recommendations
+            return recommendations
+
+        self.ns: dict = {
+            "WORKSPACE_DIR": str(_ws),
+            "SOURCE_PATH": source_path,
+            "Path": Path,
+            "save_fig": _save_fig,
+            "load_csv": _load_csv,
+            "safe_workspace_path": lambda filename: _safe_workspace_path(_ws, filename),
+            "fix_chinese": _fix_chinese,
+            "profile_dimension": _profile_dimension,
+            "compare_segments": _compare_segments,
+            "time_trend": _time_trend,
+            "detect_anomalies": _detect_anomalies,
+            "explain_metric_change": _explain_metric_change,
+            "decompose_metric_change": _decompose_metric_change,
+            "assess_evidence_level": _assess_evidence_level,
+            "rank_driver_candidates": _rank_driver_candidates,
+            "check_metric_definition_risk": _check_metric_definition_risk,
+            "run_counterfactual_checks": _run_counterfactual_checks,
+            "generate_recommendation_candidates": _generate_recommendation_candidates,
+            "filter_explanation_dims": _filter_explanation_dims,
+            "filter_business_metrics": _filter_business_metrics,
+            "support_label": _support_label,
+            "explanation_bundle": {},
+        }
+        self.new_artifacts: List[Dict] = []
+        self.known_image_files: set = set()
+        self.process_log: List[str] = []
+        self.report: Optional[str] = None
+        self.pending_report_markdown: Optional[str] = None
+        self.findings: List[Finding] = []
+        self.metric_definitions: List[MetricDefinition] = []
+        self.assumptions: List[AnalysisAssumption] = []
+        self.cancel_event: asyncio.Event = asyncio.Event()
+        self.consecutive_python_errors = 0
+        self.last_progress_marker = ""
+        self.logger = _make_session_logger(self.workspace_dir, session_id or "default")
+
+        # Structured logger for machine-readable logs
+        self.structured_logger = StructuredLogger(
+            workspace_dir=self.workspace_dir,
+            session_id=session_id or "default",
+        )
+
+        # State machine for tracking analysis progress
+        from .state_machine import AnalysisStateMachine
+        self.state_machine = AnalysisStateMachine()
+
+        # Restore from saved state if provided (resume flow)
+        if restore_state:
+            self._apply_restore_state(restore_state)
+        else:
+            self.start_stage("schema_understanding")
+
+    def _apply_restore_state(self, state: Dict) -> None:
+        """Rebuild session from a previously saved state dict.
+
+        Restores stage, findings, step count, and state machine progress.
+        The namespace is rebuilt fresh — the agent will re-load data via
+        ``load_data`` on resume, which populates ``df`` etc.
+        """
+        from langgraph_langchain.session_persistence import SessionPersistence
+        from .state_machine import AnalysisStage as _Stage
+
+        self.user_question = state.get("user_question", self.user_question)
+        self.current_stage = state.get("current_stage", self.current_stage)
+        self.total_steps = state.get("total_steps", 0)
+        self.consecutive_python_errors = state.get("consecutive_python_errors", 0)
+        self.last_progress_marker = state.get("last_progress_marker", "")
+
+        # Restore structured data
+        if state.get("findings"):
+            self.findings = SessionPersistence.deserialize_findings(state["findings"])
+        if state.get("metric_definitions"):
+            self.metric_definitions = SessionPersistence.deserialize_metric_definitions(
+                state["metric_definitions"]
+            )
+        if state.get("assumptions"):
+            self.assumptions = SessionPersistence.deserialize_assumptions(state["assumptions"])
+
+        # Restore known image files
+        for p in state.get("known_image_files", []):
+            self.known_image_files.add(Path(p))
+
+        # Restore report state (shouldn't be set if we're resuming, but just in case)
+        self.report = state.get("report")
+        self.pending_report_markdown = state.get("pending_report_markdown")
+
+        # Restore state machine
+        sm_state = state.get("state_machine")
+        if sm_state:
+            sm = self.state_machine
+            # Restore current stage
+            try:
+                sm.current_stage = _Stage(sm_state["current_stage"])
+            except (KeyError, ValueError):
+                pass
+            # Restore stage history
+            sm.stage_history = []
+            for s in sm_state.get("stage_history", []):
+                try:
+                    sm.stage_history.append(_Stage(s))
+                except ValueError:
+                    pass
+            # Restore conditions met
+            sm.conditions_met = set(sm_state.get("conditions_met", []))
+            # Restore tools used
+            sm.tools_used = sm_state.get("tools_used", [])
+            # Restore stage step counts
+            sm.stage_step_count = {}
+            for stage_val, count in sm_state.get("stage_step_count", {}).items():
+                try:
+                    sm.stage_step_count[_Stage(stage_val)] = count
+                except ValueError:
+                    pass
+
+        self.logger.info(
+            "session_restored session=%s stage=%s steps=%d findings=%d",
+            self.session_id,
+            self.current_stage,
+            self.total_steps,
+            len(self.findings),
+        )
+
+    def cleanup(self) -> None:
+        """Release heavy resources after analysis completes or fails.
+
+        Clears the persistent exec namespace (dropping DataFrames) and trims
+        artifact metadata so the Session object can be garbage-collected
+        promptly after the generator finishes.
+        """
+        # Drop large objects from namespace — keep only primitives
+        heavy_keys = [k for k, v in self.ns.items()
+                      if isinstance(v, (pd.DataFrame, np.ndarray))]
+        for k in heavy_keys:
+            del self.ns[k]
+
+        # Clear the entire namespace to break reference cycles
+        self.ns.clear()
+
+        # Trim artifact list — keep only the last N entries for the API response
+        if len(self.new_artifacts) > _MAX_RETAINED_ARTIFACTS:
+            self.new_artifacts = self.new_artifacts[-_MAX_RETAINED_ARTIFACTS:]
+
+        # Clear process log — already written into the report
+        self.process_log.clear()
+
+        self.logger.info(
+            "session_cleanup session=%s cleared_namespace_keys=%s artifacts_kept=%d",
+            self.session_id, heavy_keys, len(self.new_artifacts),
+        )
+
+    def start_stage(self, stage: AnalysisStage) -> None:
+        if self.stage_history and self.stage_history[-1].stage == stage and self.stage_history[-1].status == "started":
+            return
+        self.current_stage = stage
+        self.stage_history.append(StageResult(stage=stage, status="started", started_at=datetime.now(timezone.utc)))
+        self.logger.info("stage_started session=%s stage=%s", self.session_id, stage)
+        self.structured_logger.log_stage_start(stage)
+
+    def complete_stage(self, stage: AnalysisStage) -> None:
+        self.current_stage = stage
+        self.stage_history.append(StageResult(stage=stage, status="completed", completed_at=datetime.now(timezone.utc)))
+        self.logger.info("stage_completed session=%s stage=%s", self.session_id, stage)
+        self.structured_logger.log_stage_complete(stage)
+
+    def try_advance_stage(self) -> Optional[str]:
+        """
+        Try to advance to the next stage based on state machine rules.
+        Returns error message if transition is not allowed, None if successful or no transition needed.
+        """
+        next_stage = self.state_machine.get_next_recommended_stage()
+        if next_stage is None:
+            return None
+
+        can_transition, reason = self.state_machine.can_transition_to(next_stage)
+        if can_transition:
+            success = self.state_machine.transition_to(next_stage)
+            if success:
+                self.start_stage(next_stage)
+                self.logger.info(
+                    "stage_auto_advanced session=%s from=%s to=%s",
+                    self.session_id,
+                    self.state_machine.stage_history[-2].value if len(self.state_machine.stage_history) > 1 else "init",
+                    next_stage.value
+                )
+                return None
+
+        return reason
+
+    def fail_stage(
+        self,
+        stage: AnalysisStage,
+        code: str,
+        message: str,
+        *,
+        retryable: bool = False,
+        hint: Optional[str] = None,
+        recovery_action: Optional[RecoveryAction] = None,
+    ) -> FailureInfo:
+        self.current_stage = stage
+        failure = FailureInfo(
+            code=code,
+            message=message,
+            retryable=retryable,
+            hint=hint,
+            recovery_action=recovery_action,
+            stage=stage,
+        )
+        self.stage_failures.append(failure)
+        self.stage_history.append(StageResult(stage=stage, status="failed", failure=failure, completed_at=datetime.now(timezone.utc)))
+        self.logger.warning(
+            "stage_failed session=%s stage=%s code=%s retryable=%s message=%s",
+            self.session_id,
+            stage,
+            code,
+            retryable,
+            message,
+        )
+        self.structured_logger.log_stage_fail(stage, code, message, retryable=retryable)
+        return failure
+
+    # Patterns that indicate dangerous operations in agent-generated code
+    _DANGEROUS_PATTERNS = re.compile(
+        r"(?:"
+        r"\bos\.system\b"
+        r"|\bsubprocess\b"
+        r"|\bos\.popen\b"
+        r"|\bshutil\.rmtree\b"
+        r"|\bopen\s*\(\s*['\"]/(?:etc|proc|sys|dev|root)"
+        r"|\b__import__\b"
+        r"|\beval\s*\("
+        r"|\bexec\s*\("
+        r"|\bcompile\s*\("
+        r"|\bos\.remove\b"
+        r"|\bos\.unlink\b"
+        r")",
+    )
+
+    def _validate_code_safety(self, code: str) -> Optional[str]:
+        """Return error message if code contains dangerous patterns."""
+        match = self._DANGEROUS_PATTERNS.search(code)
+        if match:
+            return (
+                f"[ERROR] Code contains forbidden operation: '{match.group()}'. "
+                "Only data analysis operations (pandas, numpy, matplotlib, seaborn) are allowed."
+            )
+        return None
+
+    def run_code(self, code: str) -> str:
+        """Execute code in the persistent namespace with timeout; capture stdout+stderr."""
+        safety_error = self._validate_code_safety(code)
+        if safety_error:
+            return safety_error
+
+        buf = io.StringIO()
+        had_exception: list = []
+
+        def _target():
+            old_out, old_err = sys.stdout, sys.stderr
+            sys.stdout = sys.stderr = buf
+            try:
+                exec(compile(code, "<agent>", "exec"), self.ns)  # noqa: S102
+            except Exception:
+                traceback.print_exc(file=buf)
+                had_exception.append(True)
+            finally:
+                sys.stdout, sys.stderr = old_out, old_err
+
+        t = threading.Thread(target=_target, daemon=True)
+        t.start()
+        t.join(timeout=_CODE_TIMEOUT)
+        if t.is_alive():
+            return (
+                f"[ERROR] Execution timed out after {_CODE_TIMEOUT}s. "
+                "Break the code into smaller steps and retry."
+            )
+
+        output = buf.getvalue()
+        if had_exception:
+            output = "[ERROR]\n" + output
+
+        if len(output) > _MAX_OUTPUT_LEN:
+            output = output[:_MAX_OUTPUT_LEN] + f"\n...[output truncated at {_MAX_OUTPUT_LEN} chars]"
+
+        return output
+
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+def _make_tools(session: _Session) -> list:
+    """Build tools for this session. Delegates to the tools package registry."""
+    from langgraph_langchain.tools import get_tools_for_session
+    return get_tools_for_session(session)
+
+
+def _save_session_metadata(session: _Session, total_steps: int, duration_seconds: float) -> None:
+    """Save session metadata to workspace for API layer to read."""
+    import json
+    metadata_path = session.workspace_dir / "session_metadata.json"
+    metadata = {
+        "session_id": session.session_id,
+        "total_steps": total_steps,
+        "duration_seconds": duration_seconds,
+        "current_stage": session.current_stage,
+        "stage_history": [
+            {
+                "stage": sr.stage,
+                "status": sr.status,
+                "started_at": sr.started_at.isoformat() if sr.started_at else None,
+                "completed_at": sr.completed_at.isoformat() if sr.completed_at else None,
+            }
+            for sr in session.stage_history
+        ],
+    }
+    try:
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    except Exception:
+        pass  # Best effort
+
+
+# ── Public async stream ───────────────────────────────────────────────────────
+async def run_analysis_stream(
+    instruction: str,
+    source_path: str,
+    workspace_dir: str,
+    api_key: str,
+    model_id: str,
+    api_base: str,
+    session_id: str = "",
+    cancel_event: Optional[asyncio.Event] = None,
+    restore_state: Optional[Dict] = None,
+) -> AsyncGenerator[tuple[str, list], None]:
+    """Async generator yielding (text_chunk, new_artifacts) as the agent runs."""
+    # Create trace context for this session
+    trace_context = create_trace_context(session_id, instruction)
+
+    session = _Session(
+        workspace_dir,
+        source_path,
+        session_id=session_id,
+        user_question=instruction,
+        restore_state=restore_state,
+    )
+    session.trace_context = trace_context  # Attach trace context to session
+    session.structured_logger.set_trace_context(trace_context)  # Connect logger to trace context
+    if cancel_event is not None:
+        session.cancel_event = cancel_event
+    tools = _make_tools(session)
+
+    # Build effective prompt: base sections + skills index + memory snapshot
+    memory_snapshot = ""
+    if hasattr(session, '_memory_store') and session._memory_store:
+        memory_snapshot = session._memory_store.format_for_system_prompt()
+    effective_prompt = _prompt_builder.build_with_context(
+        skills_index=_skills_loader.build_skills_prompt(),
+        memory_snapshot=memory_snapshot,
+    )
+
+    llm = ChatOpenAI(
+        model=model_id,
+        api_key=api_key,
+        base_url=api_base,
+        temperature=0,
+        streaming=True,
+        max_retries=3,
+    )
+    agent = create_react_agent(llm, tools, prompt=effective_prompt)
+
+    # Build the initial message — resume-aware
+    if restore_state:
+        # Provide context about prior progress so the agent continues intelligently
+        prior_findings = restore_state.get("findings", [])
+        findings_summary = ""
+        if prior_findings:
+            findings_summary = "\n\nPrior findings recorded:\n" + "\n".join(
+                f"- {f.get('finding_id', '?')}: {f.get('statement', '')}"
+                for f in prior_findings[:10]
+            )
+        user_msg = HumanMessage(content=(
+            f"[RESUME] This is a resumed analysis session.\n"
+            f"Task: {instruction}\n"
+            f"Data file: {source_path}\n"
+            f"Previous stage: {restore_state.get('current_stage', 'unknown')}\n"
+            f"Steps completed: {restore_state.get('total_steps', 0)}\n"
+            f"Current consecutive errors: {restore_state.get('consecutive_python_errors', 0)}\n"
+            f"{findings_summary}\n\n"
+            "Please start by calling load_data to re-load the dataset, "
+            "then continue the analysis from where it left off."
+        ))
+    else:
+        user_msg = HumanMessage(content=(
+            f"Task: {instruction}\n"
+            f"Data file: {source_path}\n"
+            "Please start by calling load_data to understand the dataset."
+        ))
+
+    config = {"recursion_limit": 60}
+    step = restore_state.get("total_steps", 0) if restore_state else 0
+    error_occurred = False
+    start_time = time.monotonic()
+    log = session.logger
+    log.info(
+        "agent_start session=%s file=%s resumed=%s prior_steps=%d",
+        session_id, source_path, bool(restore_state), step,
+    )
+    try:
+        async for event in agent.astream_events({"messages": [user_msg]}, config=config, version="v2"):
+            if session.cancel_event.is_set():
+                session.fail_stage(
+                    session.current_stage,
+                    "cancelled",
+                    "analysis cancelled",
+                    retryable=True,
+                    hint="Restart the analysis when ready.",
+                    recovery_action="retry_same_scope",
+                )
+                log.info("agent_cancelled session=%s after_step=%d", session_id, step)
+                yield "\n\n**Analysis cancelled.**\n", []
+                return
+
+            kind = event["event"]
+            name = event.get("name", "")
+
+            if kind == "on_chat_model_stream":
+                chunk = event["data"]["chunk"].content
+                if chunk:
+                    session.process_log.append(chunk)
+                    yield chunk, []
+
+            elif kind == "on_tool_start":
+                step += 1
+                session.total_steps = step  # Update session step count
+                if step > _MAX_AGENT_STEPS:
+                    session.fail_stage(
+                        session.current_stage,
+                        "max_steps_exceeded",
+                        "exceeded the maximum tool-step budget",
+                        retryable=True,
+                        hint="Summarize the strongest validated findings so far in fewer steps.",
+                        recovery_action="retry_narrower_scope",
+                    )
+                    log.warning("agent_stopped max_steps_exceeded session=%s steps=%d", session_id, step)
+                    yield (
+                        "\n\n**Analysis stopped:** exceeded the maximum tool-step budget. "
+                        "Summarize the strongest validated findings so far in fewer steps.\n",
+                        [],
+                    )
+                    return
+                args = event["data"].get("input", {})
+                log.info("tool_start step=%d tool=%s", step, name)
+                if name == "python_repl":
+                    code_preview = _format_preview_text(args.get("code", ""))
+                    if code_preview:
+                        msg = (
+                            f"\n\n> **Step {step}** `python_repl`\n\n"
+                            f"```python\n{code_preview}\n```\n\n"
+                        )
+                    else:
+                        msg = f"\n\n> **Step {step}** `python_repl`\n\n"
+                    session.process_log.append(msg)
+                    yield msg, []
+                elif name == "load_data":
+                    session.start_stage("schema_understanding")
+                    msg = f"\n\n> **Step {step}** `load_data({args.get('file_path', '')})`\n\n"
+                    session.process_log.append(msg)
+                    yield msg, []
+                elif name == "eda_profile":
+                    session.start_stage("data_quality_check")
+                    msg = f"\n\n> **Step {step}** `eda_profile` - running auto EDA (missing values, correlations, distributions, trends)...\n\n"
+                    session.process_log.append(msg)
+                    yield msg, []
+                elif name == "finish_report":
+                    pending_markdown = args.get("markdown")
+                    if isinstance(pending_markdown, str) and pending_markdown.strip():
+                        session.pending_report_markdown = pending_markdown.strip()
+                    session.process_log.append("\n\n---\n\n")
+                    yield "\n\n---\n\n", []
+
+            elif kind == "on_tool_end":
+                elapsed = time.monotonic() - start_time
+                # Show brief output summary so user sees what happened
+                if name == "load_data":
+                    raw = event["data"].get("output", "") or ""
+                    output_str = _extract_event_output_text(raw)
+                    if not output_str.startswith("ERROR:"):
+                        session.complete_stage("schema_understanding")
+
+                if name == "eda_profile":
+                    raw = event["data"].get("output", "") or ""
+                    output_str = _extract_event_output_text(raw)
+                    if not output_str.startswith("ERROR:"):
+                        session.complete_stage("data_quality_check")
+                    preview = _format_preview_text(output_str)
+                    log.info("tool_end tool=eda_profile elapsed=%.1fs", elapsed)
+                    if preview:
+                        msg = f"\n> `eda_profile done`\n\n{preview}\n\n"
+                        session.process_log.append(msg)
+                        yield msg, []
+
+                if name == "python_repl":
+                    raw = event["data"].get("output", "") or ""
+                    output_str = _extract_event_output_text(raw)
+                    preview = _format_preview_text(output_str)
+                    is_error = output_str.startswith("[ERROR]")
+                    if is_error:
+                        session.consecutive_python_errors += 1
+                    else:
+                        session.consecutive_python_errors = 0
+                        session.complete_stage("deep_dive")
+                        session.start_stage("conclusion_synthesis")
+                        if preview:
+                            session.last_progress_marker = preview[:400]
+                    log.log(logging.WARNING if is_error else logging.INFO,
+                            "tool_end tool=python_repl elapsed=%.1fs error=%s consecutive_errors=%d", elapsed, is_error, session.consecutive_python_errors)
+                    if preview:
+                        label = "ERROR" if is_error else "out"
+                        msg = f"\n> `{label}`\n\n{preview}\n\n"
+                        session.process_log.append(msg)
+                        yield msg, []
+                    if session.consecutive_python_errors >= _MAX_CONSECUTIVE_PYTHON_ERRORS:
+                        session.fail_stage(
+                            "deep_dive",
+                            "python_execution_error",
+                            "repeated python_repl errors without recovery",
+                            retryable=True,
+                            hint="Use smaller validated steps before retrying.",
+                            recovery_action="retry_narrower_scope",
+                        )
+                        log.warning("agent_stopped repeated_python_errors session=%s errors=%d", session_id, session.consecutive_python_errors)
+                        yield (
+                            "\n\n**Analysis stopped:** repeated python_repl errors without recovery. "
+                            "Use smaller validated steps before retrying.\n",
+                            [],
+                        )
+                        return
+                    # Register any new image files saved by the code
+                    image_exts = {".png", ".jpg", ".jpeg", ".svg"}
+                    for p in sorted(session.workspace_dir.iterdir()):
+                        if p.suffix.lower() in image_exts and p not in session.known_image_files:
+                            session.known_image_files.add(p)
+                            rel = p.relative_to(session.workspace_dir.parent)
+                            session.new_artifacts.append({
+                                "name": p.name,
+                                "path": str(p),
+                                "relative_path": str(rel),
+                                "url": f"/workspace/files/{rel}",
+                            })
+
+                if name == "finish_report":
+                    raw = event["data"].get("output", "") or ""
+                    output_str = _extract_event_output_text(raw)
+                    accepted = not (
+                        output_str.lstrip().startswith("REPORT REJECTED")
+                        or output_str.lstrip().startswith("[REPORT REJECTED]")
+                        or output_str.lstrip().startswith("Report already submitted.")
+                    )
+                    if accepted and not session.report and session.pending_report_markdown:
+                        session.report = session.pending_report_markdown.strip()
+                        session.pending_report_markdown = None
+                    log.info("tool_end tool=finish_report accepted=%s elapsed=%.1fs", accepted, elapsed)
+                    if session.report:
+                        artifacts = list(session.new_artifacts)
+                        session.new_artifacts.clear()
+                        # Persist the final report as a downloadable .md file so
+                        # the frontend's "download results" list contains the
+                        # report alongside the chart images (not PNGs only).
+                        try:
+                            report_path = session.workspace_dir / "final_report.md"
+                            report_path.write_text(session.report, encoding="utf-8")
+                            rel = report_path.relative_to(session.workspace_dir.parent)
+                            report_artifact = {
+                                "name": report_path.name,
+                                "path": str(report_path),
+                                "relative_path": str(rel),
+                                "url": f"/workspace/files/{rel}",
+                            }
+                            # Report first, drop any stale same-name entry
+                            artifacts = [report_artifact] + [
+                                a for a in artifacts if a.get("name") != report_path.name
+                            ]
+                            log.info("report_saved session=%s path=%s", session_id, report_path)
+                        except Exception:
+                            log.debug("report_save_failed session=%s", session_id)
+                        if artifacts:
+                            log.info("artifacts_flushed count=%d", len(artifacts))
+                        log.info("agent_done session=%s steps=%d elapsed=%.1fs", session_id, step, time.monotonic() - start_time)
+
+                        # Save session metadata for API layer
+                        _save_session_metadata(session, step, time.monotonic() - start_time)
+
+                        # End trace and save
+                        trace_context.end_trace()
+                        trace_context.save_to_file(session.workspace_dir)
+
+                        yield session.report, artifacts
+                        return
+
+                # Flush new artifacts
+                if session.new_artifacts:
+                    artifacts = list(session.new_artifacts)
+                    session.new_artifacts.clear()
+                    log.info("artifacts_flushed count=%d", len(artifacts))
+                    yield "", artifacts
+
+                # ── Persist session state after each tool call ──
+                # Enables resume if the backend restarts or analysis is interrupted.
+                try:
+                    from langgraph_langchain.session_persistence import get_session_persistence
+                    get_session_persistence().save(session)
+                except Exception:
+                    log.debug("session_state_save_failed step=%d", step)
+
+    except Exception as exc:
+        error_occurred = True
+
+        # Classify the API error for smart recovery
+        from langgraph_langchain.error_classifier import classify_api_error
+        classified = classify_api_error(exc)
+
+        log.error(
+            "agent_error session=%s steps=%d error_type=%s reason=%s error=%s",
+            session_id, step, type(exc).__name__, classified.reason.value, exc,
+            exc_info=True,
+        )
+
+        if classified.is_retryable and classified.reason.value in ("rate_limit", "overloaded", "server_error", "timeout"):
+            # For transient API errors, provide a user-friendly retry hint
+            from langgraph_langchain.retry_utils import jittered_backoff
+            delay = jittered_backoff(1, base_delay=3.0, max_delay=30.0)
+            log.info("api_retry session=%s reason=%s delay=%.1fs", session_id, classified.reason.value, delay)
+            yield (
+                f"\n\n**API 临时错误** ({classified.reason.value})，"
+                f"等待 {delay:.0f} 秒后自动重试...\n",
+                [],
+            )
+            # Note: full auto-retry requires restarting the agent loop,
+            # which is handled by the frontend's retry button. Here we just
+            # provide a clear error message with the classified reason.
+
+        # End trace on error
+        trace_context.end_trace()
+        trace_context.save_to_file(session.workspace_dir)
+        # Save run metrics
+        session.structured_logger.save_run_metrics(
+            final_status="failed",
+            total_steps=step,
+            failure_code=classified.reason.value,
+        )
+
+        # User-facing error with classified context
+        if classified.reason.value in ("auth", "billing", "missing_api_key"):
+            err_msg = f"\n\n**API 认证错误**: 请检查 DEEPSEEK_API_KEY 配置。\n"
+        elif classified.reason.value in ("rate_limit", "overloaded"):
+            err_msg = f"\n\n**API 限流/过载**: 服务暂时不可用，请稍后重试。\n"
+        elif classified.reason.value == "context_overflow":
+            err_msg = "\n\n**分析内容过长**: 分析步骤过多，请缩小分析范围后重试。\n"
+        else:
+            err_msg = f"\n\n**Agent 错误** ({classified.reason.value}): {exc}\n"
+        yield err_msg, []
+        # Still emit report if one was already submitted before the error
+        if session.report:
+            yield session.report, []
+    finally:
+        # Save run metrics on normal completion
+        if not error_occurred and session.report:
+            session.structured_logger.save_run_metrics(
+                final_status="completed",
+                total_steps=step,
+                failure_code=None
+            )
+        # Clean up trace context
+        remove_trace_context(session_id)
+        # Release heavy resources (DataFrames, large namespace objects)
+        session.cleanup()

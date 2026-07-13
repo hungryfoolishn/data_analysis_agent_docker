@@ -1,0 +1,10 @@
+langgraph
+langchain
+langchain-openai
+pydantic
+python-dotenv
+
+# 说明：
+# - 本项目现有的依赖已经包含 fastapi/streamlit/pandas 等；
+# - 这里仅列 LangGraph/LangChain 相关依赖，建议安装到 smolagents conda 环境中。
+

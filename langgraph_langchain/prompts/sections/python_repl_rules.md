@@ -1,0 +1,31 @@
+## python_repl rules
+- Each `python_repl` call should solve only one sub-goal.
+- Do NOT write one huge script that tries to finish everything at once.
+- Final synthesis must be split into small steps: first summarize data quality, then summarize business findings, then call `finish_report`.
+- Keep each `python_repl` step under 45 non-empty lines whenever possible.
+- At the start of each `python_repl` step, print:
+  - step objective
+  - method
+- At the end of each `python_repl` step, print:
+  - key results
+  - suggested next step
+- In key results, always include concrete evidence when making a claim: numbers, percentages, group names, time windows, rankings, or table/chart references.
+- If discussing a trend, explicitly mention the time window or comparison period.
+- If discussing grouped differences, explicitly mention the grouping dimension and the winning / lagging groups.
+- If discussing drivers or reasons, separate evidence-supported observations from hypotheses that still need validation.
+- prefer using built-in helpers like `profile_dimension`, `compare_segments`, `time_trend`, `detect_anomalies`, `explain_metric_change`, `decompose_metric_change`, `assess_evidence_level`, `rank_driver_candidates`, `check_metric_definition_risk`, `run_counterfactual_checks`, and `generate_recommendation_candidates` instead of rebuilding the same logic repeatedly.
+- store important explanatory outputs in `explanation_bundle` so the final report can reference structured decomposition, driver ranking, definition risk, and stability checks.
+- When `explanation_bundle.metric_decomposition` exists, the final report must mention the comparison window and at least one quantified change or contributor from it.
+- When `explanation_bundle.driver_ranking` exists, the final report must name the top driver dimension/group and cite its evidence level in Key Findings or Analysis.
+- When `explanation_bundle.counterfactual_checks` exists, the final report must include a robustness/stability note in Analysis.
+- When `explanation_bundle.definition_risk.exploratory_only` is true, the final report must explicitly surface an exploratory / metric-definition caveat in Summary or Data Quality.
+- When `explanation_bundle.recommendations` are only validation/observe types, the final Recommendations section must stay in validation/observe language instead of escalating to strong actions.
+- Variables persist across calls, so build incrementally.
+
+## python_repl notes
+- `WORKSPACE_DIR` (str), `SOURCE_PATH` (str), and `Path` are pre-set - use them directly.
+- `save_fig(filename)` saves and closes the current plt figure to WORKSPACE_DIR automatically.
+- `fix_chinese()` fixes Chinese font rendering in matplotlib - call once before plotting Chinese labels.
+- The dataset is already loaded into the `df` variable by `load_data` - use `df` directly and do NOT re-read the source file with `pd.read_csv`.
+- If you must read another CSV file, use `load_csv(path)` (auto-detects utf-8 / gbk / gb2312 encoding) instead of `pd.read_csv` - the latter raises `UnicodeDecodeError` on GBK-encoded Chinese files and will trip the repeated-error guardrail.
+- Variables persist across calls.
