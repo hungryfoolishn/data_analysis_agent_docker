@@ -16,6 +16,12 @@ services:
       DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com/v1}
       MAX_CONCURRENT_AGENTS: ${MAX_CONCURRENT_AGENTS:-3}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+      # LLM request tuning (increase for slow on-prem models)
+      LLM_REQUEST_TIMEOUT: ${LLM_REQUEST_TIMEOUT:-600}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-5}
+      # Extra HTTP headers for internal API gateways (comma-separated key=val pairs)
+      # e.g. LLM_EXTRA_HEADERS=ucid=usertest,Auth-Token=eyJ...
+      LLM_EXTRA_HEADERS: ${LLM_EXTRA_HEADERS:-}
       # File server base URL shown to users. Set to the host's externally
       # reachable URL for the backend port (e.g. http://<host_ip>:8888).
       FILE_SERVER_BASE: ${FILE_SERVER_BASE:-http://localhost:8888}
@@ -24,6 +30,8 @@ services:
       # both | backend | frontend
       START_MODE: ${START_MODE:-both}
     volumes:
+      - ./langgraph_langchain:/app/langgraph_langchain
+      - ./webui:/app/webui
       - ./workspace:/app/workspace
       - ./temp_uploads:/app/temp_uploads
     restart: unless-stopped

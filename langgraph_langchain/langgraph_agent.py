@@ -76,6 +76,9 @@ from langgraph_langchain.config import (
     REQUIRED_STEP_MARKER_ALIASES as _REQUIRED_STEP_MARKER_ALIASES,
     MAX_RETAINED_ARTIFACTS as _MAX_RETAINED_ARTIFACTS,
     SYNTHESIZED_REPORT_MIN_FINDINGS as _SYNTH_REPORT_MIN_FINDINGS,
+    LLM_REQUEST_TIMEOUT as _LLM_REQUEST_TIMEOUT,
+    LLM_MAX_RETRIES as _LLM_MAX_RETRIES,
+    LLM_EXTRA_HEADERS as _LLM_EXTRA_HEADERS,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -1299,13 +1302,33 @@ async def run_analysis_stream(
         memory_snapshot=memory_snapshot,
     )
 
+    # Build custom httpx clients when extra headers are needed (e.g. internal
+    # API gateways that require ucid / Auth-Token).  We inject at the httpx
+    # transport layer so the headers are always present on every request, and
+    # we avoid the ``default_headers`` parameter which, in newer versions of
+    # langchain_openai (≥1.3), leaks into the OpenAI SDK call kwargs and
+    # causes ``AsyncCompletions.create() got an unexpected keyword argument
+    # 'headers'``.
+    _llm_client_kwargs: dict = {}
+    if _LLM_EXTRA_HEADERS:
+        import httpx as _httpx
+        _timeout = _httpx.Timeout(_LLM_REQUEST_TIMEOUT)
+        _llm_client_kwargs["http_client"] = _httpx.Client(
+            headers=dict(_LLM_EXTRA_HEADERS), timeout=_timeout,
+        )
+        _llm_client_kwargs["http_async_client"] = _httpx.AsyncClient(
+            headers=dict(_LLM_EXTRA_HEADERS), timeout=_timeout,
+        )
+
     llm = ChatOpenAI(
         model=model_id,
         api_key=api_key,
         base_url=api_base,
         temperature=0,
         streaming=True,
-        max_retries=3,
+        max_retries=_LLM_MAX_RETRIES,
+        request_timeout=_LLM_REQUEST_TIMEOUT,
+        **_llm_client_kwargs,
     )
     agent = create_react_agent(llm, tools, prompt=effective_prompt)
 

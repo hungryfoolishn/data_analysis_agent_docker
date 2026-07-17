@@ -16,6 +16,10 @@ fi
 source /opt/conda/etc/profile.d/conda.sh
 conda activate smolagents
 
+# Clear Python bytecode cache so volume-mounted code changes take effect immediately
+find /app/langgraph_langchain /app/webui -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find /app/langgraph_langchain /app/webui -name "*.pyc" -delete 2>/dev/null || true
+
 # Validate required env
 if [ -z "$DEEPSEEK_API_KEY" ]; then
     echo "[entrypoint] WARNING: DEEPSEEK_API_KEY is empty. Backend will fail to call DeepSeek." >&2

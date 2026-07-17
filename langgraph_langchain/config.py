@@ -14,6 +14,27 @@ DEEPSEEK_API_KEY: str = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL_ID: str = os.environ.get("DEEPSEEK_MODEL_ID", "deepseek-chat")
 DEEPSEEK_API_BASE: str = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
 
+LLM_REQUEST_TIMEOUT: int = int(os.environ.get("LLM_REQUEST_TIMEOUT", "600"))
+"""Seconds for each LLM API request (covers slow streaming on laggy networks).
+Passed as ``request_timeout`` to ChatOpenAI. Increase if the model is slow
+to respond or the network has high latency (e.g. on-prem vLLM)."""
+
+LLM_MAX_RETRIES: int = int(os.environ.get("LLM_MAX_RETRIES", "5"))
+"""Max retries for transient LLM API errors (rate-limit, timeout, 5xx)."""
+
+LLM_EXTRA_HEADERS: dict[str, str] = {}
+"""Extra HTTP headers sent with every LLM API request.
+Populate via the ``LLM_EXTRA_HEADERS`` env var as ``key1=val1,key2=val2``
+(e.g. ``ucid=555123,x-custom=foo``).  Useful for internal API gateways
+that require auth / routing headers beyond the standard Authorization."""
+
+_raw_headers = os.environ.get("LLM_EXTRA_HEADERS", "")
+if _raw_headers:
+    LLM_EXTRA_HEADERS = {
+        k.strip(): v.strip()
+        for k, v in (pair.split("=", 1) for pair in _raw_headers.split(",") if "=" in pair)
+    }
+
 # ── Agent runtime limits ─────────────────────────────────────────────────────
 MAX_OUTPUT_LEN: int = int(os.environ.get("MAX_OUTPUT_LEN", "3000"))
 """Max characters of python_repl output before truncation."""
