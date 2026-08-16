@@ -37,18 +37,40 @@ class RuntimePlanStep(BaseModel):
     expected_outputs: list[str] = Field(default_factory=list)
     depends_on: list[str] = Field(default_factory=list)
     status: Literal[
-        "pending", "running", "succeeded", "needs_revision", "failed", "skipped"
+        "pending", "running", "paused", "succeeded", "needs_revision", "failed", "skipped"
     ] = "pending"
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
 
 
+class PlanRevision(BaseModel):
+    """Immutable snapshot of one human- or system-authored plan version."""
+
+    version: int = Field(ge=1)
+    reason: str
+    revised_by: str = "user"
+    created_at: str = Field(default_factory=utc_now)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PlanConfirmation(BaseModel):
+    version: int = Field(ge=1)
+    confirmed_by: str = "user"
+    note: Optional[str] = None
+    confirmed_at: str = Field(default_factory=utc_now)
+
+
 class AnalysisRun(BaseModel):
     run_id: str = Field(default_factory=lambda: new_id("run"))
     task_id: str
     plan_version: int = 1
-    status: Literal["pending", "running", "completed", "failed", "cancelled"] = "running"
+    status: Literal[
+        "pending", "running", "paused", "awaiting_confirmation", "completed", "failed", "cancelled"
+    ] = "running"
+    plan_status: Literal[
+        "active", "paused", "awaiting_confirmation", "confirmed", "completed"
+    ] = "active"
     current_step_id: Optional[str] = None
     steps: list[RuntimePlanStep] = Field(default_factory=list)
     created_at: str = Field(default_factory=utc_now)
@@ -56,6 +78,10 @@ class AnalysisRun(BaseModel):
     parent_run_id: Optional[str] = None
     retry_of_step_id: Optional[str] = None
     attempt: int = Field(default=1, ge=1)
+    pause_reason: Optional[str] = None
+    paused_at: Optional[str] = None
+    plan_revisions: list[PlanRevision] = Field(default_factory=list)
+    plan_confirmation: Optional[PlanConfirmation] = None
 
 
 class ExecutionResult(BaseModel):

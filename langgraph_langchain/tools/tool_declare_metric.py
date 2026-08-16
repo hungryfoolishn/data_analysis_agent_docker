@@ -65,6 +65,9 @@ def _factory(session):
 
         # Always append the metric definition first
         session.metric_definitions.append(metric_def)
+        runtime = getattr(session, "analysis_runtime", None)
+        if runtime is not None and hasattr(runtime, "record_metric_definition"):
+            runtime.record_metric_definition(metric_def)
 
         is_valid, rd_errors, related = True, [], []
         if _is_rd_domain_session(session):

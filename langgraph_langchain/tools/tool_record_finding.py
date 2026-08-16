@@ -43,6 +43,82 @@ def _available_artifact_aliases(session) -> dict:
     return aliases
 
 
+def _resolve_evidence_lineage(
+    session,
+    *,
+    source_fields: List[str],
+    source_artifacts: List[str],
+    source_execution_ids: List[str],
+) -> dict:
+    """Resolve user-facing evidence references to stable runtime identifiers."""
+    runtime = getattr(session, "analysis_runtime", None)
+    aliases = _available_artifact_aliases(session)
+    artifacts = []
+    seen_artifacts = set()
+    for reference in source_artifacts:
+        artifact = aliases.get(str(reference))
+        artifact_id = artifact.get("artifact_id") if artifact else None
+        if artifact_id and artifact_id not in seen_artifacts:
+            seen_artifacts.add(artifact_id)
+            artifacts.append(artifact)
+
+    executions_by_id = {
+        item.execution_id: item
+        for item in (getattr(runtime, "executions", []) or [])
+    }
+    execution_ids = []
+    for execution_id in source_execution_ids:
+        if execution_id in executions_by_id and execution_id not in execution_ids:
+            execution_ids.append(execution_id)
+    for artifact in artifacts:
+        execution_id = artifact.get("execution_id")
+        if execution_id in executions_by_id and execution_id not in execution_ids:
+            execution_ids.append(execution_id)
+
+    if not execution_ids:
+        eligible = [
+            item
+            for item in executions_by_id.values()
+            if item.status == "succeeded"
+            and item.tool_name in {"python_repl", "eda_profile", "load_data"}
+        ]
+        if eligible:
+            field_tokens = [str(field).lower() for field in source_fields if field]
+            ranked = []
+            for position, execution in enumerate(eligible):
+                searchable = f"{execution.code_or_query or ''}\n{execution.stdout_preview or ''}".lower()
+                score = sum(1 for token in field_tokens if token in searchable)
+                ranked.append((score, position, execution))
+            execution_ids.append(max(ranked, key=lambda item: (item[0], item[1]))[2].execution_id)
+
+    selected_executions = [executions_by_id[item] for item in execution_ids]
+    step_ids = []
+    asset_ids = []
+    for execution in selected_executions:
+        if execution.step_id and execution.step_id not in step_ids:
+            step_ids.append(execution.step_id)
+        for asset_id in execution.input_asset_ids:
+            if asset_id not in asset_ids:
+                asset_ids.append(asset_id)
+    for artifact in artifacts:
+        step_id = artifact.get("step_id")
+        if step_id and step_id not in step_ids:
+            step_ids.append(step_id)
+        for asset_id in artifact.get("input_asset_ids") or []:
+            if asset_id not in asset_ids:
+                asset_ids.append(asset_id)
+    if not asset_ids and runtime is not None:
+        asset_ids.extend(getattr(runtime.task, "input_asset_ids", []) or [])
+
+    return {
+        "aliases": aliases,
+        "artifact_ids": [item["artifact_id"] for item in artifacts],
+        "execution_ids": execution_ids,
+        "step_ids": step_ids,
+        "asset_ids": asset_ids,
+    }
+
+
 def _factory(session):
     _validate = _validate_tool_stage_factory(session)
 
@@ -56,6 +132,7 @@ def _factory(session):
         category: str = None,
         source_fields: List[str] = None,
         source_artifacts: List[str] = None,
+        source_execution_ids: List[str] = None,
         time_window: str = None,
         group_dimension: str = None,
         filters: List[str] = None,
@@ -85,6 +162,7 @@ def _factory(session):
             category: Finding category (e.g., "trend", "anomaly", "comparison", "attribution")
             source_fields: List of data fields used (e.g., ["region", "revenue", "date"])
             source_artifacts: List of charts or files supporting this (e.g., ["revenue_by_region.png"])
+            source_execution_ids: Optional execution IDs when the caller has an explicit runtime reference
             time_window: Time period for this finding (e.g., "2025-Q3", "2025-07-01 to 2025-09-30")
             group_dimension: Grouping dimension if applicable (e.g., "region", "product_category")
             filters: Any filters applied (e.g., ["revenue > 0", "status = 'completed'"])
@@ -134,11 +212,21 @@ def _factory(session):
                 trace_ctx.end_current_span(status="failed", error_message="evidence_text is empty")
             return "[ERROR] evidence_text is empty — provide concrete evidence (numbers, stats, observations)."
 
+        lineage = _resolve_evidence_lineage(
+            session,
+            source_fields=source_fields or [],
+            source_artifacts=source_artifacts or [],
+            source_execution_ids=source_execution_ids or [],
+        )
         try:
             evidence_item = EvidenceItem(
                 evidence_text=evidence_text,
                 source_fields=source_fields or [],
                 source_artifacts=source_artifacts or [],
+                source_artifact_ids=lineage["artifact_ids"],
+                source_execution_ids=lineage["execution_ids"],
+                source_step_ids=lineage["step_ids"],
+                source_asset_ids=lineage["asset_ids"],
                 time_window=time_window,
                 group_dimension=group_dimension,
                 filters=filters or [],
@@ -166,6 +254,11 @@ def _factory(session):
             evidence_level=evidence_level,
             hypothesis_flag=hypothesis_flag,
             category=category,
+            run_id=getattr(getattr(session, "analysis_runtime", None), "run", None).run_id
+            if getattr(getattr(session, "analysis_runtime", None), "run", None)
+            else None,
+            recorded_by_execution_id=recorder.execution_id,
+            recorded_by_step_id=recorder.step_id,
             # Add trace info
             trace_id=trace_ctx.trace_id if trace_ctx else None,
         )
@@ -193,7 +286,7 @@ def _factory(session):
         )
 
         # Get available artifacts for validation
-        available_artifacts = _available_artifact_aliases(session)
+        available_artifacts = lineage["aliases"]
 
         # Critical validation: evidence must be properly bound
         is_valid, binding_errors = validate_evidence_binding(finding, available_artifacts)
@@ -216,6 +309,9 @@ def _factory(session):
         )
 
         session.findings.append(finding)
+        runtime = getattr(session, "analysis_runtime", None)
+        if runtime is not None and hasattr(runtime, "record_finding"):
+            runtime.record_finding(finding)
 
         # Build response message
         response_msg = f"Finding {finding_id} recorded: {statement[:80]}..."

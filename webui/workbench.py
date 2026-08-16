@@ -17,6 +17,10 @@ STATUS_LABELS = {
     "skipped": "跳过",
     "completed": "已完成",
     "cancelled": "已取消",
+    "paused": "已暂停",
+    "awaiting_confirmation": "待确认",
+    "confirmed": "已确认",
+    "active": "执行中",
 }
 
 
@@ -25,6 +29,11 @@ def empty_workbench_state() -> dict[str, Any]:
         "task_id": None,
         "run_id": None,
         "run_status": "pending",
+        "plan_status": "active",
+        "plan_version": 1,
+        "plan_revisions": [],
+        "plan_confirmation": None,
+        "pause_reason": None,
         "semantic_provider": None,
         "semantic_context_version": None,
         "question": "",
@@ -32,6 +41,7 @@ def empty_workbench_state() -> dict[str, Any]:
         "assets": [],
         "executions": [],
         "artifacts": [],
+        "findings": [],
     }
 
 
@@ -61,6 +71,8 @@ def apply_analysis_event(
         "task_id",
         "run_id",
         "run_status",
+        "plan_status",
+        "plan_version",
         "semantic_provider",
         "semantic_context_version",
     ):
@@ -90,6 +102,11 @@ def apply_runtime_snapshot(
             "task_id": task.get("task_id") or updated.get("task_id"),
             "run_id": run.get("run_id") or updated.get("run_id"),
             "run_status": run.get("status") or updated.get("run_status"),
+            "plan_status": run.get("plan_status") or updated.get("plan_status"),
+            "plan_version": run.get("plan_version") or updated.get("plan_version", 1),
+            "plan_revisions": deepcopy(run.get("plan_revisions") or []),
+            "plan_confirmation": deepcopy(run.get("plan_confirmation")),
+            "pause_reason": run.get("pause_reason"),
             "question": task.get("question") or updated.get("question", ""),
             "semantic_provider": (task.get("external_context") or {}).get("provider"),
             "semantic_context_version": (task.get("external_context") or {}).get(
@@ -99,6 +116,9 @@ def apply_runtime_snapshot(
             "assets": deepcopy(snapshot.get("assets") or updated.get("assets", [])),
             "executions": deepcopy(
                 snapshot.get("executions") or updated.get("executions", [])
+            ),
+            "findings": deepcopy(
+                snapshot.get("findings") or updated.get("findings", [])
             ),
         }
     )
@@ -134,9 +154,13 @@ def render_run_summary_html(state: dict[str, Any]) -> str:
         )
         if item
     ) or "本地 Schema"
+    plan_status = str(state.get("plan_status") or "active")
+    plan_label = STATUS_LABELS.get(plan_status, plan_status)
+    plan_version = int(state.get("plan_version") or 1)
     return (
         '<div class="run-summary">'
         f'<div><span class="summary-label">运行状态</span><strong>{html.escape(label)}</strong></div>'
+        f'<div><span class="summary-label">计划</span><strong>v{plan_version} · {html.escape(plan_label)}</strong></div>'
         f'<div><span class="summary-label">步骤</span><strong>{completed}/{len(steps)}</strong></div>'
         f'<div><span class="summary-label">修正</span><strong>{revisions}</strong></div>'
         f'<div><span class="summary-label">失败</span><strong>{failed}</strong></div>'
@@ -168,10 +192,37 @@ def render_steps_html(steps: list[dict]) -> str:
     return '<div class="step-list">' + "".join(rows) + "</div>"
 
 
-def render_artifacts_html(artifacts: list[dict], file_server_base: str) -> str:
-    if not artifacts:
+def render_artifacts_html(
+    artifacts: list[dict],
+    file_server_base: str,
+    *,
+    run_id: str | None = None,
+    run_status: str | None = None,
+) -> str:
+    package_available = bool(run_id and run_status == "completed")
+    if not artifacts and not package_available:
         return '<div class="empty-state">图表、表格和报告将在生成后集中显示。</div>'
     rows = []
+    if package_available:
+        package_path = f"/analysis/runs/{run_id}/package"
+        rebuild_path = f"/analysis/runs/{run_id}/report/rebuild"
+        package_url = (
+            f"{file_server_base.rstrip('/')}{package_path}"
+            if file_server_base else package_path
+        )
+        rebuild_url = (
+            f"{file_server_base.rstrip('/')}{rebuild_path}"
+            if file_server_base else rebuild_path
+        )
+        rows.append(
+            '<div class="artifact-row analysis-package-row">'
+            '<div><div class="artifact-name">可复现分析包</div>'
+            '<div class="artifact-meta">zip · task / data / execution / evidence / report</div></div>'
+            '<div class="artifact-actions">'
+            f'<a href="{html.escape(rebuild_url, quote=True)}" target="_blank">重建报告</a>'
+            f'<a href="{html.escape(package_url, quote=True)}" target="_blank">下载分析包</a>'
+            '</div></div>'
+        )
     for artifact in artifacts:
         name = html.escape(str(artifact.get("name") or "未命名产物"))
         artifact_type = html.escape(str(artifact.get("artifact_type") or "file"))
@@ -207,6 +258,52 @@ def render_assets_html(assets: list[dict]) -> str:
             f'<div class="asset-fields">{time_text}</div></div>'
         )
     return '<div class="asset-list">' + "".join(rows) + "</div>"
+
+
+def render_findings_html(
+    findings: list[dict],
+    file_server_base: str,
+    run_id: str | None,
+) -> str:
+    if not findings:
+        return '<div class="empty-state compact">记录 Finding 后可在此反查证据血缘。</div>'
+    rows = []
+    for finding in findings:
+        finding_id = str(finding.get("finding_id") or "")
+        statement = html.escape(str(finding.get("statement") or "未命名结论"))
+        evidence = finding.get("evidence") or []
+        execution_ids = {
+            execution_id
+            for item in evidence
+            for execution_id in item.get("source_execution_ids") or []
+        }
+        artifact_ids = {
+            artifact_id
+            for item in evidence
+            for artifact_id in item.get("source_artifact_ids") or []
+        }
+        asset_ids = {
+            asset_id
+            for item in evidence
+            for asset_id in item.get("source_asset_ids") or []
+        }
+        detail_path = f"/analysis/runs/{run_id}/findings/{finding_id}" if run_id and finding_id else ""
+        detail_url = (
+            f"{file_server_base.rstrip('/')}{detail_path}"
+            if file_server_base and detail_path else detail_path
+        )
+        action = (
+            f'<a href="{html.escape(detail_url, quote=True)}" target="_blank">查看血缘</a>'
+            if detail_url else ""
+        )
+        rows.append(
+            '<div class="finding-row">'
+            f'<div><div class="finding-id">{html.escape(finding_id)}</div>'
+            f'<div class="finding-statement">{statement}</div>'
+            f'<div class="finding-meta">{len(evidence)} 条证据 · {len(execution_ids)} 次执行 · '
+            f'{len(asset_ids)} 个数据版本 · {len(artifact_ids)} 个产物</div></div>{action}</div>'
+        )
+    return '<div class="finding-list">' + "".join(rows) + "</div>"
 
 
 def render_executions_html(executions: list[dict]) -> str:

@@ -12,18 +12,18 @@ The analysis follows a strict state machine with stage-based tool restrictions:
 - Purpose: Assess data quality and define metrics
 
 **Stage 3: BASIC_EDA**
-- Allowed tools: `python_repl`, `declare_metric`, `declare_assumption`
+- Allowed tools: `compare_groups`, `analyze_time_trend`, `detect_anomalies`, `decompose_contribution`, `python_repl`, `declare_metric`, `declare_assumption`
 - Prerequisites: Must call `eda_profile` first
 - Purpose: Exploratory analysis, distributions, correlations
 
 **Stage 4: DEEP_DIVE**
-- Allowed tools: `python_repl`, `record_finding`, `declare_metric`, `declare_assumption`
+- Allowed tools: `compare_groups`, `analyze_time_trend`, `detect_anomalies`, `decompose_contribution`, `python_repl`, `record_finding`, `declare_metric`, `declare_assumption`
 - Prerequisites: Must complete basic EDA first
 - Purpose: Focused analysis, hypothesis testing
 - **IMPORTANT**: Must call `record_finding` to document insights
 
 **Stage 5: CONCLUSION_SYNTHESIS**
-- Allowed tools: `record_finding`, `python_repl`
+- Allowed tools: `record_finding`, `decompose_contribution`, `python_repl`
 - Prerequisites: Must have recorded findings from deep dive
 - Purpose: Organize and synthesize findings
 

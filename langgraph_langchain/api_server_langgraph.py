@@ -20,6 +20,7 @@ import json
 import os
 import shutil
 import uuid
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -29,7 +30,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,12 @@ from langgraph_langchain.tracing import TraceContext
 from langgraph_langchain.user_friendly_response import create_transformer
 from langgraph_langchain.runtime.events import RuntimeStreamContextReader, build_analysis_event
 from langgraph_langchain.runtime.history import RunHistoryStore
+from langgraph_langchain.runtime.package import build_analysis_package
+from langgraph_langchain.runtime.finding_lineage import (
+    build_runtime_lineage_graph,
+    expand_finding_lineage,
+)
+from langgraph_langchain.runtime.report_rebuild import write_rebuilt_report
 from langgraph_langchain.semantic.models import SemanticResolution
 from langgraph_langchain.config import (
     DEEPSEEK_API_KEY,
@@ -109,6 +116,8 @@ SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 # session_id -> asyncio.Event (set to request cancellation of a running agent)
 _ACTIVE_CANCELS: Dict[str, asyncio.Event] = {}
+# session_id -> event requesting a recoverable pause at the next tool boundary
+_ACTIVE_PAUSES: Dict[str, asyncio.Event] = {}
 
 # Lock to prevent race conditions on SESSIONS / _ACTIVE_CANCELS mutations
 _sessions_lock = asyncio.Lock()
@@ -337,6 +346,7 @@ def _prune_stale_sessions(now: Optional[datetime] = None) -> List[str]:
             continue
         workspace = Path(session.get("workspace", ""))
         _ACTIVE_CANCELS.pop(sid, None)
+        _ACTIVE_PAUSES.pop(sid, None)
         SESSIONS.pop(sid, None)
         if workspace.exists():
             shutil.rmtree(workspace, ignore_errors=True)
@@ -449,6 +459,7 @@ def _cleanup_session(session_id: str, remove_workspace: bool = False) -> None:
             shutil.rmtree(ws, ignore_errors=True)
     SESSIONS.pop(session_id, None)
     _ACTIVE_CANCELS.pop(session_id, None)
+    _ACTIVE_PAUSES.pop(session_id, None)
     _save_sessions()
 
 
@@ -600,8 +611,10 @@ async def _run_analysis_stream(
     """
     session_workspace = get_session_workspace(session_id)
     cancel_event = asyncio.Event()
+    pause_event = asyncio.Event()
     async with _sessions_lock:
         _ACTIVE_CANCELS[session_id] = cancel_event
+        _ACTIVE_PAUSES[session_id] = pause_event
     parts: List[str] = []
     gen_files: List[Dict[str, Any]] = []
 
@@ -626,6 +639,7 @@ async def _run_analysis_stream(
                 api_base=DEEPSEEK_API_BASE,
                 session_id=session_id,
                 cancel_event=cancel_event,
+                pause_event=pause_event,
                 semantic_context=semantic_context,
                 task_question=task_question,
                 force_new_run=force_new_run,
@@ -642,8 +656,18 @@ async def _run_analysis_stream(
     finally:
         async with _sessions_lock:
             _ACTIVE_CANCELS.pop(session_id, None)
+            _ACTIVE_PAUSES.pop(session_id, None)
             _save_sessions()
         _save_sessions()
+
+    try:
+        runtime_status = json.loads(
+            (session_workspace / ".analysis_runtime.json").read_text(encoding="utf-8")
+        ).get("run", {}).get("status")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        runtime_status = None
+    if runtime_status in {"paused", "awaiting_confirmation"}:
+        return
 
     output = "".join(parts) or "No output."
     failure = _structured_failure_from_output(output)
@@ -772,6 +796,31 @@ class ChatCompletionRequest(BaseModel):
 
 class StepRetryRequest(BaseModel):
     reason: Optional[str] = None
+
+
+class PlanPauseRequest(BaseModel):
+    reason: str = "Paused by user"
+    require_confirmation: bool = False
+
+
+class PlanStepRequest(BaseModel):
+    step_id: Optional[str] = None
+    objective: str
+    method: str
+    required_inputs: List[str] = Field(default_factory=list)
+    expected_outputs: List[str] = Field(default_factory=list)
+    depends_on: List[str] = Field(default_factory=list)
+
+
+class PlanRevisionRequest(BaseModel):
+    reason: str
+    revised_by: str = "user"
+    steps: List[PlanStepRequest]
+
+
+class PlanConfirmationRequest(BaseModel):
+    confirmed_by: str = "user"
+    note: Optional[str] = None
 
 
 class FileUploadResponse(BaseModel):
@@ -1094,6 +1143,18 @@ async def resume_session(session_id: str):
 
     workspace_dir = get_session_workspace(session_id)
 
+    try:
+        runtime_snapshot = json.loads(
+            (workspace_dir / ".analysis_runtime.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        runtime_snapshot = {}
+    if (runtime_snapshot.get("run") or {}).get("plan_status") == "awaiting_confirmation":
+        raise HTTPException(
+            status_code=409,
+            detail="The revised plan must be confirmed before analysis can resume",
+        )
+
     # Load saved state
     from langgraph_langchain.session_persistence import get_session_persistence
     persistence = get_session_persistence()
@@ -1129,8 +1190,10 @@ async def resume_session(session_id: str):
 
     instruction = restore_state.get("user_question", "Continue analysis")
     cancel_event = asyncio.Event()
+    pause_event = asyncio.Event()
     async with _sessions_lock:
         _ACTIVE_CANCELS[session_id] = cancel_event
+        _ACTIVE_PAUSES[session_id] = pause_event
 
     parts: List[str] = []
     gen_files: List[Dict[str, Any]] = []
@@ -1159,6 +1222,7 @@ async def resume_session(session_id: str):
                     api_base=DEEPSEEK_API_BASE,
                     session_id=session_id,
                     cancel_event=cancel_event,
+                    pause_event=pause_event,
                     restore_state=restore_state,
                     semantic_context=semantic_context,
                 ):
@@ -1188,8 +1252,14 @@ async def resume_session(session_id: str):
                         payload["generated_files"] = artifacts
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
-            # Clear persisted state after successful resume
-            persistence.clear(workspace_dir)
+            try:
+                final_status = json.loads(
+                    (workspace_dir / ".analysis_runtime.json").read_text(encoding="utf-8")
+                ).get("run", {}).get("status")
+            except (OSError, json.JSONDecodeError, AttributeError):
+                final_status = None
+            if final_status not in {"paused", "awaiting_confirmation"}:
+                persistence.clear(workspace_dir)
 
             # Final chunk
             yield f"data: {json.dumps({'choices': [{'delta': {'content': ''}, 'index': 0, 'finish_reason': 'stop'}]})}\n\n"
@@ -1210,6 +1280,7 @@ async def resume_session(session_id: str):
         finally:
             async with _sessions_lock:
                 _ACTIVE_CANCELS.pop(session_id, None)
+                _ACTIVE_PAUSES.pop(session_id, None)
                 _save_sessions()
 
     return StreamingResponse(
@@ -1279,12 +1350,212 @@ async def get_analysis_run(run_id: str):
     return snapshot
 
 
+def _load_mutable_analysis_runtime(run_id: str):
+    """Load the current workspace runtime and reject edits to archived runs."""
+    from langgraph_langchain.runtime import AnalysisRuntime
+
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    task = snapshot.get("task") or {}
+    session_id = task.get("session_id")
+    workspace = WORKSPACE_DIR / str(session_id)
+    try:
+        current = json.loads(
+            (workspace / ".analysis_runtime.json").read_text(encoding="utf-8")
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Current analysis runtime not found") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail=f"Unable to read current runtime: {exc}") from exc
+    if (current.get("run") or {}).get("run_id") != run_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Archived plans are immutable; only the current run can be controlled",
+        )
+    runtime = AnalysisRuntime(
+        workspace_dir=workspace,
+        session_id=str(session_id),
+        question=str(task.get("question") or ""),
+        external_context=task.get("external_context"),
+    )
+    if runtime.run.run_id != run_id:
+        raise HTTPException(status_code=409, detail="Run changed while plan control was loading")
+    return runtime
+
+
+@app.get("/analysis/runs/{run_id}/plan")
+async def get_analysis_plan(run_id: str):
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    run = snapshot.get("run") or {}
+    return {
+        "run_id": run_id,
+        "run_status": run.get("status"),
+        "plan_version": run.get("plan_version", 1),
+        "plan_status": run.get("plan_status", "active"),
+        "pause_reason": run.get("pause_reason"),
+        "paused_at": run.get("paused_at"),
+        "steps": run.get("steps") or [],
+        "revisions": run.get("plan_revisions") or [],
+        "confirmation": run.get("plan_confirmation"),
+    }
+
+
+@app.post("/analysis/runs/{run_id}/plan/pause")
+async def pause_analysis_plan(run_id: str, request: Optional[PlanPauseRequest] = None):
+    request = request or PlanPauseRequest()
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    session_id = str((snapshot.get("task") or {}).get("session_id") or "")
+    async with _sessions_lock:
+        event = _ACTIVE_PAUSES.get(session_id)
+        if event is not None:
+            event.reason = request.reason
+            event.require_confirmation = request.require_confirmation
+            event.set()
+            return {
+                "run_id": run_id,
+                "plan_status": "pause_requested",
+                "message": "Pause will take effect at the next safe tool boundary",
+            }
+    runtime = _load_mutable_analysis_runtime(run_id)
+    try:
+        run = runtime.pause_plan(
+            request.reason,
+            require_confirmation=request.require_confirmation,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return run.model_dump(mode="json")
+
+
+@app.post("/analysis/runs/{run_id}/plan/revise")
+async def revise_analysis_plan(run_id: str, request: PlanRevisionRequest):
+    runtime = _load_mutable_analysis_runtime(run_id)
+    steps = [item.model_dump(exclude_none=True) for item in request.steps]
+    try:
+        run = runtime.revise_plan(
+            steps=steps,
+            reason=request.reason,
+            revised_by=request.revised_by,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return run.model_dump(mode="json")
+
+
+@app.post("/analysis/runs/{run_id}/plan/confirm")
+async def confirm_analysis_plan(
+    run_id: str,
+    request: Optional[PlanConfirmationRequest] = None,
+):
+    request = request or PlanConfirmationRequest()
+    runtime = _load_mutable_analysis_runtime(run_id)
+    try:
+        run = runtime.confirm_plan(
+            confirmed_by=request.confirmed_by,
+            note=request.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return run.model_dump(mode="json")
+
+
 @app.get("/analysis/runs/{run_id}/artifacts")
 async def get_analysis_run_artifacts(run_id: str):
     artifacts = RunHistoryStore(WORKSPACE_DIR).get_artifacts(run_id)
     if artifacts is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     return {"run_id": run_id, "artifacts": artifacts, "count": len(artifacts)}
+
+
+@app.get("/analysis/runs/{run_id}/findings")
+async def list_analysis_run_findings(run_id: str):
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    findings = []
+    for finding in snapshot.get("findings", []):
+        detail = expand_finding_lineage(snapshot, finding.get("finding_id"))
+        findings.append({
+            "finding_id": finding.get("finding_id"),
+            "statement": finding.get("statement"),
+            "confidence_level": finding.get("confidence_level"),
+            "evidence_level": finding.get("evidence_level"),
+            "is_lineage_complete": bool(detail and detail.get("is_complete")),
+            "lineage_warnings": (detail or {}).get("warnings", []),
+        })
+    return {"run_id": run_id, "findings": findings, "count": len(findings)}
+
+
+@app.get("/analysis/runs/{run_id}/findings/{finding_id}")
+async def get_analysis_run_finding(run_id: str, finding_id: str):
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    detail = expand_finding_lineage(snapshot, finding_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    return detail
+
+
+@app.get("/analysis/runs/{run_id}/lineage")
+async def get_analysis_run_lineage(run_id: str):
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    return build_runtime_lineage_graph(snapshot)
+
+
+@app.get("/analysis/runs/{run_id}/report/rebuild")
+async def download_rebuilt_analysis_report(run_id: str):
+    """Deterministically rebuild a report without using the original report or an LLM."""
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    try:
+        report_path, content_hash = write_rebuilt_report(snapshot, WORKSPACE_DIR)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Unable to rebuild report: {exc}") from exc
+    return FileResponse(
+        report_path,
+        media_type="text/markdown; charset=utf-8",
+        filename=f"{run_id}-rebuilt-report.md",
+        headers={
+            "X-Report-Rebuild-Mode": "deterministic",
+            "X-Content-SHA256": content_hash,
+        },
+    )
+
+
+@app.get("/analysis/runs/{run_id}/package")
+async def download_analysis_package(run_id: str):
+    """Build and download a portable, hash-manifested analysis package."""
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    try:
+        package_path = build_analysis_package(
+            snapshot=snapshot,
+            workspace_root=WORKSPACE_DIR,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
+        raise HTTPException(status_code=500, detail=f"Unable to build analysis package: {exc}") from exc
+    return FileResponse(
+        package_path,
+        media_type="application/zip",
+        filename=f"{run_id}-analysis-package.zip",
+        headers={"X-Analysis-Package-Version": "1.0"},
+    )
 
 
 @app.get("/analysis/metrics")

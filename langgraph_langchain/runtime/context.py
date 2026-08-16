@@ -9,13 +9,15 @@ import re
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from langgraph_langchain.data.assets import DataAsset, hash_file
 from langgraph_langchain.runtime.models import (
     AnalysisRun,
     AnalysisTask,
     ExecutionResult,
+    PlanConfirmation,
+    PlanRevision,
     RuntimeArtifact,
     RuntimePlanStep,
     new_id,
@@ -69,6 +71,9 @@ class AnalysisRuntime:
         self.assets: dict[str, DataAsset] = {}
         self.executions: list[ExecutionResult] = []
         self.artifacts: dict[str, RuntimeArtifact] = {}
+        self.findings: list[dict[str, Any]] = []
+        self.metric_definitions: list[dict[str, Any]] = []
+        self.assumptions: list[dict[str, Any]] = []
         if force_new_run:
             self._create_retry_run(
                 question=question,
@@ -184,6 +189,45 @@ class AnalysisRuntime:
         self._persist()
         return result
 
+    def record_finding(self, finding) -> dict[str, Any]:
+        """Persist one structured finding as part of the authoritative run snapshot."""
+        payload = finding.model_dump(mode="json") if hasattr(finding, "model_dump") else dict(finding)
+        finding_id = payload.get("finding_id")
+        if not finding_id:
+            raise ValueError("Finding is missing finding_id")
+        for index, existing in enumerate(self.findings):
+            if existing.get("finding_id") == finding_id:
+                self.findings[index] = payload
+                self._persist()
+                return payload
+        self.findings.append(payload)
+        self._persist()
+        return payload
+
+    def record_metric_definition(self, metric_definition) -> dict[str, Any]:
+        payload = (
+            metric_definition.model_dump(mode="json")
+            if hasattr(metric_definition, "model_dump") else dict(metric_definition)
+        )
+        metric_name = payload.get("metric_name")
+        if not metric_name:
+            raise ValueError("Metric definition is missing metric_name")
+        for index, existing in enumerate(self.metric_definitions):
+            if existing.get("metric_name") == metric_name:
+                self.metric_definitions[index] = payload
+                self._persist()
+                return payload
+        self.metric_definitions.append(payload)
+        self._persist()
+        return payload
+
+    def record_assumption(self, assumption) -> dict[str, Any]:
+        payload = assumption.model_dump(mode="json") if hasattr(assumption, "model_dump") else dict(assumption)
+        if payload not in self.assumptions:
+            self.assumptions.append(payload)
+            self._persist()
+        return payload
+
     def start_step(
         self,
         *,
@@ -195,18 +239,37 @@ class AnalysisRuntime:
     ) -> RuntimePlanStep:
         """Append and start one observable runtime step."""
         now = utc_now()
-        step = RuntimePlanStep(
-            objective=objective,
-            method=method,
-            required_inputs=list(required_inputs or self.task.input_asset_ids),
-            expected_outputs=list(expected_outputs or []),
-            depends_on=list(depends_on or []),
-            status="running",
-            started_at=now,
+        step = next(
+            (
+                item
+                for item in self.run.steps
+                if item.status == "pending" and item.method == method
+            ),
+            None,
         )
-        self.run.steps.append(step)
+        if step is None:
+            step = RuntimePlanStep(
+                objective=objective,
+                method=method,
+                required_inputs=list(required_inputs or self.task.input_asset_ids),
+                expected_outputs=list(expected_outputs or []),
+                depends_on=list(depends_on or []),
+                status="running",
+                started_at=now,
+            )
+            self.run.steps.append(step)
+        else:
+            step.status = "running"
+            step.started_at = now
+            step.completed_at = None
+            step.error = None
+            if not step.required_inputs:
+                step.required_inputs = list(required_inputs or self.task.input_asset_ids)
+            if not step.expected_outputs:
+                step.expected_outputs = list(expected_outputs or [])
         self.run.current_step_id = step.step_id
         self.run.status = "running"
+        self.run.plan_status = "active"
         self.run.updated_at = now
         self._persist()
         return step
@@ -241,9 +304,121 @@ class AnalysisRuntime:
         if status in {"failed", "cancelled"}:
             self.fail_open_steps(error or status, persist=False)
         self.run.status = status
+        if status == "completed":
+            self.run.plan_status = "completed"
         self.run.current_step_id = None
         self.run.updated_at = utc_now()
         self._persist()
+
+    def pause_plan(self, reason: str, *, require_confirmation: bool = False) -> AnalysisRun:
+        """Pause execution at a recoverable boundary and persist the control state."""
+        if self.run.status in {"completed", "failed", "cancelled"}:
+            raise ValueError(f"Run in status '{self.run.status}' cannot be paused")
+        now = utc_now()
+        for step in self.run.steps:
+            if step.status == "running":
+                step.status = "paused"
+                step.completed_at = now
+        self.run.current_step_id = None
+        self.run.pause_reason = reason.strip() or "Paused by user"
+        self.run.paused_at = now
+        self.run.plan_status = "awaiting_confirmation" if require_confirmation else "paused"
+        self.run.status = "awaiting_confirmation" if require_confirmation else "paused"
+        self.run.updated_at = now
+        self._persist()
+        return self.run
+
+    def revise_plan(
+        self,
+        *,
+        steps: list[dict[str, Any]],
+        reason: str,
+        revised_by: str = "user",
+    ) -> AnalysisRun:
+        """Replace only unexecuted work and create an immutable plan revision."""
+        if self.run.status not in {"paused", "awaiting_confirmation", "failed"}:
+            raise ValueError("Plan can only be revised while paused or awaiting confirmation")
+        if not reason.strip():
+            raise ValueError("Plan revision reason must be non-empty")
+        if not steps:
+            raise ValueError("Plan revision must contain at least one pending step")
+
+        preserved = [
+            item
+            for item in self.run.steps
+            if item.status not in {"pending", "paused"}
+        ]
+        revised_steps: list[RuntimePlanStep] = []
+        known_ids = {item.step_id for item in preserved}
+        for raw in steps:
+            step = RuntimePlanStep.model_validate({**raw, "status": "pending"})
+            if step.step_id in known_ids:
+                raise ValueError(f"Duplicate plan step id: {step.step_id}")
+            if step.step_id in step.depends_on:
+                raise ValueError(f"Plan step '{step.step_id}' cannot depend on itself")
+            unknown = [item for item in step.depends_on if item not in known_ids]
+            if unknown:
+                raise ValueError(
+                    f"Plan step '{step.step_id}' has unknown or forward dependencies: {', '.join(unknown)}"
+                )
+            known_ids.add(step.step_id)
+            revised_steps.append(step)
+
+        self.run.steps = preserved + revised_steps
+        self.run.plan_version += 1
+        self.run.plan_revisions.append(
+            PlanRevision(
+                version=self.run.plan_version,
+                reason=reason.strip(),
+                revised_by=revised_by.strip() or "user",
+                steps=[item.model_dump(mode="json") for item in self.run.steps],
+            )
+        )
+        self.run.plan_confirmation = None
+        self.run.plan_status = "awaiting_confirmation"
+        self.run.status = "awaiting_confirmation"
+        self.run.pause_reason = reason.strip()
+        self.run.current_step_id = None
+        self.run.updated_at = utc_now()
+        self._persist()
+        return self.run
+
+    def confirm_plan(
+        self,
+        *,
+        confirmed_by: str = "user",
+        note: Optional[str] = None,
+    ) -> AnalysisRun:
+        if self.run.plan_status != "awaiting_confirmation":
+            raise ValueError("Plan is not awaiting confirmation")
+        self.run.plan_confirmation = PlanConfirmation(
+            version=self.run.plan_version,
+            confirmed_by=confirmed_by.strip() or "user",
+            note=note.strip() if note else None,
+        )
+        self.run.plan_status = "confirmed"
+        self.run.status = "paused"
+        self.run.updated_at = utc_now()
+        self._persist()
+        return self.run
+
+    def resume_plan(self) -> AnalysisRun:
+        if self.run.plan_status == "awaiting_confirmation":
+            raise ValueError("Plan must be confirmed before it can resume")
+        if self.run.status not in {"paused", "running"}:
+            raise ValueError(f"Run in status '{self.run.status}' cannot resume")
+        for step in self.run.steps:
+            if step.status == "paused":
+                step.status = "pending"
+                step.started_at = None
+                step.completed_at = None
+        self.run.plan_status = "active"
+        self.run.status = "running"
+        self.run.pause_reason = None
+        self.run.paused_at = None
+        self.run.updated_at = utc_now()
+        self._persist()
+        return self.run
 
     def fail_open_steps(self, error: str, *, persist: bool = True) -> None:
         now = utc_now()
@@ -265,6 +440,9 @@ class AnalysisRuntime:
             "assets": [asset.model_dump(mode="json") for asset in self.assets.values()],
             "executions": [item.model_dump(mode="json") for item in self.executions],
             "artifacts": [item.model_dump(mode="json") for item in self.artifacts.values()],
+            "findings": list(self.findings),
+            "metric_definitions": list(self.metric_definitions),
+            "assumptions": list(self.assumptions),
         }
 
     def _restore(self, question: str, external_context: Optional[dict]) -> bool:
@@ -294,6 +472,11 @@ class AnalysisRuntime:
                 item["artifact_id"]: RuntimeArtifact.model_validate(item)
                 for item in raw.get("artifacts", [])
             }
+            self.findings = [dict(item) for item in raw.get("findings", [])]
+            self.metric_definitions = [
+                dict(item) for item in raw.get("metric_definitions", [])
+            ]
+            self.assumptions = [dict(item) for item in raw.get("assumptions", [])]
             return True
         except (KeyError, OSError, ValueError, json.JSONDecodeError):
             return False
@@ -333,6 +516,9 @@ class AnalysisRuntime:
         self.assets = {}
         self.executions = []
         self.artifacts = {}
+        self.findings = []
+        self.metric_definitions = []
+        self.assumptions = []
         self.run = AnalysisRun(
             task_id=self.task.task_id,
             parent_run_id=parent_run_id,

@@ -9,7 +9,7 @@
    - whether there is a time field for trend analysis
    - what anomalies / outliers / missingness need verification
    - what hypotheses or business questions should be checked next
-6. Use `python_repl` for deeper custom analysis in small steps.
+6. Prefer the formal tools `compare_groups`, `analyze_time_trend`, `decompose_contribution`, and `detect_anomalies` for common analysis. Use `python_repl` only for methods those contracts cannot express.
 7. **IMPORTANT**: After each significant finding, call `record_finding` to document:
    - The conclusion statement
    - Supporting evidence (numbers, percentages, groups, time windows)
@@ -33,8 +33,8 @@ Analysis is complete - and you MUST call `finish_report` - as soon as ALL of the
 **Required dimensions** (cover these, then finish):
 - Data overview: row/column counts, key field types, obvious quality issues.
 - Core metrics: define them with `declare_metric`, then compute them.
-- Grouped comparison: compare the key categorical dimension(s).
-- Trend over time: only if a date/datetime field exists.
+- Grouped comparison: compare the key categorical dimension(s), preferably with `compare_groups`.
+- Trend over time: only if a date/datetime field exists, preferably with `analyze_time_trend`.
 
 **Optional dimensions** (skip unless they directly serve the user's question):
 - Cross-dimensional analysis, anomaly deep-dive, extra visualizations, exhaustive subgroup sweeps.

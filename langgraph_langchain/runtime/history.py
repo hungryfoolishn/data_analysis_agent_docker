@@ -94,8 +94,45 @@ class RunHistoryStore:
         for path in self.workspace_root.glob(f"*/.analysis_runs/{run_id}.json"):
             snapshot = self._load_path(path)
             if snapshot is not None:
+                self._load_legacy_findings(snapshot)
                 return snapshot
         return None
+
+    def _load_legacy_findings(self, snapshot: dict[str, Any]) -> None:
+        """Hydrate findings from the legacy artifact without trusting external paths."""
+        if snapshot.get("findings"):
+            return
+        artifact = next(
+            (
+                item for item in snapshot.get("artifacts", [])
+                if item.get("name") == "analysis_findings.json"
+            ),
+            None,
+        )
+        if artifact is None:
+            snapshot["findings"] = []
+            return
+        try:
+            path = Path(str(artifact.get("path") or "")).resolve(strict=True)
+            path.relative_to(self.workspace_root)
+            if path.is_symlink() or not path.is_file():
+                raise ValueError("unsafe findings path")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            snapshot["findings"] = [dict(item) for item in payload.get("findings", [])]
+            if not snapshot.get("metric_definitions"):
+                snapshot["metric_definitions"] = [
+                    dict(item) for item in payload.get("metric_definitions", [])
+                ]
+            if not snapshot.get("assumptions"):
+                snapshot["assumptions"] = [
+                    dict(item) for item in payload.get("assumptions", [])
+                ]
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
+            snapshot["findings"] = []
+
+    def get_findings(self, run_id: str) -> Optional[list[dict[str, Any]]]:
+        snapshot = self.get_run(run_id)
+        return None if snapshot is None else list(snapshot.get("findings", []))
 
     def get_artifacts(self, run_id: str) -> Optional[list[dict[str, Any]]]:
         snapshot = self.get_run(run_id)

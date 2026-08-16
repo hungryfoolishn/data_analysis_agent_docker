@@ -482,17 +482,25 @@ def _factory(session):
         findings_path.write_text(json.dumps(findings_data, ensure_ascii=False, indent=2), encoding="utf-8")
         recorder.register_artifact(findings_path)
 
-        # Build lineage graph from session findings
-        from langgraph_langchain.lineage_tracker import build_lineage_from_session
-        lineage_tracker = build_lineage_from_session(
-            session_id=session.session_id,
-            findings=session.findings,
-            artifacts=session.new_artifacts,
-            trace_context=trace_ctx,
-        )
-
-        # Export lineage visualization
-        lineage_data = lineage_tracker.export_for_visualization()
+        # Build lineage from authoritative runtime IDs rather than transient spans.
+        from langgraph_langchain.runtime.finding_lineage import build_runtime_lineage_graph
+        runtime = getattr(session, "analysis_runtime", None)
+        if runtime is not None:
+            for finding in session.findings:
+                runtime.record_finding(finding)
+            for metric_definition in session.metric_definitions:
+                runtime.record_metric_definition(metric_definition)
+            for assumption in session.assumptions:
+                runtime.record_assumption(assumption)
+        runtime_snapshot = runtime.snapshot() if runtime is not None else {
+            "task": {"session_id": session.session_id},
+            "run": {},
+            "assets": [],
+            "executions": [],
+            "artifacts": list(session.new_artifacts),
+            "findings": [finding.model_dump(mode="json") for finding in session.findings],
+        }
+        lineage_data = build_runtime_lineage_graph(runtime_snapshot)
         lineage_path = session.workspace_dir / "lineage_graph.json"
         lineage_path.write_text(json.dumps(lineage_data, ensure_ascii=False, indent=2), encoding="utf-8")
         recorder.register_artifact(lineage_path)

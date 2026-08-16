@@ -136,6 +136,42 @@ class TestEvidenceBindingIntegration:
         assert "[ERROR]" not in result
         assert "F001" in result
 
+    def test_record_finding_binds_runtime_execution_step_asset_and_code(self, tools, session):
+        dataframe = pd.DataFrame({"department": ["A", "B"], "salary": [10, 20]})
+        asset = session.analysis_runtime.register_dataframe(
+            dataframe=dataframe,
+            source_path=Path(session.source_path),
+        )
+        step = session.analysis_runtime.start_step(
+            objective="Calculate salary by department",
+            method="python_repl",
+        )
+        execution = session.analysis_runtime.record_execution(
+            tool_name="python_repl",
+            status="succeeded",
+            step_id=step.step_id,
+            code_or_query="df.groupby('department')['salary'].mean()",
+            stdout_preview="A 10.0 B 20.0",
+        )
+        session.analysis_runtime.complete_step(step.step_id)
+
+        record_finding = next(t for t in tools if t.name == "record_finding")
+        result = record_finding.invoke({
+            "statement": "Department B has the higher mean salary",
+            "evidence_text": "Department B mean=20 and A mean=10.",
+            "source_fields": ["department", "salary"],
+            "group_dimension": "department",
+            "filters": ["salary is not null"],
+            "calculation_method": "GROUP BY department, AVG(salary)",
+        })
+
+        assert "[ERROR]" not in result
+        evidence = session.findings[-1].evidence[0]
+        assert evidence.source_execution_ids == [execution.execution_id]
+        assert evidence.source_step_ids == [step.step_id]
+        assert evidence.source_asset_ids == [asset.asset_id]
+        assert session.analysis_runtime.findings[-1]["finding_id"] == "F001"
+
     def test_high_confidence_finding_requires_strong_evidence(self, tools, session):
         """High confidence finding with weak evidence should fail."""
         record_finding = next(t for t in tools if t.name == "record_finding")

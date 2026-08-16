@@ -162,6 +162,87 @@ GET /health
 }
 ```
 
+### 9. Analysis Run Package
+
+```bash
+GET /analysis/runs/{run_id}/package
+```
+
+返回 `application/zip` 可复现分析包，包含：
+
+- `manifest.json`：包版本、Run 状态、文件大小、SHA-256 和缺失文件声明
+- `metadata/run_snapshot.json`：Task、Run、Step、Execution、Asset、Artifact 元数据
+- `inputs/`：该 Run 使用的工作区内输入数据
+- `artifacts/`：报告、图表、表格、Finding 和血缘文件
+- `replay.py`：按原顺序重放成功的 `python_repl` 步骤，运行前应人工检查代码
+- `README.md`：离线包使用说明
+
+打包器只读取当前 `workspace/` 下的普通文件；越界路径、失效路径和符号链接逃逸不会写入 ZIP，而会记录在 `manifest.json.missing_files` 中。
+
+### 10. Finding Lineage
+
+```bash
+GET /analysis/runs/{run_id}/findings
+GET /analysis/runs/{run_id}/findings/{finding_id}
+GET /analysis/runs/{run_id}/lineage
+```
+
+- Finding 列表返回证据等级、置信度和血缘完整性。
+- Finding 详情展开到输入资产及 SHA-256、Schema 字段、过滤条件、计算方法、Runtime Step、Execution 代码/输出和 Artifact。
+- Run 血缘图返回 `data_source -> field/step -> execution -> artifact/evidence -> finding -> report` 节点与关系。
+- 旧 Run 会尽量从 `analysis_findings.json` 和历史执行记录恢复；缺失的 Step 等信息通过 `warnings` 明确披露，不会伪造完整链路。
+
+### 11. Deterministic Report Rebuild
+
+```bash
+GET /analysis/runs/{run_id}/report/rebuild
+```
+
+不调用 LLM，也不读取原报告正文，仅使用 Run 快照中的 Asset、Execution、Artifact、Finding、MetricDefinition 和 Assumption 重建 Markdown。
+
+- 响应头 `X-Report-Rebuild-Mode: deterministic`。
+- 响应头 `X-Content-SHA256` 可用于验证内容一致性。
+- 没有结构化 Finding 时返回 `422`，不会根据执行日志编造结论。
+- 时间边界未持久化时明确披露，不从字段名或叙述中猜测。
+- 分析包自动包含 `artifacts/rebuilt_report.md`。
+
+### 12. Plan Control
+
+```bash
+GET  /analysis/runs/{run_id}/plan
+POST /analysis/runs/{run_id}/plan/pause
+POST /analysis/runs/{run_id}/plan/revise
+POST /analysis/runs/{run_id}/plan/confirm
+```
+
+暂停活动 Run 会在当前工具安全结束后生效：
+
+```json
+{"reason":"先检查当前结果","require_confirmation":false}
+```
+
+修订只接受剩余步骤，并生成必须确认的新版本：
+
+```json
+{
+  "reason":"缩小分析范围",
+  "revised_by":"analyst",
+  "steps":[
+    {"method":"load_data","objective":"重新加载数据"},
+    {"method":"compare_groups","objective":"比较关键业务分组"},
+    {"method":"finish_report","objective":"生成最终报告"}
+  ]
+}
+```
+
+确认请求示例：
+
+```json
+{"confirmed_by":"reviewer","note":"同意按 v2 执行"}
+```
+
+`awaiting_confirmation` 状态不能调用会话恢复接口；确认后 Run 保持 paused，调用 `/sessions/{session_id}/resume` 才会继续执行。
+
 ## Execution flow
 
 ```text
@@ -174,10 +255,19 @@ POST /v1/chat/completions
 run_analysis_stream(...)
         ↓
 LangGraph Agent tools:
-  load_data → eda_profile → python_repl(多步) → finish_report
+  load_data → eda_profile → formal analysis tools / python_repl → finish_report
         ↓
 workspace/<session_id>/ 产物收集 + SSE 回传
 ```
+
+正式通用分析工具：
+
+- `compare_groups(dimension, metric, aggregation, max_groups)`：按显式维度粒度比较分组。
+- `analyze_time_trend(date_field, metric, frequency, aggregation)`：按日/周/月/季/年聚合趋势。
+- `decompose_contribution(date_field, dimension, metric, frequency, top_k, max_groups)`：对最近两个有效周期做算术贡献拆解，不表示因果。
+- `detect_anomalies(metric)`：使用 1.5 IQR 规则识别源行异常值。
+
+四个工具都返回结构化 JSON，并生成已登记到 Runtime Execution 的 CSV 表格产物。
 
 ## Current behavior highlights
 

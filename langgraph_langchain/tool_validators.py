@@ -36,6 +36,22 @@ class ToolStageValidator:
             ],
             "reason": "Python code can be used throughout analysis"
         },
+        "compare_groups": {
+            "allowed_stages": [AnalysisStage.BASIC_EDA, AnalysisStage.DEEP_DIVE],
+            "reason": "Grouped comparison requires a loaded and profiled dataset"
+        },
+        "analyze_time_trend": {
+            "allowed_stages": [AnalysisStage.BASIC_EDA, AnalysisStage.DEEP_DIVE],
+            "reason": "Trend analysis requires a loaded and profiled dataset"
+        },
+        "detect_anomalies": {
+            "allowed_stages": [AnalysisStage.BASIC_EDA, AnalysisStage.DEEP_DIVE],
+            "reason": "Anomaly detection requires a loaded and profiled dataset"
+        },
+        "decompose_contribution": {
+            "allowed_stages": [AnalysisStage.BASIC_EDA, AnalysisStage.DEEP_DIVE, AnalysisStage.CONCLUSION_SYNTHESIS],
+            "reason": "Contribution decomposition belongs to focused analysis and synthesis"
+        },
         "record_finding": {
             "allowed_stages": [
                 AnalysisStage.BASIC_EDA,
@@ -127,6 +143,22 @@ class ToolStageValidator:
         "delegate_analysis": {
             "required_tools": ["load_data"],
             "reason": "Must load data before delegating analysis sub-tasks"
+        },
+        "compare_groups": {
+            "required_tools": ["load_data", "eda_profile"],
+            "reason": "Must profile data before grouped comparison"
+        },
+        "analyze_time_trend": {
+            "required_tools": ["load_data", "eda_profile"],
+            "reason": "Must profile data before trend analysis"
+        },
+        "detect_anomalies": {
+            "required_tools": ["load_data", "eda_profile"],
+            "reason": "Must profile data before anomaly detection"
+        },
+        "decompose_contribution": {
+            "required_tools": ["load_data", "eda_profile"],
+            "reason": "Must profile data before contribution decomposition"
         }
     }
 
@@ -215,7 +247,7 @@ class ToolStageValidator:
                 return "eda_profile"
 
         if current_stage == AnalysisStage.BASIC_EDA:
-            return "python_repl"
+            return "compare_groups"
 
         if current_stage == AnalysisStage.DEEP_DIVE:
             return "record_finding"

@@ -132,11 +132,56 @@ DeepAnalyze 平台内核
 GET  /analysis/runs?session_id=<id>&limit=50
 GET  /analysis/runs/{run_id}
 GET  /analysis/runs/{run_id}/artifacts
+GET  /analysis/runs/{run_id}/package
+GET  /analysis/runs/{run_id}/findings
+GET  /analysis/runs/{run_id}/findings/{finding_id}
+GET  /analysis/runs/{run_id}/lineage
+GET  /analysis/runs/{run_id}/report/rebuild
 POST /analysis/runs/{run_id}/steps/{step_id}/retry
 GET  /analysis/metrics
 ```
 
+第七批已完成：
+
+- 完成 Run 可从工作台或 `GET /analysis/runs/{run_id}/package` 下载可复现 ZIP。
+- 包含运行快照、输入资产、产物、SHA-256 清单、缺失文件声明和 Python 重放脚本。
+- 打包严格限制在 workspace 根目录内，并通过原子临时文件生成，避免半包和路径逃逸。
+
+第八批已完成：
+
+- Finding 和 Evidence 进入权威 Run 快照，并稳定保存 run、recording execution、source execution、step、asset 和 artifact ID。
+- 无显式 execution ID 时，先沿 artifact 反查，再按 source fields 从已成功计算中选择相关执行。
+- Finding 详情 API 可反查代码、输出、数据文件哈希、Schema 字段、过滤条件、计算方法、步骤和产物。
+- Runtime v2 血缘图以稳定 ID 构建，不再以临时 trace span 作为主要连接依据。
+- 工作台新增证据血缘入口；旧 Run 缺失的连接以部分血缘 warning 披露。
+
+第九批已完成：
+
+- MetricDefinition 和 Assumption 与 Finding 一同进入权威 Run 快照，旧 Run 从 `analysis_findings.json` 只读补载。
+- 确定性重建器按固定模板生成 Summary、Data Context、Key Findings、Data Quality、Analysis、Visualizations 和 Provenance。
+- 重建不调用 LLM、不读取原报告正文；没有 Finding 时拒绝生成，缺失时间边界和血缘时明确披露。
+- 工作台提供重建入口，响应返回内容 SHA-256；分析包自动包含 rebuilt report。
+
+第十批已完成：
+
+- `compare_groups`、`analyze_time_trend`、`decompose_contribution` 和 `detect_anomalies` 成为正式 Agent 工具，不再要求模型通过 `python_repl` 重写通用算法。
+- 每个工具声明输入字段、分析粒度、聚合方式、结构化 Pydantic 输出和明确失败条件。
+- 分组比较限制高基数维度；趋势要求至少两个有效周期；贡献拆解校验前期总量并对账分组贡献；异常检测要求至少四个数值观测。
+- 每次成功调用生成 CSV 表格，并登记 input asset、Runtime Step、Execution 和 Artifact；失败调用也写入带错误类型的 Execution。
+- 贡献拆解写入 `explanation_bundle` 供报告校验使用，并明确限定为算术归因，不构成因果结论。
+- Prompt 和阶段白名单优先引导 Agent 使用正式工具，仅在工具契约无法表达时使用 `python_repl`。
+
+第十一批已完成：
+
+- `AnalysisRun` 增加权威 Plan 状态、暂停原因、暂停时间、版本化修订快照和确认记录；旧 Run 自动按 v1 active 兼容读取。
+- 活动分析可通过控制 API 请求暂停，Agent 会在安全的工具边界保存 Session 恢复点并将 Run 标记为 paused，不把暂停计作失败或成功。
+- 修订只替换 pending/paused 步骤，已经成功、失败或进入报告修正的步骤不可覆盖；依赖 ID、重复 ID 和自依赖受到校验。
+- 每次修订递增 `plan_version`，记录完整步骤快照、原因、操作者和时间，并进入 `awaiting_confirmation`。
+- 未确认的修订计划不能恢复；确认后保存确认人、版本、说明和时间，恢复时把已确认的剩余计划注入 Agent 上下文。
+- 运行时优先消费同方法的 pending 计划步骤，避免恢复后重复创建步骤 ID；SSE 和工作台显示 Plan 版本及状态。
+- 工作台提供暂停、确认和“方法 | 目标”格式的剩余计划编辑控件。
+
 后续顺序：
 
-1. 生成包含报告、产物、执行元数据和运行摘要的可下载分析包。
-2. 使用真实 WrenAI HTTP/SDK adapter 做受治理查询结果联调。
+1. 使用真实 WrenAI HTTP/SDK adapter 做受治理查询结果联调。
+2. 建立大文件分块、统一采样和数据版本缓存协议。

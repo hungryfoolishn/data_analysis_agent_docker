@@ -252,6 +252,60 @@ def test_report_validation_revision_is_not_a_failed_step(tmp_path):
     assert runtime.run.status == "running"
 
 
+def test_runtime_persists_findings_with_run_snapshot(tmp_path):
+    from langgraph_langchain.schemas import EvidenceItem, Finding
+
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="session_findings",
+        question="Find salary pattern",
+    )
+    finding = Finding(
+        finding_id="F001",
+        statement="Mean salary is 15",
+        evidence=[EvidenceItem(evidence_text="Observed mean=15")],
+        run_id=runtime.run.run_id,
+    )
+    runtime.record_finding(finding)
+
+    restored = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="session_findings",
+        question="Find salary pattern",
+    )
+
+    assert restored.findings[0]["finding_id"] == "F001"
+    assert restored.snapshot()["findings"][0]["run_id"] == runtime.run.run_id
+
+
+def test_runtime_persists_metric_definitions_and_assumptions(tmp_path):
+    from langgraph_langchain.schemas import AnalysisAssumption, MetricDefinition
+
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="session_context",
+        question="Define salary metrics",
+    )
+    runtime.record_metric_definition(MetricDefinition(
+        metric_name="mean_salary",
+        definition_text="AVG(salary)",
+        dedup_rule="deduplicate by employee id",
+    ))
+    runtime.record_assumption(AnalysisAssumption(
+        assumption_text="salary uses one currency",
+        risk_level="medium",
+    ))
+
+    restored = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="session_context",
+        question="Define salary metrics",
+    )
+
+    assert restored.metric_definitions[0]["metric_name"] == "mean_salary"
+    assert restored.assumptions[0]["assumption_text"] == "salary uses one currency"
+
+
 def test_terminal_run_status_closes_running_steps(tmp_path):
     runtime = AnalysisRuntime(
         workspace_dir=tmp_path,
@@ -296,6 +350,8 @@ def test_stream_event_metadata_is_additive_and_restorable(tmp_path):
         "run_id": runtime.run.run_id,
         "step_id": step.step_id,
         "run_status": "running",
+        "plan_status": "active",
+        "plan_version": 1,
         "step": step.model_dump(mode="json"),
         "semantic_provider": None,
         "semantic_context_version": None,

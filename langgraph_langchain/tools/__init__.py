@@ -16,6 +16,7 @@ _TOOL_MODULES = [
     "langgraph_langchain.tools.tool_load_data",
     "langgraph_langchain.tools.tool_python_repl",
     "langgraph_langchain.tools.tool_eda_profile",
+    "langgraph_langchain.tools.tool_analysis_methods",
     "langgraph_langchain.tools.tool_record_finding",
     "langgraph_langchain.tools.tool_declare_metric",
     "langgraph_langchain.tools.tool_declare_assumption",

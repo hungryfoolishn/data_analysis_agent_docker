@@ -18,6 +18,8 @@ class RuntimeStreamContextReader:
             "run_id": None,
             "step_id": None,
             "run_status": None,
+            "plan_status": None,
+            "plan_version": None,
             "step": None,
         }
 
@@ -44,6 +46,8 @@ class RuntimeStreamContextReader:
                     selected_step.get("step_id") if selected_step else None
                 ),
                 "run_status": run.get("status"),
+                "plan_status": run.get("plan_status", "active"),
+                "plan_version": run.get("plan_version", 1),
                 "step": selected_step,
                 "semantic_provider": semantic_context.get("provider"),
                 "semantic_context_version": semantic_context.get("context_version"),
@@ -81,6 +85,8 @@ def build_analysis_event(
         "run_id": context.get("run_id"),
         "step_id": context.get("step_id"),
         "run_status": context.get("run_status"),
+        "plan_status": context.get("plan_status"),
+        "plan_version": context.get("plan_version"),
         "step": context.get("step"),
         "semantic_provider": context.get("semantic_provider"),
         "semantic_context_version": context.get("semantic_context_version"),

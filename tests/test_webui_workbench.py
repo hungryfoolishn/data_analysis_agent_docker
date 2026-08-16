@@ -3,6 +3,8 @@ from webui.workbench import (
     apply_runtime_snapshot,
     empty_workbench_state,
     render_executions_html,
+    render_artifacts_html,
+    render_findings_html,
     render_run_summary_html,
     render_steps_html,
     resolve_artifact_url,
@@ -47,14 +49,32 @@ def test_runtime_snapshot_adds_execution_details():
         empty_workbench_state(),
         {
             "task": {"task_id": "task_test", "question": "Find trend"},
-            "run": {"run_id": "run_test", "status": "completed", "steps": []},
+            "run": {
+                "run_id": "run_test",
+                "status": "paused",
+                "plan_status": "awaiting_confirmation",
+                "plan_version": 2,
+                "steps": [],
+            },
             "executions": [{"execution_id": "exec_test", "tool_name": "python_repl"}],
         },
     )
 
     assert state["question"] == "Find trend"
-    assert state["run_status"] == "completed"
+    assert state["run_status"] == "paused"
+    assert state["plan_status"] == "awaiting_confirmation"
+    assert state["plan_version"] == 2
     assert state["executions"][0]["execution_id"] == "exec_test"
+
+
+def test_workbench_summary_shows_plan_version_and_confirmation_state():
+    state = empty_workbench_state()
+    state.update({"plan_version": 3, "plan_status": "awaiting_confirmation"})
+
+    rendered = render_run_summary_html(state)
+
+    assert "v3" in rendered
+    assert "待确认" in rendered
 
 
 def test_workbench_html_escapes_runtime_content():
@@ -95,3 +115,36 @@ def test_workbench_renders_report_revision_separately_from_failure():
     assert "失败</span><strong>0" in summary
     assert "待修正" in steps
     assert "step-needs_revision" in steps
+
+
+def test_completed_run_exposes_analysis_package_download():
+    rendered = render_artifacts_html(
+        [],
+        "http://host:18888",
+        run_id="run_0123456789abcdef0123456789abcdef",
+        run_status="completed",
+    )
+
+    assert "可复现分析包" in rendered
+    assert "http://host:18888/analysis/runs/run_0123456789abcdef0123456789abcdef/package" in rendered
+    assert "http://host:18888/analysis/runs/run_0123456789abcdef0123456789abcdef/report/rebuild" in rendered
+
+
+def test_finding_row_links_to_expanded_lineage_api():
+    rendered = render_findings_html(
+        [{
+            "finding_id": "F001",
+            "statement": "Department B has higher salary",
+            "evidence": [{
+                "source_execution_ids": ["exec_1"],
+                "source_asset_ids": ["asset_1"],
+                "source_artifact_ids": ["artifact_1"],
+            }],
+        }],
+        "http://host:18888",
+        "run_0123456789abcdef0123456789abcdef",
+    )
+
+    assert "1 次执行" in rendered
+    assert "1 个数据版本" in rendered
+    assert "/findings/F001" in rendered

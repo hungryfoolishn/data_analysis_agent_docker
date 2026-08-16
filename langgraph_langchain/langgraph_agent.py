@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import re
@@ -806,6 +807,7 @@ class _Session:
         self.metric_definitions: List[MetricDefinition] = []
         self.assumptions: List[AnalysisAssumption] = []
         self.cancel_event: asyncio.Event = asyncio.Event()
+        self.pause_event: asyncio.Event = asyncio.Event()
         self.consecutive_python_errors = 0
         self.last_progress_marker = ""
         self.logger = _make_session_logger(self.workspace_dir, session_id or "default")
@@ -1344,6 +1346,10 @@ def _runtime_step_spec(tool_name: str) -> tuple[str, list[str]]:
         "load_data": ("Load and inspect the source dataset", ["data_asset", "schema_snapshot"]),
         "eda_profile": ("Profile data quality and distributions", ["eda_profile"]),
         "python_repl": ("Execute an analytical computation", ["analysis_output"]),
+        "compare_groups": ("Compare a metric across groups", ["group_comparison", "table"]),
+        "analyze_time_trend": ("Analyze a metric over time", ["time_trend", "table"]),
+        "decompose_contribution": ("Decompose a period change by group", ["contribution_decomposition", "table"]),
+        "detect_anomalies": ("Detect numeric anomalies", ["anomaly_result", "table"]),
         "record_finding": ("Record a structured evidence-backed finding", ["finding"]),
         "delegate_analysis": ("Delegate a bounded analysis subtask", ["delegated_result"]),
         "finish_report": ("Validate and produce the final analysis report", ["report"]),
@@ -1416,6 +1422,13 @@ def _tool_output_status(output: str) -> str:
         return "needs_revision"
     if normalized.startswith(("[ERROR]", "ERROR:")):
         return "failed"
+    if normalized.startswith("{"):
+        try:
+            parsed = json.loads(normalized)
+            if isinstance(parsed, dict) and parsed.get("error"):
+                return "failed"
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
     return "succeeded"
 
 
@@ -1429,6 +1442,7 @@ async def run_analysis_stream(
     api_base: str,
     session_id: str = "",
     cancel_event: Optional[asyncio.Event] = None,
+    pause_event: Optional[asyncio.Event] = None,
     restore_state: Optional[Dict] = None,
     semantic_context: Optional[Dict] = None,
     task_question: Optional[str] = None,
@@ -1455,6 +1469,11 @@ async def run_analysis_stream(
     session.structured_logger.set_trace_context(trace_context)  # Connect logger to trace context
     if cancel_event is not None:
         session.cancel_event = cancel_event
+    if pause_event is not None:
+        session.pause_event = pause_event
+    runtime = getattr(session, "analysis_runtime", None)
+    if restore_state and runtime is not None and runtime.run.status == "paused":
+        runtime.resume_plan()
     tools = _make_tools(session)
 
     # Build effective prompt: base sections + skills index + memory snapshot
@@ -1507,6 +1526,17 @@ async def run_analysis_stream(
                 f"- {f.get('finding_id', '?')}: {f.get('statement', '')}"
                 for f in prior_findings[:10]
             )
+        pending_plan = []
+        if runtime is not None:
+            pending_plan = [
+                step for step in runtime.run.steps if step.status == "pending"
+            ]
+        plan_summary = ""
+        if pending_plan:
+            plan_summary = "\nConfirmed remaining plan:\n" + "\n".join(
+                f"{index}. [{step.method}] {step.objective}"
+                for index, step in enumerate(pending_plan, start=1)
+            )
         user_msg = HumanMessage(content=(
             f"[RESUME] This is a resumed analysis session.\n"
             f"Task: {instruction}\n"
@@ -1514,9 +1544,10 @@ async def run_analysis_stream(
             f"Previous stage: {restore_state.get('current_stage', 'unknown')}\n"
             f"Steps completed: {restore_state.get('total_steps', 0)}\n"
             f"Current consecutive errors: {restore_state.get('consecutive_python_errors', 0)}\n"
-            f"{findings_summary}\n\n"
+            f"{findings_summary}{plan_summary}\n\n"
             "Please start by calling load_data to re-load the dataset, "
-            "then continue the analysis from where it left off."
+            "then continue the analysis from where it left off. Follow the confirmed "
+            "remaining plan in order unless a step is impossible; disclose any deviation."
         ))
     else:
         user_msg = HumanMessage(content=(
@@ -1549,6 +1580,23 @@ async def run_analysis_stream(
                 log.info("agent_cancelled session=%s after_step=%d", session_id, step)
                 _set_runtime_run_status(session, "cancelled", error="analysis cancelled")
                 yield "\n\n**Analysis cancelled.**\n", []
+                return
+
+            if session.pause_event.is_set() and not active_runtime_steps:
+                try:
+                    from langgraph_langchain.session_persistence import get_session_persistence
+                    get_session_persistence().save(session)
+                except Exception:
+                    log.debug("session_state_save_failed_on_pause step=%d", step)
+                if runtime is not None:
+                    runtime.pause_plan(
+                        getattr(session.pause_event, "reason", "Paused by user"),
+                        require_confirmation=bool(
+                            getattr(session.pause_event, "require_confirmation", False)
+                        ),
+                    )
+                log.info("agent_paused session=%s after_step=%d", session_id, step)
+                yield "\n\n**Analysis paused.** Confirm or revise the plan before continuing.\n", []
                 return
 
             kind = event["event"]

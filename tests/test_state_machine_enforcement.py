@@ -286,13 +286,13 @@ class TestGetNextRecommendedTool:
         )
         assert recommended == "eda_profile"
 
-    def test_basic_eda_recommends_python_repl(self):
-        """BASIC_EDA stage should recommend python_repl"""
+    def test_basic_eda_recommends_formal_group_comparison(self):
+        """BASIC_EDA should prefer a formal method over free-form Python."""
         recommended = ToolStageValidator.get_next_recommended_tool(
             current_stage=AnalysisStage.BASIC_EDA,
             tools_used=["load_data", "eda_profile"]
         )
-        assert recommended == "python_repl"
+        assert recommended == "compare_groups"
 
     def test_deep_dive_recommends_record_finding(self):
         """DEEP_DIVE stage should recommend record_finding"""

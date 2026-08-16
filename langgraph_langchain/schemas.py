@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -78,9 +79,17 @@ class StepExecutionSummary(BaseModel):
 
 
 class EvidenceItem(BaseModel):
+    evidence_id: str = Field(
+        default_factory=lambda: f"evidence_{uuid4().hex}",
+        description="证据唯一标识",
+    )
     evidence_text: str = Field(..., min_length=1, description="支撑结论的证据文本")
     source_fields: List[str] = Field(default_factory=list, description="证据涉及的字段")
     source_artifacts: List[str] = Field(default_factory=list, description="证据涉及的图表或文件")
+    source_artifact_ids: List[str] = Field(default_factory=list, description="证据涉及的产物 ID")
+    source_execution_ids: List[str] = Field(default_factory=list, description="产生证据的执行 ID")
+    source_step_ids: List[str] = Field(default_factory=list, description="产生证据的步骤 ID")
+    source_asset_ids: List[str] = Field(default_factory=list, description="证据使用的数据资产 ID")
     time_window: Optional[str] = Field(default=None, description="证据对应的时间窗口")
     group_dimension: Optional[str] = Field(default=None, description="证据涉及的分组维度")
     filters: List[str] = Field(default_factory=list, description="证据使用的过滤条件")
@@ -168,6 +177,9 @@ class Finding(BaseModel):
     span_id: Optional[str] = Field(default=None, description="生成此结论的 span ID")
     source_tool: Optional[str] = Field(default=None, description="生成此结论的工具名称")
     source_step: Optional[int] = Field(default=None, description="生成此结论的步骤编号")
+    run_id: Optional[str] = Field(default=None, description="所属运行 ID")
+    recorded_by_execution_id: Optional[str] = Field(default=None, description="记录 Finding 的执行 ID")
+    recorded_by_step_id: Optional[str] = Field(default=None, description="记录 Finding 的步骤 ID")
     created_at: Optional[str] = Field(default=None, description="创建时间（ISO 格式）")
 
     @model_validator(mode="after")

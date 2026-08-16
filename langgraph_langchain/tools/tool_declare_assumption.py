@@ -43,6 +43,9 @@ def _factory(session):
         )
 
         session.assumptions.append(assumption)
+        runtime = getattr(session, "analysis_runtime", None)
+        if runtime is not None and hasattr(runtime, "record_assumption"):
+            runtime.record_assumption(assumption)
 
         return f"Assumption recorded: {assumption_text[:80]}..."
 

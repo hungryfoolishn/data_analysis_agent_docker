@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi import HTTPException
 
@@ -179,6 +181,32 @@ def test_history_normalizes_legacy_report_rejections_without_rewriting_snapshot(
     assert snapshot_path.read_text(encoding="utf-8") == original
 
 
+def test_history_hydrates_legacy_findings_artifact(tmp_path):
+    workspace = tmp_path / "session_legacy_findings"
+    runtime = AnalysisRuntime(
+        workspace_dir=workspace,
+        session_id=workspace.name,
+        question="Legacy findings",
+    )
+    findings_path = workspace / "analysis_findings.json"
+    findings_path.write_text(
+        json.dumps({
+            "findings": [{"finding_id": "F001", "statement": "Legacy result", "evidence": []}],
+            "metric_definitions": [{"metric_name": "revenue", "definition_text": "SUM(amount)"}],
+            "assumptions": [{"assumption_text": "amount is booked revenue", "risk_level": "medium"}],
+        }),
+        encoding="utf-8",
+    )
+    runtime.register_artifact(findings_path, created_by_tool="finish_report")
+    runtime.set_run_status("completed")
+
+    loaded = RunHistoryStore(tmp_path).get_run(runtime.run.run_id)
+
+    assert loaded["findings"][0]["finding_id"] == "F001"
+    assert loaded["metric_definitions"][0]["metric_name"] == "revenue"
+    assert loaded["assumptions"][0]["risk_level"] == "medium"
+
+
 @pytest.mark.asyncio
 async def test_analysis_history_query_functions(monkeypatch, tmp_path):
     from langgraph_langchain import api_server_langgraph as api
@@ -194,6 +222,47 @@ async def test_analysis_history_query_functions(monkeypatch, tmp_path):
     assert detail["task"]["session_id"] == workspace.name
     assert artifacts == {"run_id": runtime.run.run_id, "artifacts": [], "count": 0}
     assert metrics["total_runs"] == 1
+
+
+@pytest.mark.asyncio
+async def test_finding_lineage_api_returns_execution_code_and_asset_version(monkeypatch, tmp_path):
+    from langgraph_langchain import api_server_langgraph as api
+    from langgraph_langchain.schemas import EvidenceItem, Finding
+
+    workspace = tmp_path / "session_finding_api"
+    runtime = AnalysisRuntime(
+        workspace_dir=workspace,
+        session_id=workspace.name,
+        question="Inspect result",
+    )
+    step = runtime.start_step(objective="Compute result", method="python_repl")
+    execution = runtime.record_execution(
+        tool_name="python_repl",
+        status="succeeded",
+        step_id=step.step_id,
+        code_or_query="print(42)",
+        stdout_preview="42",
+    )
+    runtime.complete_step(step.step_id)
+    runtime.record_finding(Finding(
+        finding_id="F001",
+        statement="Result is 42",
+        evidence=[EvidenceItem(
+            evidence_text="Observed 42",
+            source_execution_ids=[execution.execution_id],
+            source_step_ids=[step.step_id],
+        )],
+        run_id=runtime.run.run_id,
+    ))
+    monkeypatch.setattr(api, "WORKSPACE_DIR", tmp_path)
+
+    listing = await api.list_analysis_run_findings(runtime.run.run_id)
+    detail = await api.get_analysis_run_finding(runtime.run.run_id, "F001")
+    graph = await api.get_analysis_run_lineage(runtime.run.run_id)
+
+    assert listing["count"] == 1
+    assert detail["evidence_lineage"][0]["executions"][0]["code_or_query"] == "print(42)"
+    assert any(node["id"] == "finding:F001" for node in graph["nodes"])
 
 
 @pytest.mark.asyncio

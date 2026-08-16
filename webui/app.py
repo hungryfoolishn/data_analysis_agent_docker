@@ -26,6 +26,7 @@ from workbench import (
     render_artifacts_html,
     render_assets_html,
     render_executions_html,
+    render_findings_html,
     render_run_summary_html,
     render_steps_html,
 )
@@ -129,6 +130,82 @@ def fetch_runtime_snapshot() -> Optional[Dict[str, Any]]:
     return None
 
 
+def pause_current_plan(reason: str = "Paused from analysis workbench") -> Tuple[bool, str]:
+    run_id = st.session_state.workbench_state.get("run_id")
+    if not run_id:
+        return False, "当前没有可暂停的 Run。"
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/analysis/runs/{run_id}/plan/pause",
+            json={"reason": reason, "require_confirmation": False},
+            timeout=10,
+        )
+        if response.status_code == 200:
+            return True, "暂停请求已提交，将在安全的工具边界生效。"
+        return False, response.text[:300]
+    except Exception as exc:
+        return False, str(exc)
+
+
+def confirm_current_plan() -> Tuple[bool, str]:
+    run_id = st.session_state.workbench_state.get("run_id")
+    if not run_id:
+        return False, "当前没有可确认的 Run。"
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/analysis/runs/{run_id}/plan/confirm",
+            json={"confirmed_by": "workbench-user"},
+            timeout=10,
+        )
+        if response.status_code == 200:
+            return True, "计划已确认，可以恢复分析。"
+        return False, response.text[:300]
+    except Exception as exc:
+        return False, str(exc)
+
+
+def revise_current_plan(text: str, reason: str) -> Tuple[bool, str]:
+    run_id = st.session_state.workbench_state.get("run_id")
+    if not run_id:
+        return False, "当前没有可修订的 Run。"
+    steps = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if "|" not in stripped:
+            return False, f"计划行缺少分隔符：{stripped}"
+        method, objective = (item.strip() for item in stripped.split("|", 1))
+        if not method or not objective:
+            return False, f"计划行不完整：{stripped}"
+        steps.append({"method": method, "objective": objective})
+    if not steps:
+        return False, "至少填写一个剩余步骤，格式为：方法 | 目标。"
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/analysis/runs/{run_id}/plan/revise",
+            json={
+                "reason": reason.strip() or "Revised from analysis workbench",
+                "revised_by": "workbench-user",
+                "steps": steps,
+            },
+            timeout=10,
+        )
+        if response.status_code == 200:
+            return True, "计划修订已保存，确认后才能恢复分析。"
+        return False, response.text[:300]
+    except Exception as exc:
+        return False, str(exc)
+
+
+def refresh_workbench_snapshot() -> None:
+    snapshot = fetch_runtime_snapshot()
+    if snapshot:
+        st.session_state.workbench_state = apply_runtime_snapshot(
+            st.session_state.workbench_state, snapshot
+        )
+
+
 def update_workbench_from_chunk(chunk: Dict[str, Any]) -> bool:
     """Apply an SSE event and refresh details only on lifecycle transitions."""
     event = chunk.get("analysis_event") or {}
@@ -162,6 +239,7 @@ def update_workbench_from_chunk(chunk: Dict[str, Any]) -> bool:
 def render_workbench_views(
     summary_placeholder,
     steps_placeholder,
+    findings_placeholder,
     artifacts_placeholder,
     executions_placeholder,
     assets_placeholder,
@@ -169,9 +247,23 @@ def render_workbench_views(
     state = st.session_state.workbench_state
     summary_placeholder.markdown(render_run_summary_html(state), unsafe_allow_html=True)
     steps_placeholder.markdown(render_steps_html(state.get("steps", [])), unsafe_allow_html=True)
+    findings_placeholder.markdown(
+        render_findings_html(
+            state.get("findings", []),
+            FILE_SERVER_BASE,
+            state.get("run_id"),
+        ),
+        unsafe_allow_html=True,
+    )
     artifacts = state.get("artifacts", []) or st.session_state.generated_files
     artifacts_placeholder.markdown(
-        render_artifacts_html(artifacts, FILE_SERVER_BASE), unsafe_allow_html=True
+        render_artifacts_html(
+            artifacts,
+            FILE_SERVER_BASE,
+            run_id=state.get("run_id"),
+            run_status=state.get("run_status"),
+        ),
+        unsafe_allow_html=True,
     )
     executions_placeholder.markdown(
         render_executions_html(state.get("executions", [])), unsafe_allow_html=True
@@ -749,7 +841,7 @@ def main():
     .run-summary strong { color: #17202a; font-size: 14px; }
     .run-id code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    .step-list, .artifact-list, .execution-list, .asset-list { width: 100%; }
+    .step-list, .artifact-list, .execution-list, .asset-list, .finding-list { width: 100%; }
     .step-row {
         display: grid;
         grid-template-columns: 28px minmax(0, 1fr);
@@ -777,7 +869,13 @@ def main():
     .artifact-name, .asset-name { color: #20262d; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
     .artifact-meta, .asset-meta, .asset-fields { color: #667085; font-size: 12px; margin-top: 2px; }
     .artifact-row a { color: #0369a1; font-size: 13px; text-decoration: none; white-space: nowrap; }
+    .artifact-actions { display: flex; align-items: center; gap: 12px; }
     .asset-row { padding: 9px 0; border-bottom: 1px solid #e8ebee; }
+    .finding-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 4px; border-bottom: 1px solid #e8ebee; }
+    .finding-id { color: #667085; font: 600 11px/1.4 monospace; }
+    .finding-statement { color: #20262d; font-size: 13px; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
+    .finding-meta { color: #667085; font-size: 12px; margin-top: 3px; }
+    .finding-row a { color: #0369a1; font-size: 13px; text-decoration: none; white-space: nowrap; }
 
     .execution-row { border-bottom: 1px solid #e8ebee; padding: 5px 0; }
     .execution-row summary { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; cursor: pointer; padding: 7px 4px; font-size: 12px; color: #667085; }
@@ -911,6 +1009,39 @@ def main():
         with col_stop:
             stop_btn = st.button("⏹️ 停止分析", use_container_width=True)
 
+        plan_status = st.session_state.workbench_state.get("plan_status") or "active"
+        col_pause, col_confirm = st.columns(2)
+        with col_pause:
+            pause_plan_btn = st.button(
+                "⏸ 暂停计划",
+                use_container_width=True,
+                disabled=not bool(st.session_state.workbench_state.get("run_id")),
+            )
+        with col_confirm:
+            confirm_plan_btn = st.button(
+                "✓ 确认计划",
+                use_container_width=True,
+                disabled=plan_status != "awaiting_confirmation",
+            )
+
+        with st.expander("修订剩余计划", expanded=plan_status == "paused"):
+            revision_reason = st.text_input(
+                "修订原因",
+                key="plan_revision_reason",
+                placeholder="例如：缩小范围，只保留部门对比和最终报告",
+            )
+            revision_text = st.text_area(
+                "剩余步骤",
+                key="plan_revision_steps",
+                placeholder="load_data | 重新加载源数据\ncompare_groups | 比较部门指标\nfinish_report | 生成最终报告",
+                help="每行一个步骤，格式：方法 | 目标",
+            )
+            revise_plan_btn = st.button(
+                "提交计划修订",
+                use_container_width=True,
+                disabled=plan_status not in {"paused", "awaiting_confirmation"},
+            )
+
         # 清空按钮（单独居中显示）
         clear_btn = st.button("清空", use_container_width=True, key="clear_btn")
 
@@ -928,6 +1059,8 @@ def main():
                 result_placeholder = st.empty()
 
         with tab_outputs:
+            st.markdown("#### 证据血缘")
+            findings_placeholder = st.empty()
             st.markdown("#### 产物")
             artifacts_placeholder = st.empty()
             st.markdown("#### 执行记录")
@@ -936,10 +1069,24 @@ def main():
         render_workbench_views(
             summary_placeholder,
             steps_placeholder,
+            findings_placeholder,
             artifacts_placeholder,
             executions_placeholder,
             assets_placeholder,
         )
+
+        if pause_plan_btn:
+            success, message = pause_current_plan()
+            (st.success if success else st.error)(message)
+            refresh_workbench_snapshot()
+        elif confirm_plan_btn:
+            success, message = confirm_current_plan()
+            (st.success if success else st.error)(message)
+            refresh_workbench_snapshot()
+        elif revise_plan_btn:
+            success, message = revise_current_plan(revision_text, revision_reason)
+            (st.success if success else st.error)(message)
+            refresh_workbench_snapshot()
 
         if stop_btn:
             st.session_state.is_analyzing = False
@@ -965,6 +1112,7 @@ def main():
                     render_workbench_views(
                         summary_placeholder,
                         steps_placeholder,
+                        findings_placeholder,
                         artifacts_placeholder,
                         executions_placeholder,
                         assets_placeholder,
@@ -982,6 +1130,7 @@ def main():
                     render_workbench_views(
                         summary_placeholder,
                         steps_placeholder,
+                        findings_placeholder,
                         artifacts_placeholder,
                         executions_placeholder,
                         assets_placeholder,

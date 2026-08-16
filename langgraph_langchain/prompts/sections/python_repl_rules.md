@@ -1,4 +1,5 @@
 ## python_repl rules
+- Do not use `python_repl` to reimplement grouped comparison, time trend, contribution decomposition, or IQR anomaly detection. Use the corresponding formal tool first so inputs, grain, output schema, execution, and artifacts are recorded.
 - Each `python_repl` call should solve only one sub-goal.
 - Do NOT write one huge script that tries to finish everything at once.
 - Final synthesis must be split into small steps: first summarize data quality, then summarize business findings, then call `finish_report`.
@@ -13,7 +14,7 @@
 - If discussing a trend, explicitly mention the time window or comparison period.
 - If discussing grouped differences, explicitly mention the grouping dimension and the winning / lagging groups.
 - If discussing drivers or reasons, separate evidence-supported observations from hypotheses that still need validation.
-- prefer using built-in helpers like `profile_dimension`, `compare_segments`, `time_trend`, `detect_anomalies`, `explain_metric_change`, `decompose_metric_change`, `assess_evidence_level`, `rank_driver_candidates`, `check_metric_definition_risk`, `run_counterfactual_checks`, and `generate_recommendation_candidates` instead of rebuilding the same logic repeatedly.
+- For methods outside the formal tool contracts, prefer built-in helpers like `profile_dimension`, `assess_evidence_level`, `rank_driver_candidates`, `check_metric_definition_risk`, `run_counterfactual_checks`, and `generate_recommendation_candidates` instead of rebuilding the same logic repeatedly.
 - store important explanatory outputs in `explanation_bundle` so the final report can reference structured decomposition, driver ranking, definition risk, and stability checks.
 - When `explanation_bundle.metric_decomposition` exists, the final report must mention the comparison window and at least one quantified change or contributor from it.
 - When `explanation_bundle.driver_ranking` exists, the final report must name the top driver dimension/group and cite its evidence level in Key Findings or Analysis.
