@@ -1637,6 +1637,39 @@ class TestPythonReplRuntimeValidation:
         assert "步骤目标：检查数据行数" in result
         assert "建议下一步：检查缺失值" in result
 
+    def test_run_code_catches_syntax_error_with_hint(self, tmp_path):
+        """run_code should return a helpful SyntaxError message instead of
+        letting it burn through the consecutive-error budget."""
+        from langgraph_langchain.langgraph_agent import _Session
+        session = _Session(str(tmp_path), str(tmp_path / "fake.csv"), session_id="syntax-test")
+
+        # The exact pattern from the bug report:
+        bad_code = "产出>0记录数=('产出总数', lambda x: (x>0).sum())"
+        result = session.run_code(bad_code)
+        assert result.startswith("[ERROR]")
+        assert "SyntaxError" in result
+        assert "invalid decimal literal" in result
+        # Should include a hint about quoting dictionary keys
+        assert "operator" in result.lower() or "string key" in result.lower() or "quotes" in result.lower()
+
+    def test_run_code_catches_generic_syntax_error(self, tmp_path):
+        """run_code should return a clear message for any SyntaxError."""
+        from langgraph_langchain.langgraph_agent import _Session
+        session = _Session(str(tmp_path), str(tmp_path / "fake.csv"), session_id="syntax-test2")
+
+        result = session.run_code("def foo(")
+        assert result.startswith("[ERROR]")
+        assert "SyntaxError" in result
+
+    def test_run_code_valid_code_still_works(self, tmp_path):
+        """Valid code should still execute normally after syntax pre-check."""
+        from langgraph_langchain.langgraph_agent import _Session
+        session = _Session(str(tmp_path), str(tmp_path / "fake.csv"), session_id="syntax-test3")
+
+        result = session.run_code("x = 1 + 1\nprint('result:', x)")
+        assert "[ERROR]" not in result
+        assert "result: 2" in result
+
 
 class TestStreamFormatting:
     """验证流式步骤与输出保留完整换行结构且不截断。"""

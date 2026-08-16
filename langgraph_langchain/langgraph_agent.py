@@ -1026,6 +1026,39 @@ class _Session:
         if safety_error:
             return safety_error
 
+        # Pre-validate syntax before executing — catch SyntaxError with a
+        # helpful message so the LLM can self-correct instead of burning
+        # through its consecutive-error budget on un-parseable code.
+        try:
+            compile(code, "<agent>", "exec")
+        except SyntaxError as e:
+            offending_line = e.text.strip() if e.text else ""
+            # Detect common LLM mistakes where operators (> < >= <= == !=)
+            # are embedded in dictionary keys or variable names
+            # (e.g. 产出>0记录数=...) which Python cannot parse.
+            hint = ""
+            if e.msg == "invalid decimal literal" or (
+                e.msg in ("invalid syntax", "invalid syntax. Perhaps you forgot a comma?")
+                and offending_line
+                and re.search(r"[><=!]=?", offending_line)
+                and re.search(r"[一-鿿]", offending_line)
+            ):
+                hint = (
+                    " This usually means a dictionary key or variable name "
+                    "contains an operator like > or < (e.g. `产出>0记录数`). "
+                    "Fix: use a plain string key in quotes instead, "
+                    "e.g. `{\"产出>0记录数\": (\"产出总数\", lambda x: (x>0).sum())}`."
+                )
+            error_lines = code.splitlines()
+            line_info = ""
+            if 1 <= e.lineno <= len(error_lines):
+                line_info = f"\n  Line {e.lineno}: {error_lines[e.lineno - 1]}"
+            return (
+                f"[ERROR] SyntaxError: {e.msg}.{hint}\n"
+                f"  Offending text: {offending_line}{line_info}\n"
+                "Please fix the syntax error and retry."
+            )
+
         buf = io.StringIO()
         had_exception: list = []
 
