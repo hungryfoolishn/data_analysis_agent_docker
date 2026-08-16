@@ -94,37 +94,37 @@
 
 | 文件 | 行数 | 职责 | LangGraph 关联度 |
 |------|------|------|:---:|
-| [langgraph_agent.py](../langgraph_langchain/langgraph_agent.py) | ~2900 | Agent 核心：LLM 配置、图构建、工具定义、流式生成 | ⭐⭐⭐⭐⭐ |
-| [api_server_langgraph.py](../langgraph_langchain/api_server_langgraph.py) | ~750 | FastAPI 服务：HTTP 接口、会话管理、SSE 流式 | ⭐⭐⭐ |
-| [schemas.py](../langgraph_langchain/schemas.py) | ~230 | Pydantic 数据模型：Finding、Evidence、StageResult | ⭐⭐⭐ |
-| [state_machine.py](../langgraph_langchain/state_machine.py) | ~270 | 分析状态机：阶段定义、流转规则、约束检查 | ⭐⭐⭐⭐ |
+| [langgraph_agent.py](../../langgraph_langchain/langgraph_agent.py) | ~2900 | Agent 核心：LLM 配置、图构建、工具定义、流式生成 | ⭐⭐⭐⭐⭐ |
+| [api_server_langgraph.py](../../langgraph_langchain/api_server_langgraph.py) | ~750 | FastAPI 服务：HTTP 接口、会话管理、SSE 流式 | ⭐⭐⭐ |
+| [schemas.py](../../langgraph_langchain/schemas.py) | ~230 | Pydantic 数据模型：Finding、Evidence、StageResult | ⭐⭐⭐ |
+| [state_machine.py](../../langgraph_langchain/state_machine.py) | ~270 | 分析状态机：阶段定义、流转规则、约束检查 | ⭐⭐⭐⭐ |
 
 ### 辅助模块
 
 | 文件 | 职责 | 说明 |
 |------|------|------|
-| [tool_validators.py](../langgraph_langchain/tool_validators.py) | 工具阶段权限校验 | 每个工具在哪些阶段可以调用 |
-| [tracing.py](../langgraph_langchain/tracing.py) | 分布式追踪 | 追踪每次工具调用的链路 |
-| [structured_logging.py](../langgraph_langchain/structured_logging.py) | 结构化日志 | 机器可读的日志格式 |
-| [stability_metrics.py](../langgraph_langchain/stability_metrics.py) | 稳定性指标 | 追踪成功率、失败率 |
-| [recovery.py](../langgraph_langchain/recovery.py) | 错误恢复 | 自动重试和降级策略 |
-| [error_messages.py](../langgraph_langchain/error_messages.py) | 用户友好错误 | 中文错误消息 |
-| [evidence_binding.py](../langgraph_langchain/evidence_binding.py) | 证据绑定验证 | 确保证据引用有效 |
-| [evidence_validator.py](../langgraph_langchain/evidence_validator.py) | 证据等级验证 | 验证因果语言与证据等级一致 |
-| [recommendation_validator.py](../langgraph_langchain/recommendation_validator.py) | 建议验证 | 确保建议与证据强度匹配 |
-| [lineage_tracker.py](../langgraph_langchain/lineage_tracker.py) | 数据血缘追踪 | 从发现→证据→图表的完整链路 |
+| [tool_validators.py](../../langgraph_langchain/tool_validators.py) | 工具阶段权限校验 | 每个工具在哪些阶段可以调用 |
+| [tracing.py](../../langgraph_langchain/tracing.py) | 分布式追踪 | 追踪每次工具调用的链路 |
+| [structured_logging.py](../../langgraph_langchain/structured_logging.py) | 结构化日志 | 机器可读的日志格式 |
+| [stability_metrics.py](../../langgraph_langchain/stability_metrics.py) | 稳定性指标 | 追踪成功率、失败率 |
+| [recovery.py](../../langgraph_langchain/recovery.py) | 错误恢复 | 自动重试和降级策略 |
+| [error_messages.py](../../langgraph_langchain/error_messages.py) | 用户友好错误 | 中文错误消息 |
+| [evidence_binding.py](../../langgraph_langchain/evidence_binding.py) | 证据绑定验证 | 确保证据引用有效 |
+| [evidence_validator.py](../../langgraph_langchain/evidence_validator.py) | 证据等级验证 | 验证因果语言与证据等级一致 |
+| [recommendation_validator.py](../../langgraph_langchain/recommendation_validator.py) | 建议验证 | 确保建议与证据强度匹配 |
+| [lineage_tracker.py](../../langgraph_langchain/lineage_tracker.py) | 数据血缘追踪 | 从发现→证据→图表的完整链路 |
 
 ### P1–P4 基础设施模块
 
 | 文件 | 职责 | 阶段 |
 |------|------|:---:|
-| [prompts/prompt_builder.py](../langgraph_langchain/prompts/prompt_builder.py) | 动态 Prompt 组装引擎 — 从 .md 段落组装系统提示词 | P1 |
+| [prompts/prompt_builder.py](../../langgraph_langchain/prompts/prompt_builder.py) | 动态 Prompt 组装引擎 — 从 .md 段落组装系统提示词 | P1 |
 | [prompts/sections/](../langgraph_langchain/prompts/sections/) | 8 个模块化 .md 段落 (identity, workflow, rules...) | P1 |
-| [error_classifier.py](../langgraph_langchain/error_classifier.py) | API 错误智能分类 — 11 种错误类型 + 恢复策略 | P2 |
-| [retry_utils.py](../langgraph_langchain/retry_utils.py) | 抖动指数退避 — 防止重试惊群 | P2 |
-| [session_persistence.py](../langgraph_langchain/session_persistence.py) | 会话状态序列化 — 断点续传 + 恢复 | P3 |
-| [tools/tool_delegate.py](../langgraph_langchain/tools/tool_delegate.py) | 子任务委派工具 — 并行化分析维度 | P4 |
-| [tools/registry.py](../langgraph_langchain/tools/registry.py) | 工具注册中心 — 工厂模式 + 自动发现 | 重构 |
+| [error_classifier.py](../../langgraph_langchain/error_classifier.py) | API 错误智能分类 — 11 种错误类型 + 恢复策略 | P2 |
+| [retry_utils.py](../../langgraph_langchain/retry_utils.py) | 抖动指数退避 — 防止重试惊群 | P2 |
+| [session_persistence.py](../../langgraph_langchain/session_persistence.py) | 会话状态序列化 — 断点续传 + 恢复 | P3 |
+| [tools/tool_delegate.py](../../langgraph_langchain/tools/tool_delegate.py) | 子任务委派工具 — 并行化分析维度 | P4 |
+| [tools/registry.py](../../langgraph_langchain/tools/registry.py) | 工具注册中心 — 工厂模式 + 自动发现 | 重构 |
 | [tools/_shared.py](../langgraph_langchain/tools/_shared.py) | 工具共享辅助 — 路径安全、步骤验证 | 重构 |
 | [skills_loader.py](../langgraph_langchain/skills_loader.py) | Skills 渐进式加载器 | 技能框架 |
 | [skills/](../langgraph_langchain/skills/) | 4 个内置分析技能 (eda, trend, anomaly, attribution) | 技能框架 |

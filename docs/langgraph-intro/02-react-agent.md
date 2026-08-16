@@ -355,7 +355,7 @@ _MAX_CONSECUTIVE_PYTHON_ERRORS = 3   # 最多连续 3 次 Python 错误
 2. 你应该怎么做（工作流程）
 3. 你不能做什么（约束规则）
 
-本项目的系统提示词位于 [langgraph_agent.py:203](../langgraph_langchain/langgraph_agent.py#L203)，约 230 行，包含：
+本项目的系统提示词位于 [langgraph_agent.py:203](../../langgraph_langchain/langgraph_agent.py#L203)，约 230 行，包含：
 
 ```python
 _SYSTEM_PROMPT = """
