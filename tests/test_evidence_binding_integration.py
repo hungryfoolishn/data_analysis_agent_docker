@@ -112,6 +112,30 @@ class TestEvidenceBindingIntegration:
         assert "F001" in result
         assert len(session.findings) == 1
 
+    def test_record_finding_accepts_persisted_runtime_artifact_by_filename(self, tools, session):
+        """Artifacts remain bindable after the SSE layer flushes new_artifacts."""
+        from langgraph_langchain.runtime.context import register_session_artifact
+
+        chart_path = session.workspace_dir / "salary_analysis.png"
+        chart_path.write_bytes(b"chart")
+        register_session_artifact(
+            session,
+            chart_path,
+            created_by_tool="python_repl",
+        )
+        session.new_artifacts.clear()
+
+        record_finding = next(t for t in tools if t.name == "record_finding")
+        result = record_finding.invoke({
+            "statement": "Salary rises with experience",
+            "evidence_text": "The chart shows the observed salary-experience relationship.",
+            "source_artifacts": ["salary_analysis.png"],
+            "source_fields": ["salary", "years_experience"],
+        })
+
+        assert "[ERROR]" not in result
+        assert "F001" in result
+
     def test_high_confidence_finding_requires_strong_evidence(self, tools, session):
         """High confidence finding with weak evidence should fail."""
         record_finding = next(t for t in tools if t.name == "record_finding")

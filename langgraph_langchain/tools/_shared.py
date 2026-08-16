@@ -16,7 +16,6 @@ from typing import Optional
 from langgraph_langchain.config import (
     MAX_OUTPUT_LEN as _MAX_OUTPUT_LEN,
     MAX_PYTHON_REPL_LINES as _MAX_PYTHON_REPL_LINES,
-    REQUIRED_STEP_MARKER_ALIASES as _REQUIRED_STEP_MARKER_ALIASES,
 )
 
 
@@ -117,7 +116,7 @@ def _resolve_load_path(base_dir: Path, file_path: str) -> Path:
 # ── Python REPL validation ──────────────────────────────────────────────────
 
 def _validate_python_repl_step(code: str) -> Optional[str]:
-    """Return a runtime guardrail error when a python_repl step is too large or unstructured."""
+    """Return a runtime guardrail error when a python_repl step is empty or too large."""
     stripped = code.strip()
     if not stripped:
         return "[ERROR] Empty python_repl step. Provide a focused analysis step."
@@ -129,21 +128,13 @@ def _validate_python_repl_step(code: str) -> Optional[str]:
             "Break the analysis into smaller steps and execute one sub-goal at a time."
         )
 
-    lowered = stripped.lower()
-    missing_markers = [
-        canonical
-        for canonical, aliases in _REQUIRED_STEP_MARKER_ALIASES.items()
-        if not any(alias.lower() in lowered for alias in aliases)
-    ]
-    if missing_markers:
-        return (
-            "[ERROR] python_repl step is missing required printed markers: "
-            f"{', '.join(missing_markers)}. "
-            "At the start print step objective/步骤目标 and method/方法; "
-            "at the end print key results/关键结果 and suggested next step/建议下一步."
-        )
-
     return None
+
+
+def _is_rd_domain_session(session) -> bool:
+    """Return whether EDA selected an R&D-specific analysis template."""
+    namespace = getattr(session, "ns", {}) or {}
+    return namespace.get("suggested_template") is not None
 
 
 # ── Evidence / text helpers ─────────────────────────────────────────────────

@@ -7,7 +7,10 @@ import logging
 from langchain_core.tools import tool
 
 from langgraph_langchain.tools.registry import registry
-from langgraph_langchain.tools._shared import _validate_tool_stage_factory
+from langgraph_langchain.tools._shared import (
+    _is_rd_domain_session,
+    _validate_tool_stage_factory,
+)
 from langgraph_langchain.schemas import MetricDefinition
 from langgraph_langchain.rd_validators import validate_rd_metric_definition
 from langgraph_langchain.rd_efficiency_domain import suggest_related_metrics
@@ -63,11 +66,10 @@ def _factory(session):
         # Always append the metric definition first
         session.metric_definitions.append(metric_def)
 
-        # R&D domain: Validate metric definition against R&D standards
-        is_valid, rd_errors = validate_rd_metric_definition(metric_def)
-
-        # R&D domain: Suggest related metrics
-        related = suggest_related_metrics(metric_name)
+        is_valid, rd_errors, related = True, [], []
+        if _is_rd_domain_session(session):
+            is_valid, rd_errors = validate_rd_metric_definition(metric_def)
+            related = suggest_related_metrics(metric_name)
 
         # Build response message
         if not is_valid:

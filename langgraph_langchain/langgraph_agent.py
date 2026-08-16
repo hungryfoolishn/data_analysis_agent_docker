@@ -66,6 +66,7 @@ from langgraph_langchain.tracing import (
     remove_trace_context,
 )
 from langgraph_langchain.structured_logging import StructuredLogger
+from langgraph_langchain.semantic.formatting import format_semantic_context
 from langgraph_langchain.skills_loader import SkillsLoader
 from langgraph_langchain.config import (
     MAX_OUTPUT_LEN as _MAX_OUTPUT_LEN,
@@ -159,7 +160,7 @@ _SYSTEM_PROMPT = _prompt_builder.build()
 
 
 class _Session:
-    def __init__(self, workspace_dir: str, source_path: str, session_id: str = "", user_question: str = "", restore_state: Optional[Dict] = None):
+    def __init__(self, workspace_dir: str, source_path: str, session_id: str = "", user_question: str = "", restore_state: Optional[Dict] = None, semantic_context: Optional[Dict] = None, force_new_run: bool = False, parent_run_id: Optional[str] = None, retry_of_step_id: Optional[str] = None):
         self.workspace_dir = Path(workspace_dir)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.source_path = source_path
@@ -815,6 +816,28 @@ class _Session:
             session_id=session_id or "default",
         )
 
+        # Domain-neutral task/execution metadata. The existing session namespace
+        # remains the execution compatibility layer during the incremental migration.
+        from langgraph_langchain.runtime import AnalysisRuntime
+        try:
+            self.analysis_runtime = AnalysisRuntime(
+                workspace_dir=self.workspace_dir,
+                session_id=session_id or "default",
+                question=user_question,
+                external_context=semantic_context,
+                force_new_run=force_new_run,
+                parent_run_id=parent_run_id,
+                retry_of_step_id=retry_of_step_id,
+            )
+        except Exception as exc:
+            self.logger.warning("analysis_runtime_init_failed session=%s error=%s", session_id, exc)
+            if force_new_run:
+                raise
+            self.analysis_runtime = None
+        self.current_runtime_step_id: Optional[str] = None
+        self.current_asset_id: Optional[str] = None
+        self.ns["semantic_context"] = semantic_context
+
         # State machine for tracking analysis progress
         from .state_machine import AnalysisStateMachine
         self.state_machine = AnalysisStateMachine()
@@ -924,18 +947,36 @@ class _Session:
         )
 
     def start_stage(self, stage: AnalysisStage) -> None:
-        if self.stage_history and self.stage_history[-1].stage == stage and self.stage_history[-1].status == "started":
+        from langgraph_langchain.state_machine import AnalysisStage as StateMachineStage
+
+        target_stage = StateMachineStage(stage)
+        if self.state_machine.current_stage != target_stage:
+            can_transition, reason = self.state_machine.can_transition_to(target_stage)
+            if not can_transition or not self.state_machine.transition_to(target_stage):
+                self.logger.warning(
+                    "stage_transition_rejected session=%s from=%s to=%s reason=%s",
+                    self.session_id,
+                    self.state_machine.current_stage.value,
+                    target_stage.value,
+                    reason,
+                )
+                self.current_stage = self.state_machine.current_stage
+                return
+        if self.stage_history and self.stage_history[-1].stage == target_stage and self.stage_history[-1].status == "started":
             return
-        self.current_stage = stage
-        self.stage_history.append(StageResult(stage=stage, status="started", started_at=datetime.now(timezone.utc)))
-        self.logger.info("stage_started session=%s stage=%s", self.session_id, stage)
-        self.structured_logger.log_stage_start(stage)
+        self.current_stage = target_stage
+        self.stage_history.append(StageResult(stage=target_stage, status="started", started_at=datetime.now(timezone.utc)))
+        self.logger.info("stage_started session=%s stage=%s", self.session_id, target_stage.value)
+        self.structured_logger.log_stage_start(target_stage)
 
     def complete_stage(self, stage: AnalysisStage) -> None:
-        self.current_stage = stage
-        self.stage_history.append(StageResult(stage=stage, status="completed", completed_at=datetime.now(timezone.utc)))
-        self.logger.info("stage_completed session=%s stage=%s", self.session_id, stage)
-        self.structured_logger.log_stage_complete(stage)
+        from langgraph_langchain.state_machine import AnalysisStage as StateMachineStage
+
+        completed_stage = StateMachineStage(stage)
+        self.current_stage = self.state_machine.current_stage
+        self.stage_history.append(StageResult(stage=completed_stage, status="completed", completed_at=datetime.now(timezone.utc)))
+        self.logger.info("stage_completed session=%s stage=%s", self.session_id, completed_stage.value)
+        self.structured_logger.log_stage_complete(completed_stage)
 
     def try_advance_stage(self) -> Optional[str]:
         """
@@ -1292,9 +1333,90 @@ def _finalize_synthesized_report(
     except Exception:
         log.debug("synthesized_report_save_failed session=%s", session_id)
     _save_session_metadata(session, step, time.monotonic() - start_time)
+    _set_runtime_run_status(session, "completed")
     trace_context.end_trace()
     trace_context.save_to_file(session.workspace_dir)
     return report_md, artifacts
+
+
+def _runtime_step_spec(tool_name: str) -> tuple[str, list[str]]:
+    specs = {
+        "load_data": ("Load and inspect the source dataset", ["data_asset", "schema_snapshot"]),
+        "eda_profile": ("Profile data quality and distributions", ["eda_profile"]),
+        "python_repl": ("Execute an analytical computation", ["analysis_output"]),
+        "record_finding": ("Record a structured evidence-backed finding", ["finding"]),
+        "delegate_analysis": ("Delegate a bounded analysis subtask", ["delegated_result"]),
+        "finish_report": ("Validate and produce the final analysis report", ["report"]),
+    }
+    return specs.get(tool_name, (f"Execute {tool_name}", ["tool_result"]))
+
+
+def _start_runtime_step(session: "_Session", tool_name: str) -> Optional[str]:
+    from langgraph_langchain.runtime.context import AnalysisRuntime
+
+    runtime = getattr(session, "analysis_runtime", None)
+    if not isinstance(runtime, AnalysisRuntime):
+        return None
+    objective, expected_outputs = _runtime_step_spec(tool_name)
+    try:
+        previous_step_ids = [runtime.run.steps[-1].step_id] if runtime.run.steps else []
+        runtime_step = runtime.start_step(
+            objective=objective,
+            method=tool_name,
+            expected_outputs=expected_outputs,
+            depends_on=previous_step_ids,
+        )
+        session.current_runtime_step_id = runtime_step.step_id
+        return runtime_step.step_id
+    except Exception as exc:
+        session.logger.warning("runtime_step_start_failed tool=%s error=%s", tool_name, exc)
+        return None
+
+
+def _complete_runtime_step(
+    session: "_Session",
+    step_id: Optional[str],
+    *,
+    status: str,
+    error: Optional[str] = None,
+) -> None:
+    from langgraph_langchain.runtime.context import AnalysisRuntime
+
+    runtime = getattr(session, "analysis_runtime", None)
+    if not step_id or not isinstance(runtime, AnalysisRuntime):
+        return
+    try:
+        runtime.complete_step(step_id, status=status, error=error)
+    except Exception as exc:
+        session.logger.warning("runtime_step_complete_failed step_id=%s error=%s", step_id, exc)
+    finally:
+        if session.current_runtime_step_id == step_id:
+            session.current_runtime_step_id = None
+
+
+def _set_runtime_run_status(
+    session: "_Session", status: str, *, error: Optional[str] = None
+) -> None:
+    from langgraph_langchain.runtime.context import AnalysisRuntime
+
+    runtime = getattr(session, "analysis_runtime", None)
+    if not isinstance(runtime, AnalysisRuntime):
+        return
+    try:
+        runtime.set_run_status(status, error=error)
+    except Exception as exc:
+        session.logger.warning("runtime_run_status_failed status=%s error=%s", status, exc)
+    finally:
+        session.current_runtime_step_id = None
+
+
+def _tool_output_status(output: str) -> str:
+    normalized = output.lstrip()
+    if normalized.startswith(("REPORT REJECTED", "[REPORT REJECTED]")):
+        return "needs_revision"
+    if normalized.startswith(("[ERROR]", "ERROR:")):
+        return "failed"
+    return "succeeded"
 
 
 # ── Public async stream ───────────────────────────────────────────────────────
@@ -1308,6 +1430,11 @@ async def run_analysis_stream(
     session_id: str = "",
     cancel_event: Optional[asyncio.Event] = None,
     restore_state: Optional[Dict] = None,
+    semantic_context: Optional[Dict] = None,
+    task_question: Optional[str] = None,
+    force_new_run: bool = False,
+    parent_run_id: Optional[str] = None,
+    retry_of_step_id: Optional[str] = None,
 ) -> AsyncGenerator[tuple[str, list], None]:
     """Async generator yielding (text_chunk, new_artifacts) as the agent runs."""
     # Create trace context for this session
@@ -1317,8 +1444,12 @@ async def run_analysis_stream(
         workspace_dir,
         source_path,
         session_id=session_id,
-        user_question=instruction,
+        user_question=task_question or instruction,
         restore_state=restore_state,
+        semantic_context=semantic_context,
+        force_new_run=force_new_run,
+        parent_run_id=parent_run_id,
+        retry_of_step_id=retry_of_step_id,
     )
     session.trace_context = trace_context  # Attach trace context to session
     session.structured_logger.set_trace_context(trace_context)  # Connect logger to trace context
@@ -1333,6 +1464,7 @@ async def run_analysis_stream(
     effective_prompt = _prompt_builder.build_with_context(
         skills_index=_skills_loader.build_skills_prompt(),
         memory_snapshot=memory_snapshot,
+        semantic_context=format_semantic_context(semantic_context),
     )
 
     # Build custom httpx clients when extra headers are needed (e.g. internal
@@ -1402,6 +1534,7 @@ async def run_analysis_stream(
         "agent_start session=%s file=%s resumed=%s prior_steps=%d",
         session_id, source_path, bool(restore_state), step,
     )
+    active_runtime_steps: Dict[str, tuple[str, str]] = {}
     try:
         async for event in agent.astream_events({"messages": [user_msg]}, config=config, version="v2"):
             if session.cancel_event.is_set():
@@ -1414,6 +1547,7 @@ async def run_analysis_stream(
                     recovery_action="retry_same_scope",
                 )
                 log.info("agent_cancelled session=%s after_step=%d", session_id, step)
+                _set_runtime_run_status(session, "cancelled", error="analysis cancelled")
                 yield "\n\n**Analysis cancelled.**\n", []
                 return
 
@@ -1463,6 +1597,9 @@ async def run_analysis_stream(
                         "agent_stopped max_steps_exceeded session=%s steps=%d findings=%d",
                         session_id, step, len(session.findings),
                     )
+                    _set_runtime_run_status(
+                        session, "failed", error="exceeded the maximum tool-step budget"
+                    )
                     yield (
                         "\n\n**Analysis stopped:** exceeded the maximum tool-step budget. "
                         "Summarize the strongest validated findings so far in fewer steps.\n",
@@ -1470,6 +1607,10 @@ async def run_analysis_stream(
                     )
                     return
                 args = event["data"].get("input", {})
+                runtime_step_id = _start_runtime_step(session, name)
+                if runtime_step_id:
+                    runtime_event_key = str(event.get("run_id") or f"{name}:{step}")
+                    active_runtime_steps[runtime_event_key] = (name, runtime_step_id)
                 log.info("tool_start step=%d tool=%s", step, name)
                 if name == "python_repl":
                     code_preview = _format_preview_text(args.get("code", ""))
@@ -1498,9 +1639,39 @@ async def run_analysis_stream(
                         session.pending_report_markdown = pending_markdown.strip()
                     session.process_log.append("\n\n---\n\n")
                     yield "\n\n---\n\n", []
+                else:
+                    # Tools without a legacy progress message still emit their
+                    # structured running state to workbench-aware SSE clients.
+                    yield "", []
 
             elif kind == "on_tool_end":
                 elapsed = time.monotonic() - start_time
+                raw_tool_output = event["data"].get("output", "") or ""
+                runtime_output = _extract_event_output_text(raw_tool_output)
+                runtime_event_key = str(event.get("run_id") or "")
+                runtime_entry = active_runtime_steps.pop(runtime_event_key, None)
+                if runtime_entry is None:
+                    matching_key = next(
+                        (
+                            key
+                            for key in reversed(active_runtime_steps)
+                            if active_runtime_steps[key][0] == name
+                        ),
+                        None,
+                    )
+                    if matching_key is not None:
+                        runtime_entry = active_runtime_steps.pop(matching_key)
+                runtime_step_id = runtime_entry[1] if runtime_entry else session.current_runtime_step_id
+                runtime_status = _tool_output_status(runtime_output)
+                _complete_runtime_step(
+                    session,
+                    runtime_step_id,
+                    status=runtime_status,
+                    error=runtime_output if runtime_status != "succeeded" else None,
+                )
+                # Emit an empty compatibility chunk so structured SSE clients can
+                # observe the terminal step state even when a tool has no text output.
+                yield "", []
                 # Show brief output summary so user sees what happened
                 if name == "load_data":
                     raw = event["data"].get("output", "") or ""
@@ -1550,6 +1721,11 @@ async def run_analysis_stream(
                             recovery_action="retry_narrower_scope",
                         )
                         log.warning("agent_stopped repeated_python_errors session=%s errors=%d", session_id, session.consecutive_python_errors)
+                        _set_runtime_run_status(
+                            session,
+                            "failed",
+                            error="repeated python_repl errors without recovery",
+                        )
                         yield (
                             "\n\n**Analysis stopped:** repeated python_repl errors without recovery. "
                             "Use smaller validated steps before retrying.\n",
@@ -1615,6 +1791,7 @@ async def run_analysis_stream(
                         trace_context.end_trace()
                         trace_context.save_to_file(session.workspace_dir)
 
+                        _set_runtime_run_status(session, "completed")
                         yield session.report, artifacts
                         return
 
@@ -1661,6 +1838,11 @@ async def run_analysis_stream(
             # No findings to build a report from - end trace and surface a message.
             trace_context.end_trace()
             trace_context.save_to_file(session.workspace_dir)
+            _set_runtime_run_status(
+                session,
+                "failed",
+                error="agent ended without a report or sufficient findings",
+            )
             yield (
                 "\n\n**分析结束但未生成报告**:agent 在未调用 finish_report 前结束,"
                 "且未记录足够的发现。建议重新运行或缩小分析范围。\n",
@@ -1697,11 +1879,18 @@ async def run_analysis_stream(
         )
         trace_context.end_trace()
         trace_context.save_to_file(session.workspace_dir)
+        _set_runtime_run_status(
+            session, "failed", error="recursion limit reached before finish_report"
+        )
         yield (
             "\n\n**Analysis stopped:** exceeded the maximum tool-step budget. "
             "Narrow the analysis scope and finish in fewer steps.\n",
             [],
         )
+
+    except asyncio.CancelledError:
+        _set_runtime_run_status(session, "cancelled", error="analysis stream cancelled")
+        raise
 
     except Exception as exc:
         error_occurred = True
@@ -1739,6 +1928,7 @@ async def run_analysis_stream(
             total_steps=step,
             failure_code=classified.reason.value,
         )
+        _set_runtime_run_status(session, "failed", error=str(exc))
 
         # User-facing error with classified context
         if classified.reason.value in ("auth", "billing", "missing_api_key"):
@@ -1756,6 +1946,7 @@ async def run_analysis_stream(
     finally:
         # Save run metrics on normal completion
         if not error_occurred and session.report:
+            _set_runtime_run_status(session, "completed")
             session.structured_logger.save_run_metrics(
                 final_status="completed",
                 total_steps=step,

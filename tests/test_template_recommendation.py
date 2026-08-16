@@ -54,6 +54,25 @@ def test_template_matching():
     print("\n✅ All template matching tests passed!")
 
 
+def test_template_matching_uses_rd_columns_with_generic_question():
+    template = suggest_template(
+        "请概览上传的数据",
+        ["deployment_id", "deployment_date", "status"],
+    )
+
+    assert template is not None
+    assert "Deployment" in template.template_name
+
+
+def test_generic_data_quality_question_does_not_select_code_quality_template():
+    template = suggest_template(
+        "请对数据进行概览，包括基本统计、数据质量检查和缺失值分析",
+        ["name", "age", "salary", "department", "years_experience"],
+    )
+
+    assert template is None
+
+
 def test_eda_profile_with_template():
     """Test that eda_profile shows template recommendation."""
     print("\n=== Test 2: EDA Profile Template Display ===")

@@ -8,7 +8,7 @@ import os
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8888")
 # 文件服务（用于生成 workspace/files 的可访问链接）
 # 可通过环境变量覆盖：FILE_SERVER_BASE
-FILE_SERVER_BASE = os.environ.get("FILE_SERVER_BASE", "http://116.148.124.7:8888")
+FILE_SERVER_BASE = os.environ.get("FILE_SERVER_BASE", "http://localhost:8888")
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "deepseek-chat")
 
 # Gradio配置

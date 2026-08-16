@@ -278,10 +278,21 @@ class AnalysisStateMachine:
         validator and the agent spirals in a failed loop. Returning ``None``
         here leaves the stage unchanged so analysis can continue.
         """
-        valid_next = self.VALID_TRANSITIONS.get(self.current_stage, set())
-        for stage in valid_next:
-            if stage in {AnalysisStage.COMPLETED, AnalysisStage.FAILED}:
-                continue
+        # Auto-advance is forward-only and deterministic. VALID_TRANSITIONS
+        # also contains recovery edges; iterating that set made a normal run
+        # randomly move backwards depending on hash order.
+        forward_candidates = {
+            AnalysisStage.INIT: (AnalysisStage.SCHEMA_UNDERSTANDING,),
+            AnalysisStage.SCHEMA_UNDERSTANDING: (AnalysisStage.DATA_QUALITY_CHECK,),
+            AnalysisStage.DATA_QUALITY_CHECK: (AnalysisStage.BASIC_EDA,),
+            AnalysisStage.BASIC_EDA: (
+                AnalysisStage.DEEP_DIVE,
+                AnalysisStage.CONCLUSION_SYNTHESIS,
+            ),
+            AnalysisStage.DEEP_DIVE: (AnalysisStage.CONCLUSION_SYNTHESIS,),
+            AnalysisStage.CONCLUSION_SYNTHESIS: (AnalysisStage.REPORT_GENERATION,),
+        }
+        for stage in forward_candidates.get(self.current_stage, ()):
             can_transition, _ = self.can_transition_to(stage)
             if can_transition:
                 return stage

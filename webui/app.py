@@ -19,6 +19,16 @@ from config import (
     QUICK_INSTRUCTIONS, ALLOWED_FILE_TYPES,
     GRADIO_SERVER_NAME, GRADIO_SERVER_PORT, GRADIO_SHARE
 )
+from workbench import (
+    apply_analysis_event,
+    apply_runtime_snapshot,
+    empty_workbench_state,
+    render_artifacts_html,
+    render_assets_html,
+    render_executions_html,
+    render_run_summary_html,
+    render_steps_html,
+)
 
 
 # API端点
@@ -44,6 +54,10 @@ if 'analysis_result' not in st.session_state:
     st.session_state.analysis_result = ""
 if 'instruction_input' not in st.session_state:
     st.session_state.instruction_input = ""
+if 'workbench_state' not in st.session_state:
+    st.session_state.workbench_state = empty_workbench_state()
+if 'workbench_fingerprint' not in st.session_state:
+    st.session_state.workbench_fingerprint = None
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -101,6 +115,72 @@ def dedupe_generated_files(files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return deduped
 
 
+def fetch_runtime_snapshot() -> Optional[Dict[str, Any]]:
+    """Fetch authoritative execution details for the current workbench."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/{st.session_state.session_id}/runtime",
+            timeout=5,
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return None
+
+
+def update_workbench_from_chunk(chunk: Dict[str, Any]) -> bool:
+    """Apply an SSE event and refresh details only on lifecycle transitions."""
+    event = chunk.get("analysis_event") or {}
+    artifacts = chunk.get("generated_files") or []
+    if not event and not artifacts:
+        return False
+    step = event.get("step") or {}
+    fingerprint = (
+        event.get("run_id"),
+        event.get("run_status"),
+        step.get("step_id"),
+        step.get("status"),
+        tuple(event.get("artifact_ids") or []),
+    )
+    st.session_state.workbench_state = apply_analysis_event(
+        st.session_state.workbench_state,
+        event,
+        artifacts,
+    )
+    changed = fingerprint != st.session_state.workbench_fingerprint
+    if changed:
+        st.session_state.workbench_fingerprint = fingerprint
+        snapshot = fetch_runtime_snapshot()
+        if snapshot:
+            st.session_state.workbench_state = apply_runtime_snapshot(
+                st.session_state.workbench_state, snapshot
+            )
+    return changed
+
+
+def render_workbench_views(
+    summary_placeholder,
+    steps_placeholder,
+    artifacts_placeholder,
+    executions_placeholder,
+    assets_placeholder,
+) -> None:
+    state = st.session_state.workbench_state
+    summary_placeholder.markdown(render_run_summary_html(state), unsafe_allow_html=True)
+    steps_placeholder.markdown(render_steps_html(state.get("steps", [])), unsafe_allow_html=True)
+    artifacts = state.get("artifacts", []) or st.session_state.generated_files
+    artifacts_placeholder.markdown(
+        render_artifacts_html(artifacts, FILE_SERVER_BASE), unsafe_allow_html=True
+    )
+    executions_placeholder.markdown(
+        render_executions_html(state.get("executions", [])), unsafe_allow_html=True
+    )
+    assets_placeholder.markdown(
+        render_assets_html(state.get("assets", [])), unsafe_allow_html=True
+    )
+
+
 def start_analysis_stream(instruction: str):
     """开始分析（流式响应）生成器"""
     if not instruction.strip():
@@ -114,6 +194,8 @@ def start_analysis_stream(instruction: str):
     st.session_state.is_analyzing = True
     st.session_state.analysis_result = ""
     st.session_state.generated_files = []
+    st.session_state.workbench_state = empty_workbench_state()
+    st.session_state.workbench_fingerprint = None
 
     accumulated_content = ""
     generated_files: List[Dict[str, Any]] = []
@@ -178,6 +260,8 @@ def start_analysis_stream(instruction: str):
 
                 try:
                     chunk = json.loads(data_str)
+                    workbench_changed = update_workbench_from_chunk(chunk)
+                    content_emitted = False
 
                     # 提取内容增量
                     if 'choices' in chunk and chunk['choices']:
@@ -190,6 +274,7 @@ def start_analysis_stream(instruction: str):
 
                             print(f"[前端] 收到事件 #{event_count}, 内容长度: {len(content_delta)}, 累积长度: {len(accumulated_content)}")
                             yield accumulated_content
+                            content_emitted = True
 
                     # 提取生成的文件
                     if 'generated_files' in chunk:
@@ -209,6 +294,8 @@ def start_analysis_stream(instruction: str):
                     finish_reason = chunk.get('choices', [{}])[0].get('finish_reason')
                     if finish_reason == 'stop':
                         break
+                    if workbench_changed and not content_emitted:
+                        yield accumulated_content
 
                 except json.JSONDecodeError:
                     continue
@@ -296,6 +383,8 @@ def start_resume_stream():
 
                 try:
                     chunk = json.loads(data_str)
+                    workbench_changed = update_workbench_from_chunk(chunk)
+                    content_emitted = False
 
                     # Error responses
                     if 'error' in chunk:
@@ -309,10 +398,18 @@ def start_resume_stream():
                             accumulated_content += delta['content']
                             st.session_state.analysis_result = accumulated_content
                             yield accumulated_content
+                            content_emitted = True
+
+                    if 'generated_files' in chunk:
+                        generated_files.extend(chunk['generated_files'] or [])
+                        generated_files = dedupe_generated_files(generated_files)
+                        st.session_state.generated_files = generated_files
 
                     finish_reason = chunk.get('choices', [{}])[0].get('finish_reason')
                     if finish_reason == 'stop':
                         break
+                    if workbench_changed and not content_emitted:
+                        yield accumulated_content
 
                 except json.JSONDecodeError:
                     continue
@@ -470,19 +567,6 @@ def main():
         margin-bottom: 1rem !important;
     }
 
-    /* 左侧列样式 */
-    [data-testid="column"]:first-child {
-        background: #ffffff;
-        padding-right: 20px;
-        border-right: 1px solid #e5e7eb;
-    }
-
-    /* 右侧列样式 */
-    [data-testid="column"]:last-child {
-        background: #f9fafb;
-        padding-left: 20px;
-    }
-
     /* 区域标题样式 */
     h3 {
         font-size: 16px;
@@ -500,15 +584,15 @@ def main():
         transition: all 0.2s;
     }
 
-    /* 开始分析按钮 - 紫色主题 */
+    /* 主操作 */
     .stButton>button[kind="primary"] {
-        background: #9333ea !important;
+        background: #087f5b !important;
         color: white !important;
         border: none !important;
     }
 
     .stButton>button[kind="primary"]:hover {
-        background: #7e22ce !important;
+        background: #066b4d !important;
     }
 
     /* 快捷指令按钮样式 */
@@ -643,18 +727,83 @@ def main():
         width: auto;
         min-width: 120px;
     }
+
+    /* 分析工作台 */
+    .run-summary {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(76px, 0.65fr)) minmax(180px, 1.9fr);
+        border-top: 1px solid #dfe3e8;
+        border-bottom: 1px solid #dfe3e8;
+        background: #f7f9fa;
+        margin: 4px 0 14px;
+    }
+
+    .run-summary > div {
+        min-width: 0;
+        padding: 10px 12px;
+        border-right: 1px solid #e5e7eb;
+    }
+
+    .run-summary > div:last-child { border-right: 0; }
+    .summary-label { display: block; color: #667085; font-size: 11px; margin-bottom: 3px; }
+    .run-summary strong { color: #17202a; font-size: 14px; }
+    .run-id code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .step-list, .artifact-list, .execution-list, .asset-list { width: 100%; }
+    .step-row {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 10px;
+        padding: 11px 4px;
+        border-bottom: 1px solid #e8ebee;
+    }
+    .step-index {
+        width: 24px; height: 24px; display: grid; place-items: center;
+        border-radius: 50%; background: #e9ecef; color: #495057; font-size: 12px;
+    }
+    .step-running .step-index { background: #dbeafe; color: #1d4ed8; }
+    .step-succeeded .step-index { background: #d3f9d8; color: #087f5b; }
+    .step-needs_revision .step-index { background: #fff3bf; color: #946200; }
+    .step-failed .step-index { background: #ffe3e3; color: #c92a2a; }
+    .step-title { color: #20262d; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+    .step-meta { display: flex; gap: 10px; align-items: center; color: #667085; font-size: 12px; margin-top: 3px; }
+    .step-error, .execution-error { color: #b42318; font-size: 12px; margin-top: 7px; overflow-wrap: anywhere; }
+    .step-needs_revision .step-error, .execution-feedback { color: #946200; font-size: 12px; margin-top: 7px; overflow-wrap: anywhere; }
+
+    .artifact-row {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 10px 4px; border-bottom: 1px solid #e8ebee;
+    }
+    .artifact-name, .asset-name { color: #20262d; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+    .artifact-meta, .asset-meta, .asset-fields { color: #667085; font-size: 12px; margin-top: 2px; }
+    .artifact-row a { color: #0369a1; font-size: 13px; text-decoration: none; white-space: nowrap; }
+    .asset-row { padding: 9px 0; border-bottom: 1px solid #e8ebee; }
+
+    .execution-row { border-bottom: 1px solid #e8ebee; padding: 5px 0; }
+    .execution-row summary { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; cursor: pointer; padding: 7px 4px; font-size: 12px; color: #667085; }
+    .execution-detail { padding: 0 4px 10px; }
+    .execution-detail pre { max-height: 240px; overflow: auto; background: #f6f8fa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+    .execution-output { color: #475467; font-size: 12px; font-weight: 600; margin-top: 8px; }
+    .empty-state { color: #7b8490; font-size: 13px; padding: 18px 4px; border-bottom: 1px solid #e8ebee; }
+    .empty-state.compact { padding: 8px 0; border-bottom: 0; }
+
+    @media (max-width: 900px) {
+        .main .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
+        .run-summary { grid-template-columns: repeat(2, 1fr); }
+        .run-summary .run-id { grid-column: 1 / -1; border-top: 1px solid #e5e7eb; }
+        .analysis-output { min-height: 360px; max-height: 360px; }
+    }
     </style>
     """, unsafe_allow_html=True)
 
     # 标题
-    st.title("📊 DeepAnalyze 数据分析平台")
+    st.title("DeepAnalyze")
 
-    # 双栏布局：左侧1/3，右侧2/3
-    col_left, col_right = st.columns([1, 2])
+    col_left, col_right = st.columns([0.85, 2.15], gap="large")
 
     with col_left:
         # 文件上传区域
-        st.markdown("### 👤 文件上传")
+        st.markdown("### 数据与任务")
 
         uploaded_files = st.file_uploader(
             "上传分析文件 (可选)",
@@ -700,8 +849,15 @@ def main():
                     unsafe_allow_html=True
                 )
 
+        st.markdown("#### 数据资产")
+        assets_placeholder = st.empty()
+        assets_placeholder.markdown(
+            render_assets_html(st.session_state.workbench_state.get("assets", [])),
+            unsafe_allow_html=True,
+        )
+
         # 分析指令区域
-        st.markdown("### 💬 分析指令")
+        st.markdown("#### 分析指令")
 
         instruction = st.text_area(
             "分析指令输入",
@@ -756,111 +912,87 @@ def main():
             stop_btn = st.button("⏹️ 停止分析", use_container_width=True)
 
         # 清空按钮（单独居中显示）
-        st.markdown('<div class="clear-button-container">', unsafe_allow_html=True)
-        clear_btn = st.button("🗑️ 清空", use_container_width=False, key="clear_btn")
-        st.markdown("</div>", unsafe_allow_html=True)
+        clear_btn = st.button("清空", use_container_width=True, key="clear_btn")
 
     with col_right:
-        # 分析结果区域
-        st.markdown("### 📊 分析结果")
-        st.markdown("**实时分析输出**")
+        st.markdown("### 分析工作台")
+        summary_placeholder = st.empty()
+        tab_process, tab_report, tab_outputs = st.tabs(["分析过程", "最终报告", "产物与执行"])
 
-        # 结果显示区域（固定高度，内容超出自动滚动）
-        result_container = st.container(height=500)
-        with result_container:
-            result_placeholder = st.empty()
+        with tab_process:
+            steps_placeholder = st.empty()
 
-            # 如果点击停止按钮
-            if stop_btn:
-                st.session_state.is_analyzing = False
-                if st.session_state.analysis_result:
-                    stop_html = format_result_html(st.session_state.analysis_result + "\n\n⏹️ 分析已停止")
-                    result_placeholder.markdown(stop_html, unsafe_allow_html=True)
-                else:
-                    initial_html = format_result_html("分析结果将显示在这里...")
-                    result_placeholder.markdown(initial_html, unsafe_allow_html=True)
+        with tab_report:
+            result_container = st.container(height=520)
+            with result_container:
+                result_placeholder = st.empty()
 
-            # 如果点击恢复分析按钮
-            elif resume_btn:
-                resumable = check_resumable()
-                if not resumable:
-                    result_placeholder.warning(
-                        "⚠️ 当前会话没有可恢复的分析状态。\n\n"
-                        "可能原因：\n"
-                        "- 分析已完成（已有报告）\n"
-                        "- 数据文件不存在\n"
-                        "- 会话已过期"
-                    )
-                else:
-                    stage = resumable.get("current_stage", "?")
-                    steps = resumable.get("total_steps", 0)
-                    findings = resumable.get("findings_count", 0)
-                    resume_header = (
-                        f"🔄 **恢复分析** (阶段: {stage}, 已完成 {steps} 步, {findings} 个发现)\n\n"
-                    )
-                    stream_generator = start_resume_stream()
-                    for chunk in stream_generator:
-                        if not st.session_state.is_analyzing:
-                            result_text = chunk + "\n\n⏹️ 分析已停止"
-                            result_placeholder.markdown(
-                                format_result_html(resume_header + result_text),
-                                unsafe_allow_html=True,
-                            )
-                            break
-                        result_placeholder.markdown(
-                            format_result_html(resume_header + chunk),
-                            unsafe_allow_html=True,
-                        )
+        with tab_outputs:
+            st.markdown("#### 产物")
+            artifacts_placeholder = st.empty()
+            st.markdown("#### 执行记录")
+            executions_placeholder = st.empty()
 
-            # 如果点击开始分析按钮
-            elif start_btn:
-                # 从 session_state 获取指令（通过 key 直接获取输入框的值）
-                # Streamlit 的 text_area 使用 key 时，值会保存在 session_state 中
-                current_instruction = st.session_state.get('instruction_input', '')
+        render_workbench_views(
+            summary_placeholder,
+            steps_placeholder,
+            artifacts_placeholder,
+            executions_placeholder,
+            assets_placeholder,
+        )
 
-                # 如果 key 中没有，尝试从自定义的 instruction 中获取
-                if not current_instruction:
-                    current_instruction = st.session_state.get('instruction', '')
+        if stop_btn:
+            st.session_state.is_analyzing = False
+            result_text = st.session_state.analysis_result or "分析尚未产生文本结果。"
+            result_placeholder.markdown(
+                format_result_html(result_text + "\n\n分析已停止。"),
+                unsafe_allow_html=True,
+            )
 
-                if not current_instruction or not current_instruction.strip():
-                    result_placeholder.error("❌ 请输入分析指令")
-                else:
-                    # 创建流式输出生成器
-                    stream_generator = start_analysis_stream(current_instruction)
-
-                    # 使用 st.empty() 配合循环实现真正的流式显示
-                    result_text = ""
-                    for chunk in stream_generator:
-                        # 检查是否被停止
-                        if not st.session_state.is_analyzing:
-                            result_text = chunk + "\n\n⏹️ 分析已停止"
-                            result_html = format_result_html(result_text)
-                            result_placeholder.markdown(result_html, unsafe_allow_html=True)
-                            break
-
-                        # 更新显示内容
-                        result_text = chunk
-                        result_html = format_result_html(result_text)
-                        result_placeholder.markdown(result_html, unsafe_allow_html=True)
-
-            # 显示当前分析结果（如果存在）
-            elif st.session_state.analysis_result:
-                result_html = format_result_html(st.session_state.analysis_result)
-                result_placeholder.markdown(result_html, unsafe_allow_html=True)
-            # 初始显示
+        elif resume_btn:
+            resumable = check_resumable()
+            if not resumable:
+                result_placeholder.warning("当前会话没有可恢复的分析状态。")
             else:
-                initial_html = format_result_html("分析结果将显示在这里...")
-                result_placeholder.markdown(initial_html, unsafe_allow_html=True)
+                stage = resumable.get("current_stage", "?")
+                steps = resumable.get("total_steps", 0)
+                findings = resumable.get("findings_count", 0)
+                resume_header = f"**恢复分析** · {stage} · {steps} 步 · {findings} 个发现\n\n"
+                for chunk in start_resume_stream():
+                    result_placeholder.markdown(
+                        format_result_html(resume_header + chunk), unsafe_allow_html=True
+                    )
+                    render_workbench_views(
+                        summary_placeholder,
+                        steps_placeholder,
+                        artifacts_placeholder,
+                        executions_placeholder,
+                        assets_placeholder,
+                    )
 
-        # 下载结果文件区域
-        st.markdown("### 📥 下载结果文件")
-        st.markdown("分析完成后,您可以下载以下文件:")
+        elif start_btn:
+            current_instruction = st.session_state.get('instruction_input', '') or st.session_state.get('instruction', '')
+            if not current_instruction or not current_instruction.strip():
+                result_placeholder.error("请输入分析指令。")
+            else:
+                for chunk in start_analysis_stream(current_instruction):
+                    result_placeholder.markdown(
+                        format_result_html(chunk), unsafe_allow_html=True
+                    )
+                    render_workbench_views(
+                        summary_placeholder,
+                        steps_placeholder,
+                        artifacts_placeholder,
+                        executions_placeholder,
+                        assets_placeholder,
+                    )
 
-        if st.session_state.generated_files:
-            download_html = generate_download_html(st.session_state.generated_files)
-            st.markdown(download_html, unsafe_allow_html=True)
+        elif st.session_state.analysis_result:
+            result_placeholder.markdown(
+                format_result_html(st.session_state.analysis_result), unsafe_allow_html=True
+            )
         else:
-            st.markdown('<div style="color: #9ca3af; font-size: 14px;">暂无生成的文件</div>', unsafe_allow_html=True)
+            result_placeholder.markdown("分析报告将在完成后显示。")
 
         # 如果点击清空按钮
         if clear_btn:
@@ -870,6 +1002,8 @@ def main():
             st.session_state.analysis_result = ""
             st.session_state.instruction = ""
             st.session_state.is_analyzing = False
+            st.session_state.workbench_state = empty_workbench_state()
+            st.session_state.workbench_fingerprint = None
             st.rerun()
 
     # 页脚 - 固定定位在右下角（匹配 Gradio 版本）

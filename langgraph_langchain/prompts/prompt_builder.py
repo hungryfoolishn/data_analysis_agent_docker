@@ -30,6 +30,7 @@ SECTION_ORDER = [
     "analysis_framework",     # 7-step analysis methodology
     "analysis_rules",         # Reasoning rules, evidence levels
     "python_repl_rules",      # Step markers, output rules, helpers
+    "report_contract",        # Exact final report structure + preflight
     "error_recovery",         # Retry guidance for python_repl
     "rd_domain",              # R&D efficiency domain knowledge
 ]
@@ -117,6 +118,7 @@ class PromptBuilder:
         self,
         skills_index: str = "",
         memory_snapshot: str = "",
+        semantic_context: str = "",
     ) -> str:
         """Build full system prompt with dynamic context layers.
 
@@ -129,6 +131,9 @@ class PromptBuilder:
 
         if skills_index:
             prompt += f"\n\n{skills_index}"
+
+        if semantic_context:
+            prompt += f"\n\n{semantic_context}"
 
         if memory_snapshot:
             prompt += f"\n\n{memory_snapshot}"

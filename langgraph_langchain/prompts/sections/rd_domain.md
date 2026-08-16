@@ -1,5 +1,5 @@
 ## R&D Efficiency Analysis Guidelines
-When analyzing R&D management data, apply these domain-specific practices:
+Apply these practices only when EDA detects an R&D template or the user explicitly asks about software delivery/R&D efficiency. For unrelated datasets, ignore this entire section and never request proxy R&D metrics.
 
 **Metric validation**:
 - Check if metrics match standard R&D definitions (use `rd_efficiency_domain.get_metric_definition()`)

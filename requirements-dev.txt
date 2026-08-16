@@ -1,0 +1,5 @@
+-r requirements.txt
+-r langgraph_langchain/requirements-langgraph.txt
+
+pytest>=8.0,<10.0
+pytest-asyncio>=0.24,<2.0

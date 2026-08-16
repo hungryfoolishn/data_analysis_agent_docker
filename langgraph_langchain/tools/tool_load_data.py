@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import pandas as pd
 from langchain_core.tools import tool
@@ -13,6 +14,10 @@ from langgraph_langchain.tools._shared import (
     _validate_tool_stage_factory,
 )
 from langgraph_langchain.schemas import AnalysisStage
+from langgraph_langchain.runtime.context import (
+    record_session_execution,
+    register_session_dataframe,
+)
 from langgraph_langchain.tracing import get_trace_context
 
 logger = logging.getLogger(__name__)
@@ -36,6 +41,7 @@ def _factory(session):
         error_msg = _validate("load_data")
         if error_msg:
             return f"[ERROR] {error_msg}"
+        started_at = time.monotonic()
 
         trace_ctx = get_trace_context(session.session_id)
         if trace_ctx:
@@ -68,6 +74,14 @@ def _factory(session):
             try:
                 safe_path = _resolve_load_path(session.workspace_dir, file_path)
             except (ValueError, FileNotFoundError) as e:
+                record_session_execution(
+                    session,
+                    tool_name="load_data",
+                    status="failed",
+                    code_or_query=file_path,
+                    error={"type": type(e).__name__, "message": str(e)},
+                    duration_ms=(time.monotonic() - started_at) * 1000,
+                )
                 if trace_ctx:
                     trace_ctx.end_current_span(status="failed", error_message=str(e))
                 return f"[ERROR] {e}"
@@ -82,6 +96,14 @@ def _factory(session):
                     except UnicodeDecodeError:
                         continue
                 else:
+                    record_session_execution(
+                        session,
+                        tool_name="load_data",
+                        status="failed",
+                        code_or_query=str(safe_path),
+                        error={"type": "UnicodeDecodeError", "message": "Cannot decode CSV file"},
+                        duration_ms=(time.monotonic() - started_at) * 1000,
+                    )
                     if trace_ctx:
                         trace_ctx.end_current_span(status="failed", error_message="Cannot decode CSV file")
                     return "ERROR: Cannot decode CSV file."
@@ -90,12 +112,29 @@ def _factory(session):
                 actual = sheet_name if sheet_name in sheets else sheets[0]
                 df = pd.read_excel(str(safe_path), sheet_name=actual)
             else:
+                record_session_execution(
+                    session,
+                    tool_name="load_data",
+                    status="failed",
+                    code_or_query=str(safe_path),
+                    error={"type": "UnsupportedFileType", "message": f"Unsupported file type '{suffix}'"},
+                    duration_ms=(time.monotonic() - started_at) * 1000,
+                )
                 if trace_ctx:
                     trace_ctx.end_current_span(status="failed", error_message=f"Unsupported file type '{suffix}'")
                 return f"ERROR: Unsupported file type '{suffix}'."
 
             # Inject df into exec namespace so subsequent python_repl calls can use it
             session.ns["df"] = df
+            asset = register_session_dataframe(
+                session,
+                dataframe=df,
+                source_path=path,
+                source_type=suffix.lstrip("."),
+                sheet_name=actual if suffix in (".xlsx", ".xls") else None,
+            )
+            if asset is not None:
+                session.current_asset_id = asset.asset_id
 
             # Mark schema as documented
             session.state_machine.add_condition("schema_documented")
@@ -121,8 +160,27 @@ def _factory(session):
                 lines.append(f"  {col} ({dtype}) — {null_count} nulls")
             lines.append("\nPreview (first 5 rows):")
             lines.append(df.head(5).to_string(index=False))
-            return "\n".join(lines)
+            result = "\n".join(lines)
+            current_asset_id = getattr(session, "current_asset_id", None)
+            record_session_execution(
+                session,
+                tool_name="load_data",
+                status="succeeded",
+                code_or_query=str(path),
+                input_asset_ids=[current_asset_id] if current_asset_id else [],
+                stdout_preview=result,
+                duration_ms=(time.monotonic() - started_at) * 1000,
+            )
+            return result
         except Exception as exc:
+            record_session_execution(
+                session,
+                tool_name="load_data",
+                status="failed",
+                code_or_query=file_path,
+                error={"type": type(exc).__name__, "message": str(exc)},
+                duration_ms=(time.monotonic() - started_at) * 1000,
+            )
             if trace_ctx:
                 trace_ctx.end_current_span(status="failed", error_message=str(exc))
             return f"ERROR: {exc}"

@@ -33,6 +33,7 @@ from langgraph_langchain.config import (
     CODE_TIMEOUT as _CODE_TIMEOUT,
     MAX_OUTPUT_LEN as _MAX_OUTPUT_LEN,
 )
+from langgraph_langchain.runtime import SessionExecutionRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -74,25 +75,34 @@ def _factory(session):
         error_msg = _validate("delegate_analysis")
         if error_msg:
             return tool_error(error_msg)
+        recorder = SessionExecutionRecorder(
+            session,
+            tool_name="delegate_analysis",
+            code_or_query=code,
+        )
 
         # ── Depth guard — no nested delegation ─────────────────────────────
         if getattr(session, "_delegation_depth", 0) >= _MAX_DEPTH:
+            recorder.fail("Nested delegation not allowed", error_type="DelegationDepthError")
             return tool_error(
                 "Nested delegation not allowed. Use python_repl for inner analysis."
             )
 
         # ── Validate inputs ────────────────────────────────────────────────
         if not task_description.strip():
+            recorder.fail("task_description must be non-empty", error_type="ValidationError")
             return tool_error("task_description must be non-empty.")
 
         valid_types = {"segment", "trend", "anomaly", "comparison", "general"}
         if analysis_type not in valid_types:
+            recorder.fail(f"Invalid analysis_type '{analysis_type}'", error_type="ValidationError")
             return tool_error(
                 f"Invalid analysis_type '{analysis_type}'. "
                 f"Must be one of: {', '.join(sorted(valid_types))}."
             )
 
         if not code.strip():
+            recorder.fail("No code provided", error_type="ValidationError")
             return tool_error(
                 "No code provided. Write Python code to perform the sub-task. "
                 "The code has access to `df` (a copy of the current DataFrame), "
@@ -102,6 +112,7 @@ def _factory(session):
         # ── Build isolated namespace ────────────────────────────────────────
         df = session.ns.get("df")
         if df is None:
+            recorder.fail("DataFrame df not found", error_type="MissingData")
             return tool_error(
                 "DataFrame `df` not found in session namespace. "
                 "Call load_data first before delegating analysis."
@@ -111,6 +122,7 @@ def _factory(session):
         try:
             df_copy = df.copy()
         except Exception as exc:
+            recorder.fail(str(exc), error_type=type(exc).__name__)
             return tool_error(f"Failed to copy DataFrame: {exc}")
 
         ws = session.workspace_dir
@@ -161,6 +173,10 @@ def _factory(session):
 
         if t.is_alive():
             session._delegation_depth -= 1
+            recorder.fail(
+                f"Delegated task timed out after {_CODE_TIMEOUT}s",
+                error_type="TimeoutError",
+            )
             return tool_error(
                 f"Delegated task timed out after {_CODE_TIMEOUT}s. "
                 "Use smaller, more focused code."
@@ -179,13 +195,7 @@ def _factory(session):
         for p in sorted(session.workspace_dir.iterdir()):
             if p.suffix.lower() in image_exts and p not in session.known_image_files:
                 session.known_image_files.add(p)
-                rel = p.relative_to(session.workspace_dir.parent)
-                session.new_artifacts.append({
-                    "name": p.name,
-                    "path": str(p),
-                    "relative_path": str(rel),
-                    "url": f"/workspace/files/{rel}",
-                })
+                recorder.register_artifact(p)
 
         session._delegation_depth -= 1
 
@@ -197,7 +207,12 @@ def _factory(session):
             "success": not had_exception,
             "output": output.strip() if output.strip() else "(no output)",
         }
-        return json.dumps(result, ensure_ascii=False)
+        serialized = json.dumps(result, ensure_ascii=False)
+        if had_exception:
+            recorder.fail(output, error_type="PythonExecutionError", stdout_preview=serialized)
+        else:
+            recorder.succeed(serialized)
+        return serialized
 
     return delegate_analysis
 

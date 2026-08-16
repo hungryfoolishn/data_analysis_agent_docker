@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import matplotlib
 matplotlib.use("Agg")
@@ -13,6 +14,11 @@ from langchain_core.tools import tool
 
 from langgraph_langchain.tools.registry import registry
 from langgraph_langchain.tools._shared import _validate_tool_stage_factory
+from langgraph_langchain.runtime.context import (
+    record_session_execution,
+    register_session_artifact,
+)
+from langgraph_langchain.runtime.models import new_id
 from langgraph_langchain.tracing import get_trace_context
 
 logger = logging.getLogger(__name__)
@@ -36,6 +42,8 @@ def _factory(session):
         error_msg = _validate("eda_profile")
         if error_msg:
             return f"[ERROR] {error_msg}"
+        started_at = time.monotonic()
+        execution_id = new_id("exec")
 
         import matplotlib.pyplot as plt
         import seaborn as sns
@@ -72,6 +80,14 @@ def _factory(session):
 
         df: pd.DataFrame = session.ns.get("df")
         if df is None:
+            record_session_execution(
+                session,
+                execution_id=execution_id,
+                tool_name="eda_profile",
+                status="failed",
+                error={"type": "MissingData", "message": "No dataset loaded"},
+                duration_ms=(time.monotonic() - started_at) * 1000,
+            )
             return "[ERROR] No dataset loaded. Call load_data first."
 
         ws = session.workspace_dir
@@ -536,15 +552,17 @@ def _factory(session):
             lines.append("- No business-oriented hints were generated automatically; define metrics and compare meaningful segments manually.")
 
         # ── Register artifacts ────────────────────────────────────────────────
+        artifact_ids: list[str] = []
         for _label, chart_path in charts:
             if chart_path.exists():
-                rel = chart_path.relative_to(session.workspace_dir.parent)
-                session.new_artifacts.append({
-                    "name": chart_path.name,
-                    "path": str(chart_path),
-                    "relative_path": str(rel),
-                    "url": f"/workspace/files/{rel}",
-                })
+                metadata = register_session_artifact(
+                    session,
+                    chart_path,
+                    created_by_tool="eda_profile",
+                    execution_id=execution_id,
+                )
+                if metadata.get("artifact_id"):
+                    artifact_ids.append(metadata["artifact_id"])
                 session.known_image_files.add(chart_path)
 
         chart_names = [lbl for lbl, _ in charts]
@@ -565,11 +583,23 @@ def _factory(session):
         # Mark quality assessment complete and try to advance stage
         session.state_machine.add_condition("quality_assessed")
         session.state_machine.add_condition("issues_documented")
+        session.state_machine.add_condition("distributions_analyzed")
+        session.state_machine.add_condition("correlations_checked")
 
         # Try to advance to BASIC_EDA stage
         session.try_advance_stage()
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        record_session_execution(
+            session,
+            execution_id=execution_id,
+            tool_name="eda_profile",
+            status="succeeded",
+            output_artifact_ids=artifact_ids,
+            stdout_preview=result,
+            duration_ms=(time.monotonic() - started_at) * 1000,
+        )
+        return result
 
     return eda_profile
 

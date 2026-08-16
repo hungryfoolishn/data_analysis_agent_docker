@@ -15,9 +15,11 @@ from langgraph_langchain.tools._shared import (
     _extract_section,
     _has_group_reference,
     _has_time_window_reference,
+    _is_rd_domain_session,
     _stage_rank,
     _validate_tool_stage_factory,
 )
+from langgraph_langchain.runtime import SessionExecutionRecorder
 from langgraph_langchain.tracing import get_trace_context
 
 logger = logging.getLogger(__name__)
@@ -28,15 +30,26 @@ def _factory(session):
 
     @tool
     def finish_report(markdown: str) -> str:
-        """Submit the final analysis report. Call exactly once when analysis is complete.
+        """Submit the final analysis report. Call once after a report preflight.
+
+        The report must contain Summary, Data Context, Key Findings, Data
+        Quality, and Analysis headings. Data Context must state the time range,
+        metric definitions, deduplication rule, and assumptions. If the data has
+        no time field, explicitly state that the time range is not applicable
+        and this is a static cross-sectional analysis. When charts exist, add a
+        Visualizations section that explains the numerical conclusion each chart
+        supports instead of merely listing filenames.
 
         Args:
             markdown: Complete markdown report with findings and insights.
         """
+        if session.report is not None:
+            return "Report already submitted. Do not call finish_report again."
         # Validate stage before execution
         error_msg = _validate("finish_report")
         if error_msg:
             return f"[ERROR] {error_msg}"
+        recorder = SessionExecutionRecorder(session, tool_name="finish_report")
 
         trace_ctx = get_trace_context(session.session_id)
         if trace_ctx:
@@ -71,16 +84,19 @@ def _factory(session):
                 trace_ctx.current_span.set_attribute("validation_passed", False)
                 trace_ctx.current_span.set_attribute("rejection_reason", "called before synthesis stage")
                 trace_ctx.end_current_span(status="failed", error_message="Report rejected: called before synthesis stage")
+            recorder.revision(
+                "finish_report called before synthesis stage",
+                feedback_type="ReportValidationFeedback",
+            )
             return (
                 "REPORT REJECTED. Fix the following before calling finish_report again:\n"
                 "- finish_report can only be called after the analysis reaches synthesis/final_report stage"
             )
+        session.state_machine.add_condition("findings_organized")
+        session.state_machine.add_condition("evidence_linked")
+        if len(session.findings) >= 2:
+            session.state_machine.add_condition("min_findings_count")
         session.start_stage("report_generation")
-        if session.report is not None:
-            if trace_ctx:
-                trace_ctx.end_current_span(status="failed", error_message="Report already submitted")
-            return "Report already submitted. Do not call finish_report again."
-
         # Check if findings were recorded
         if len(session.findings) < 2:
             session.pending_report_markdown = None
@@ -97,6 +113,10 @@ def _factory(session):
                 trace_ctx.current_span.set_attribute("rejection_reason", "insufficient findings")
                 trace_ctx.current_span.set_attribute("findings_count", len(session.findings))
                 trace_ctx.end_current_span(status="failed", error_message="Report rejected: insufficient findings")
+            recorder.revision(
+                "Insufficient structured findings recorded",
+                feedback_type="ReportValidationFeedback",
+            )
             return (
                 "REPORT REJECTED. Fix the following before calling finish_report again:\n"
                 f"- Only {len(session.findings)} findings recorded. Use record_finding to document at least 2 key insights with concrete evidence.\n"
@@ -174,12 +194,12 @@ def _factory(session):
         if len(session.metric_definitions) == 0:
             issues.append("no metrics were declared using declare_metric - use declare_metric to document key metric definitions")
 
-        # R&D domain: Validate analysis completeness
-        from langgraph_langchain.rd_validators import validate_rd_analysis_completeness
-        is_complete, rd_warnings = validate_rd_analysis_completeness(session.findings, session.metric_definitions)
-        if rd_warnings:
-            for warning in rd_warnings:
-                issues.append(f"rd_analysis_completeness: {warning}")
+        if _is_rd_domain_session(session):
+            from langgraph_langchain.rd_validators import validate_rd_analysis_completeness
+            is_complete, rd_warnings = validate_rd_analysis_completeness(session.findings, session.metric_definitions)
+            if rd_warnings:
+                for warning in rd_warnings:
+                    issues.append(f"rd_analysis_completeness: {warning}")
 
         if key_findings_section and not _contains_evidence_marker(key_findings_section):
             issues.append("key findings section lacks concrete evidence markers such as numbers, groups, rankings, dates, or chart references")
@@ -204,7 +224,11 @@ def _factory(session):
         metric_scope_markers = ["口径", "definition", "定义", "denominator", "分母", "dedup", "去重", "time window", "时间窗口", "scope", "窗口"]
         semantic_uncertainty_markers = ["字段语义", "semantic", "mapping", "口径", "exploratory", "假设", "需进一步验证", "uncertain"]
         ratio_claim_pattern = re.compile(r"(转化率|share|ratio|conversion|conversion rate|rate)", flags=re.IGNORECASE)
-        metric_risk_pattern = re.compile(r"(退款|refund|duplicate|重复订单|去重|口径|mapping|字段语义|semantic)", flags=re.IGNORECASE)
+        metric_risk_pattern = re.compile(
+            r"(退款|refund|duplicate orders?|重复订单|字段语义|semantic (?:risk|ambiguity)|"
+            r"口径.{0,12}(?:不明|未知|风险|歧义|待确认)|mapping.{0,12}(?:risk|unknown|ambiguous))",
+            flags=re.IGNORECASE,
+        )
         semantic_claim_pattern = re.compile(r"(新客|老客|高价值|流失|复购|退款用户|活跃用户|付费用户|留存用户)")
 
         if ratio_claim_pattern.search(markdown):
@@ -222,11 +246,6 @@ def _factory(session):
             )
             if not semantic_risk_present:
                 issues.append("missing_definition_risk_note: reports discussing metric-definition or semantic risk should surface an explicit caveat in Summary or Data Quality")
-
-        if ("refund" in markdown_lower or "duplicate" in markdown_lower or "重复订单" in markdown or "重复" in markdown) and not any(
-            marker in markdown_lower for marker in ["exploratory", "假设", "uncertain", "需进一步验证", "风险", "caveat"]
-        ):
-            issues.append("missing_definition_risk_note: reports mentioning refund/duplicate risks should explicitly state interpretation boundaries")
 
         if semantic_claim_pattern.search(markdown) and not any(marker in markdown_lower for marker in ["假设", "assumption", "exploratory", "需进一步验证", "uncertain", "口径"]):
             issues.append("missing_semantic_assumption_note: business-semantic labels should be marked as assumptions or caveats when not directly defined in source data")
@@ -419,6 +438,11 @@ def _factory(session):
             if trace_ctx:
                 trace_ctx.end_current_span(status="failed", error_message=f"Validation failed: {len(deduped_issues)} issues")
 
+            recorder.revision(
+                "; ".join(deduped_issues),
+                feedback_type="ReportValidationFeedback",
+            )
+            session.start_stage("conclusion_synthesis")
             return f"REPORT REJECTED. Fix the following before calling finish_report again:\n- {joined}"
 
         session.complete_stage("report_generation")
@@ -446,13 +470,7 @@ def _factory(session):
             )
         report_path = session.workspace_dir / "data_analysis_report.md"
         report_path.write_text(full_content, encoding="utf-8")
-        rel = report_path.relative_to(session.workspace_dir.parent)
-        session.new_artifacts.append({
-            "name": report_path.name,
-            "path": str(report_path),
-            "relative_path": str(rel),
-            "url": f"/workspace/files/{rel}",
-        })
+        recorder.register_artifact(report_path)
 
         # Save structured findings to JSON
         findings_data = {
@@ -462,13 +480,7 @@ def _factory(session):
         }
         findings_path = session.workspace_dir / "analysis_findings.json"
         findings_path.write_text(json.dumps(findings_data, ensure_ascii=False, indent=2), encoding="utf-8")
-        findings_rel = findings_path.relative_to(session.workspace_dir.parent)
-        session.new_artifacts.append({
-            "name": findings_path.name,
-            "path": str(findings_path),
-            "relative_path": str(findings_rel),
-            "url": f"/workspace/files/{findings_rel}",
-        })
+        recorder.register_artifact(findings_path)
 
         # Build lineage graph from session findings
         from langgraph_langchain.lineage_tracker import build_lineage_from_session
@@ -483,13 +495,7 @@ def _factory(session):
         lineage_data = lineage_tracker.export_for_visualization()
         lineage_path = session.workspace_dir / "lineage_graph.json"
         lineage_path.write_text(json.dumps(lineage_data, ensure_ascii=False, indent=2), encoding="utf-8")
-        lineage_rel = lineage_path.relative_to(session.workspace_dir.parent)
-        session.new_artifacts.append({
-            "name": lineage_path.name,
-            "path": str(lineage_path),
-            "relative_path": str(lineage_rel),
-            "url": f"/workspace/files/{lineage_rel}",
-        })
+        recorder.register_artifact(lineage_path)
 
         # Generate trace analysis report if trace context exists
         trace_report_path = None
@@ -507,24 +513,12 @@ def _factory(session):
             trace_report = analyzer.generate_summary_report()
             trace_report_path = session.workspace_dir / "trace_analysis.txt"
             trace_report_path.write_text(trace_report, encoding="utf-8")
-            trace_report_rel = trace_report_path.relative_to(session.workspace_dir.parent)
-            session.new_artifacts.append({
-                "name": trace_report_path.name,
-                "path": str(trace_report_path),
-                "relative_path": str(trace_report_rel),
-                "url": f"/workspace/files/{trace_report_rel}",
-            })
+            recorder.register_artifact(trace_report_path)
 
             dashboard_data = analyzer.export_for_dashboard()
             dashboard_path = session.workspace_dir / "trace_dashboard.json"
             dashboard_path.write_text(json.dumps(dashboard_data, ensure_ascii=False, indent=2), encoding="utf-8")
-            dashboard_rel = dashboard_path.relative_to(session.workspace_dir.parent)
-            session.new_artifacts.append({
-                "name": dashboard_path.name,
-                "path": str(dashboard_path),
-                "relative_path": str(dashboard_rel),
-                "url": f"/workspace/files/{dashboard_rel}",
-            })
+            recorder.register_artifact(dashboard_path)
 
         session.structured_logger.log_tool_result(
             tool_name="finish_report",
@@ -538,7 +532,9 @@ def _factory(session):
             },
         )
 
-        return "Report submitted successfully."
+        result = "Report submitted successfully."
+        recorder.succeed(result)
+        return result
 
     return finish_report
 

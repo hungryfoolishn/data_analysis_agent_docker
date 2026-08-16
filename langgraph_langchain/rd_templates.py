@@ -10,6 +10,7 @@ Each template includes:
 - Report structure
 """
 
+import re
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 
@@ -500,6 +501,15 @@ def suggest_template(user_question: str, available_columns: List[str]) -> Option
         Best matching template or None
     """
     question_lower = user_question.lower()
+    columns = {str(column).strip().lower() for column in available_columns}
+
+    has_sprint_schema = {"sprint", "story_points"}.issubset(columns)
+    has_pr_schema = {"pr_id", "pr_created_at"}.issubset(columns)
+    has_deployment_schema = {"deployment_id", "deployment_date"}.issubset(columns)
+    has_quality_schema = bool(
+        columns.intersection({"bug_id", "defect_id", "defect_type", "escaped_defect"})
+        or {"severity", "component", "defect_count"}.issubset(columns)
+    )
 
     # Match by keywords in question (prioritize question matching)
     if "sprint" in question_lower and ("retro" in question_lower or "回顾" in question_lower):
@@ -508,10 +518,21 @@ def suggest_template(user_question: str, available_columns: List[str]) -> Option
     if "sprint" in question_lower:
         return SPRINT_RETRO_TEMPLATE
 
-    if "velocity" in question_lower and "trend" in question_lower:
+    if "velocity" in question_lower and ("trend" in question_lower or has_sprint_schema):
         return VELOCITY_TREND_TEMPLATE
 
-    if "quality" in question_lower or "defect" in question_lower or "质量" in question_lower:
+    explicit_quality_terms = (
+        "code quality",
+        "software quality",
+        "defect",
+        "bug",
+        "代码质量",
+        "软件质量",
+        "缺陷",
+    )
+    if any(term in question_lower for term in explicit_quality_terms) or (
+        has_quality_schema and ("quality" in question_lower or "质量" in question_lower)
+    ):
         if "escaped" in question_lower or "production" in question_lower:
             return ESCAPED_DEFECTS_TEMPLATE
         else:
@@ -523,19 +544,21 @@ def suggest_template(user_question: str, available_columns: List[str]) -> Option
     if "deploy" in question_lower or "dora" in question_lower:
         return DEPLOYMENT_FREQUENCY_TEMPLATE
 
-    if "pr" in question_lower or "pull request" in question_lower or "code review" in question_lower:
+    if re.search(r"\bpr\b", question_lower) or "pull request" in question_lower or "code review" in question_lower:
         return PR_REVIEW_ANALYSIS_TEMPLATE
 
-    # Match by available columns (only if no question match)
-    if not user_question:
-        if "pr_id" in available_columns and "pr_created_at" in available_columns:
-            return PR_REVIEW_ANALYSIS_TEMPLATE
+    # Match by available columns when the question itself was generic.
+    if has_pr_schema:
+        return PR_REVIEW_ANALYSIS_TEMPLATE
 
-        if "deployment_id" in available_columns and "deployment_date" in available_columns:
-            return DEPLOYMENT_FREQUENCY_TEMPLATE
+    if has_deployment_schema:
+        return DEPLOYMENT_FREQUENCY_TEMPLATE
 
-        if "sprint" in available_columns and "story_points" in available_columns:
-            return SPRINT_RETRO_TEMPLATE
+    if has_sprint_schema:
+        return SPRINT_RETRO_TEMPLATE
+
+    if has_quality_schema:
+        return QUALITY_TREND_TEMPLATE
 
     return None
 

@@ -26,6 +26,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_CSV = PROJECT_ROOT / "temp_uploads" / "test.csv"
 
 
+def test_report_rejection_is_recoverable_runtime_status():
+    from langgraph_langchain.langgraph_agent import _tool_output_status
+
+    assert _tool_output_status("REPORT REJECTED. missing Summary") == "needs_revision"
+    assert _tool_output_status("[ERROR] Python execution failed") == "failed"
+    assert _tool_output_status("Report submitted successfully.") == "succeeded"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. Session 持久化
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -425,6 +433,8 @@ class TestFinishReportValidation:
         result = finish.invoke({"markdown": md})
         assert "REJECTED" in result
         assert session.report is None
+        assert session.analysis_runtime.executions[-1].status == "needs_revision"
+        assert session.analysis_runtime.executions[-1].error["type"] == "ReportValidationFeedback"
 
     def test_rejects_missing_key_findings(self, tmp_path):
         finish, session = self._make_finish_report(tmp_path)
@@ -1565,14 +1575,12 @@ class TestPythonReplRuntimeValidation:
         repl = next(t for t in tools if t.name == "python_repl")
         return repl
 
-    def test_python_repl_rejects_missing_step_markers(self, tmp_path):
+    def test_python_repl_accepts_small_step_without_display_markers(self, tmp_path):
         repl = self._make_repl(tmp_path)
 
         result = repl.invoke({"code": "print('hello world')"})
 
-        assert result.startswith("[ERROR]")
-        assert "missing required printed markers" in result
-        assert "step objective" in result
+        assert result.strip() == "hello world"
 
     def test_python_repl_rejects_oversized_step(self, tmp_path):
         repl = self._make_repl(tmp_path)
@@ -1830,6 +1838,11 @@ class TestStreamFormatting:
         combined = "".join(chunks)
         assert combined.count("# Analysis Report") == 1
         assert "Report already submitted" not in combined
+        runtime_state = json.loads(
+            (tmp_path / ".analysis_runtime.json").read_text(encoding="utf-8")
+        )
+        assert runtime_state["run"]["status"] == "completed"
+        assert [step["status"] for step in runtime_state["run"]["steps"]] == ["succeeded"]
 
     @pytest.mark.asyncio
     async def test_run_analysis_stream_stops_after_repeated_python_errors(self, tmp_path):
@@ -1870,6 +1883,15 @@ class TestStreamFormatting:
         combined = "".join(chunks)
         assert "repeated python_repl errors without recovery" in combined
         assert "finish_report" not in combined
+        runtime_state = json.loads(
+            (tmp_path / ".analysis_runtime.json").read_text(encoding="utf-8")
+        )
+        assert runtime_state["run"]["status"] == "failed"
+        assert [step["status"] for step in runtime_state["run"]["steps"]] == [
+            "failed",
+            "failed",
+            "failed",
+        ]
 
     @pytest.mark.asyncio
     async def test_run_analysis_stream_stops_when_step_budget_exceeded(self, tmp_path):
@@ -1911,6 +1933,11 @@ class TestStreamFormatting:
 
         combined = "".join(chunks)
         assert "exceeded the maximum tool-step budget" in combined
+        runtime_state = json.loads(
+            (tmp_path / ".analysis_runtime.json").read_text(encoding="utf-8")
+        )
+        assert runtime_state["run"]["status"] == "failed"
+        assert all(step["status"] == "failed" for step in runtime_state["run"]["steps"])
 
     @pytest.mark.asyncio
     async def test_run_analysis_stream_synthesizes_report_on_step_budget(self, tmp_path):
@@ -1956,6 +1983,10 @@ class TestStreamFormatting:
         assert "exceeded the maximum tool-step budget" not in combined
         assert "基于已记录" in combined
         assert (tmp_path / "final_report.md").exists()
+        runtime_state = json.loads(
+            (tmp_path / ".analysis_runtime.json").read_text(encoding="utf-8")
+        )
+        assert runtime_state["run"]["status"] == "completed"
 
     @pytest.mark.asyncio
     async def test_run_analysis_stream_synthesizes_report_on_silent_stop(self, tmp_path):

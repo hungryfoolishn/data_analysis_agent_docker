@@ -9,12 +9,38 @@ from typing import List
 from langchain_core.tools import tool
 
 from langgraph_langchain.tools.registry import registry
-from langgraph_langchain.tools._shared import _validate_tool_stage_factory
+from langgraph_langchain.tools._shared import (
+    _is_rd_domain_session,
+    _validate_tool_stage_factory,
+)
 from langgraph_langchain.schemas import EvidenceItem, Finding
 from langgraph_langchain.rd_validators import validate_rd_finding
+from langgraph_langchain.runtime import SessionExecutionRecorder
 from langgraph_langchain.tracing import get_trace_context
 
 logger = logging.getLogger(__name__)
+
+
+def _available_artifact_aliases(session) -> dict:
+    """Return registered artifacts keyed by stable id and user-facing aliases."""
+    artifacts = []
+    runtime = getattr(session, "analysis_runtime", None)
+    runtime_artifacts = getattr(runtime, "artifacts", {}) or {}
+    for artifact in runtime_artifacts.values():
+        artifacts.append(
+            artifact.model_dump() if hasattr(artifact, "model_dump") else artifact
+        )
+    artifacts.extend(getattr(session, "new_artifacts", []) or [])
+
+    aliases = {}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        for key in ("artifact_id", "name", "path", "relative_path", "url"):
+            value = artifact.get(key)
+            if value:
+                aliases[str(value)] = artifact
+    return aliases
 
 
 def _factory(session):
@@ -72,6 +98,11 @@ def _factory(session):
         error_msg = _validate("record_finding")
         if error_msg:
             return f"[ERROR] {error_msg}"
+        recorder = SessionExecutionRecorder(
+            session,
+            tool_name="record_finding",
+            code_or_query=statement,
+        )
 
         # Track tool usage in state machine
         session.state_machine.record_tool_use("record_finding")
@@ -98,6 +129,7 @@ def _factory(session):
 
         # Pre-validate critical fields before Pydantic to give clearer errors
         if not evidence_text or not evidence_text.strip():
+            recorder.fail("evidence_text is empty", error_type="ValidationError")
             if trace_ctx:
                 trace_ctx.end_current_span(status="failed", error_message="evidence_text is empty")
             return "[ERROR] evidence_text is empty — provide concrete evidence (numbers, stats, observations)."
@@ -119,6 +151,7 @@ def _factory(session):
                 timestamp=datetime.now().isoformat() if trace_ctx else None,
             )
         except Exception as exc:
+            recorder.fail(str(exc), error_type=type(exc).__name__)
             if trace_ctx:
                 trace_ctx.end_current_span(status="failed", error_message=str(exc))
             return f"[ERROR] Invalid evidence: {exc}"
@@ -137,9 +170,14 @@ def _factory(session):
             trace_id=trace_ctx.trace_id if trace_ctx else None,
         )
 
-        # R&D domain: Validate finding against R&D best practices
-        is_valid, rd_errors = validate_rd_finding(finding)
+        is_valid, rd_errors = True, []
+        if _is_rd_domain_session(session):
+            is_valid, rd_errors = validate_rd_finding(finding)
         if not is_valid:
+            recorder.fail(
+                "; ".join(rd_errors),
+                error_type="DomainValidationWarning",
+            )
             if trace_ctx and span_id:
                 trace_ctx.end_span(span_id, status="warning", validation_errors=rd_errors)
             return (
@@ -155,11 +193,7 @@ def _factory(session):
         )
 
         # Get available artifacts for validation
-        available_artifacts = {
-            art.get("artifact_id"): art
-            for art in session.new_artifacts
-            if art.get("artifact_id")
-        }
+        available_artifacts = _available_artifact_aliases(session)
 
         # Critical validation: evidence must be properly bound
         is_valid, binding_errors = validate_evidence_binding(finding, available_artifacts)
@@ -170,6 +204,10 @@ def _factory(session):
             )
             if trace_ctx and span_id:
                 trace_ctx.end_span(span_id, status="error", validation_errors=binding_errors)
+            recorder.fail(
+                "; ".join(binding_errors),
+                error_type="EvidenceBindingError",
+            )
             return error_msg + "\n\nFinding NOT recorded. Please provide proper evidence."
 
         # Completeness check: warn about missing optional fields
@@ -194,10 +232,16 @@ def _factory(session):
         if len(session.findings) >= 3:
             session.state_machine.add_condition("min_findings_count")
 
+        # A validated finding completes the deep-dive evidence requirement.
+        # Advance the authoritative state machine so report validation and the
+        # user-facing stage cannot diverge.
+        session.try_advance_stage()
+
         # End trace span
         if trace_ctx and span_id:
             trace_ctx.end_span(span_id, status="completed", finding_id=finding_id)
 
+        recorder.succeed(response_msg)
         return response_msg
 
     return record_finding

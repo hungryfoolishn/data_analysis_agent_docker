@@ -43,6 +43,9 @@ from langgraph_langchain.stability_metrics import get_metrics_tracker
 from langgraph_langchain.error_messages import format_user_friendly_error
 from langgraph_langchain.tracing import TraceContext
 from langgraph_langchain.user_friendly_response import create_transformer
+from langgraph_langchain.runtime.events import RuntimeStreamContextReader, build_analysis_event
+from langgraph_langchain.runtime.history import RunHistoryStore
+from langgraph_langchain.semantic.models import SemanticResolution
 from langgraph_langchain.config import (
     DEEPSEEK_API_KEY,
     DEEPSEEK_MODEL_ID,
@@ -581,6 +584,11 @@ async def _run_analysis_stream(
     user_message: str,
     file_path_to_use: str,
     retry_count: int = 0,
+    semantic_context: Optional[Dict[str, Any]] = None,
+    task_question: Optional[str] = None,
+    force_new_run: bool = False,
+    parent_run_id: Optional[str] = None,
+    retry_of_step_id: Optional[str] = None,
 ):
     """Streaming variant of :func:`_run_analysis`.
 
@@ -618,6 +626,11 @@ async def _run_analysis_stream(
                 api_base=DEEPSEEK_API_BASE,
                 session_id=session_id,
                 cancel_event=cancel_event,
+                semantic_context=semantic_context,
+                task_question=task_question,
+                force_new_run=force_new_run,
+                parent_run_id=parent_run_id,
+                retry_of_step_id=retry_of_step_id,
             ):
                 parts.append(text)
                 if artifacts:
@@ -676,6 +689,11 @@ async def _run_analysis_stream(
                         user_message=modified_instruction,
                         file_path_to_use=file_path_to_use,
                         retry_count=current_retry,
+                        semantic_context=semantic_context,
+                        task_question=task_question,
+                        force_new_run=False,
+                        parent_run_id=parent_run_id,
+                        retry_of_step_id=retry_of_step_id,
                     ):
                         yield text, artifacts
                     # Recovery succeeded
@@ -707,7 +725,7 @@ async def _run_analysis_stream(
     # Streaming output has already been yielded above.
 
 
-async def _run_analysis(session_id: str, session: Dict[str, Any], user_message: str, file_path_to_use: str, retry_count: int = 0):
+async def _run_analysis(session_id: str, session: Dict[str, Any], user_message: str, file_path_to_use: str, retry_count: int = 0, semantic_context: Optional[Dict[str, Any]] = None, task_question: Optional[str] = None, force_new_run: bool = False, parent_run_id: Optional[str] = None, retry_of_step_id: Optional[str] = None):
     """Non-streaming wrapper that collects :func:`_run_analysis_stream` chunks.
 
     Returns ``(output, gen_files)`` and raises ``AnalysisFailureError`` on
@@ -722,6 +740,11 @@ async def _run_analysis(session_id: str, session: Dict[str, Any], user_message: 
         user_message=user_message,
         file_path_to_use=file_path_to_use,
         retry_count=retry_count,
+        semantic_context=semantic_context,
+        task_question=task_question,
+        force_new_run=force_new_run,
+        parent_run_id=parent_run_id,
+        retry_of_step_id=retry_of_step_id,
     ):
         output_parts.append(text)
         if artifacts:
@@ -744,6 +767,11 @@ class ChatCompletionRequest(BaseModel):
     session_id: Optional[str] = None
     file_path: Optional[str] = None
     user_friendly: Optional[bool] = False  # Enable user-friendly response format
+    semantic_context: Optional[SemanticResolution] = None
+
+
+class StepRetryRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 class FileUploadResponse(BaseModel):
@@ -1109,6 +1137,15 @@ async def resume_session(session_id: str):
     start_time = datetime.now()
 
     async def sse_resume_generator():
+        stream_context_reader = RuntimeStreamContextReader(workspace_dir)
+        semantic_context = None
+        try:
+            runtime_raw = json.loads(
+                (workspace_dir / ".analysis_runtime.json").read_text(encoding="utf-8")
+            )
+            semantic_context = runtime_raw.get("task", {}).get("external_context")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            pass
         try:
             if _agent_semaphore is None:
                 raise RuntimeError("Agent semaphore not initialized")
@@ -1123,6 +1160,7 @@ async def resume_session(session_id: str):
                     session_id=session_id,
                     cancel_event=cancel_event,
                     restore_state=restore_state,
+                    semantic_context=semantic_context,
                 ):
                     parts.append(text)
                     if artifacts:
@@ -1131,19 +1169,24 @@ async def resume_session(session_id: str):
                             session["artifacts"].extend(artifacts)
                             _save_sessions()
 
-                    payload = json.dumps(
-                        {
-                            "choices": [
-                                {
-                                    "delta": {"content": text},
-                                    "index": 0,
-                                    "finish_reason": None,
-                                }
-                            ]
-                        },
-                        ensure_ascii=False,
-                    )
-                    yield f"data: {payload}\n\n"
+                    payload: Dict[str, Any] = {
+                        "choices": [
+                            {
+                                "delta": {"content": text},
+                                "index": 0,
+                                "finish_reason": None,
+                            }
+                        ],
+                        "analysis_event": build_analysis_event(
+                            session_id=session_id,
+                            stream_context=stream_context_reader.read(),
+                            text=text,
+                            artifacts=artifacts,
+                        ),
+                    }
+                    if artifacts:
+                        payload["generated_files"] = artifacts
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
             # Clear persisted state after successful resume
             persistence.clear(workspace_dir)
@@ -1202,6 +1245,147 @@ async def check_resumable(session_id: str):
     }
 
 
+@app.get("/sessions/{session_id}/runtime")
+async def get_session_runtime(session_id: str):
+    """Return the persisted analysis runtime snapshot for the workbench."""
+    async with _sessions_lock:
+        try:
+            session = _ensure_session_consistency(session_id)
+        except HTTPException:
+            _cleanup_session(session_id, remove_workspace=False)
+            raise
+        runtime_path = Path(session["workspace"]) / ".analysis_runtime.json"
+
+    try:
+        return json.loads(runtime_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Analysis runtime not found")
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail=f"Unable to read analysis runtime: {exc}")
+
+
+@app.get("/analysis/runs")
+async def list_analysis_runs(session_id: Optional[str] = None, limit: int = 50):
+    """List archived runs, optionally restricted to one session."""
+    runs = RunHistoryStore(WORKSPACE_DIR).list_runs(session_id=session_id, limit=limit)
+    return {"runs": runs, "count": len(runs)}
+
+
+@app.get("/analysis/runs/{run_id}")
+async def get_analysis_run(run_id: str):
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    return snapshot
+
+
+@app.get("/analysis/runs/{run_id}/artifacts")
+async def get_analysis_run_artifacts(run_id: str):
+    artifacts = RunHistoryStore(WORKSPACE_DIR).get_artifacts(run_id)
+    if artifacts is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    return {"run_id": run_id, "artifacts": artifacts, "count": len(artifacts)}
+
+
+@app.get("/analysis/metrics")
+async def get_analysis_metrics():
+    """Aggregate run, step, retry, and tool failure metrics from history."""
+    return RunHistoryStore(WORKSPACE_DIR).metrics()
+
+
+@app.post("/analysis/runs/{run_id}/steps/{step_id}/retry")
+async def retry_analysis_step(
+    run_id: str,
+    step_id: str,
+    request: Optional[StepRetryRequest] = None,
+):
+    """Retry one failed step as a new, linked and independently auditable run."""
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    run = snapshot["run"]
+    task = snapshot["task"]
+    step = next((item for item in run.get("steps", []) if item.get("step_id") == step_id), None)
+    if step is None:
+        raise HTTPException(status_code=404, detail="Analysis step not found")
+    if step.get("status") != "failed":
+        raise HTTPException(status_code=409, detail="Only failed steps can be retried")
+    if not DEEPSEEK_API_KEY:
+        raise HTTPException(status_code=500, detail="DEEPSEEK_API_KEY not set")
+
+    session_id = task["session_id"]
+    session = await _check_session(session_id)
+    async with _sessions_lock:
+        if session_id in _ACTIVE_CANCELS:
+            raise HTTPException(status_code=409, detail="An analysis is already running for this session")
+
+    source_path = next(
+        (
+            item.get("location")
+            for item in snapshot.get("assets", [])
+            if item.get("location") and Path(item["location"]).exists()
+        ),
+        None,
+    )
+    file_path_to_use = _resolve_data_file(session, source_path)
+    reason = ((request.reason if request else None) or "").strip()[:500]
+    retry_instruction = (
+        "[STEP RETRY]\n"
+        f"Original task: {task['question']}\n"
+        "Retry failed step:\n"
+        f"- Objective: {step.get('objective', '')}\n"
+        f"- Method: {step.get('method', '')}\n"
+        f"- Previous error: {step.get('error') or 'unspecified'}\n"
+        + (f"- Operator reason: {reason}\n" if reason else "")
+        + "Reload the source data, reconstruct only the required state, retry this objective, "
+        "reuse validated prior context, and finish the report without expanding scope."
+    )
+    semantic_context = task.get("external_context")
+    runtime_workspace = Path(session["workspace"])
+
+    async def retry_sse_generator():
+        context_reader = RuntimeStreamContextReader(runtime_workspace)
+        try:
+            async for text_chunk, artifacts in _run_analysis_stream(
+                session_id=session_id,
+                session=session,
+                user_message=retry_instruction,
+                file_path_to_use=file_path_to_use,
+                semantic_context=semantic_context,
+                task_question=task["question"],
+                force_new_run=True,
+                parent_run_id=run_id,
+                retry_of_step_id=step_id,
+            ):
+                payload: Dict[str, Any] = {
+                    "choices": [{"delta": {"content": text_chunk}}],
+                    "analysis_event": build_analysis_event(
+                        session_id=session_id,
+                        stream_context=context_reader.read(),
+                        text=text_chunk,
+                        artifacts=artifacts,
+                    ),
+                }
+                if artifacts:
+                    payload["generated_files"] = artifacts
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        except AnalysisFailureError as exc:
+            payload = {
+                "error": exc.detail,
+                "analysis_event": {
+                    **build_analysis_event(
+                        session_id=session_id,
+                        stream_context=context_reader.read(),
+                    ),
+                    "type": "analysis_error",
+                },
+            }
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(retry_sse_generator(), media_type="text/event-stream")
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest):
     if not DEEPSEEK_API_KEY:
@@ -1235,7 +1419,28 @@ async def chat_completions(request: ChatCompletionRequest):
             ),
         )
 
+    if (
+        request.semantic_context is not None
+        and not request.semantic_context.matches_question(user_message)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=_failure_detail(
+                "semantic_question_mismatch",
+                "semantic_context.question does not match the user message",
+                status_code=400,
+                retryable=True,
+                hint="Resolve semantic context again for the current user question.",
+                error_type="request_error",
+            ),
+        )
+
     file_path_to_use = _resolve_data_file(session, request.file_path)
+    semantic_context = (
+        request.semantic_context.to_external_context()
+        if request.semantic_context is not None
+        else None
+    )
 
     # Create response transformer if user_friendly mode is enabled
     transformer = create_transformer(technical_mode=not request.user_friendly) if request.user_friendly else None
@@ -1245,10 +1450,22 @@ async def chat_completions(request: ChatCompletionRequest):
         async def sse_generator():
             # Signal cancellation when client disconnects mid-stream
             cancel_event = _ACTIVE_CANCELS.get(session_id)
+            runtime_workspace = Path(session["workspace"])
+            stream_context_reader = RuntimeStreamContextReader(runtime_workspace)
+
+            def _refresh_stream_context() -> Dict[str, Any]:
+                return stream_context_reader.read()
+
             try:
                 if transformer:
                     # user_friendly mode needs the full output before transforming
-                    output, gen_files = await _run_analysis(session_id, session, user_message, file_path_to_use)
+                    output, gen_files = await _run_analysis(
+                        session_id,
+                        session,
+                        user_message,
+                        file_path_to_use,
+                        semantic_context=semantic_context,
+                    )
                     execution_time = (datetime.now() - start_time).total_seconds()
                     friendly_response = transformer.transform_analysis_response(
                         raw_output=output,
@@ -1261,6 +1478,12 @@ async def chat_completions(request: ChatCompletionRequest):
                     }
                     if gen_files:
                         payload["generated_files"] = gen_files
+                    payload["analysis_event"] = build_analysis_event(
+                        session_id=session_id,
+                        stream_context=_refresh_stream_context(),
+                        text=payload["choices"][0]["delta"]["content"],
+                        artifacts=gen_files,
+                    )
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                 else:
                     # Stream chunks as they arrive so the client sees live
@@ -1268,13 +1491,23 @@ async def chat_completions(request: ChatCompletionRequest):
                     # of waiting for the whole analysis to finish before any
                     # output appears.
                     async for text, artifacts in _run_analysis_stream(
-                        session_id, session, user_message, file_path_to_use
+                        session_id,
+                        session,
+                        user_message,
+                        file_path_to_use,
+                        semantic_context=semantic_context,
                     ):
                         payload: Dict[str, Any] = {
                             "choices": [{"delta": {"content": text}}],
                         }
                         if artifacts:
                             payload["generated_files"] = artifacts
+                        payload["analysis_event"] = build_analysis_event(
+                            session_id=session_id,
+                            stream_context=_refresh_stream_context(),
+                            text=text,
+                            artifacts=artifacts,
+                        )
                         yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             except AnalysisFailureError as exc:
                 if transformer:
@@ -1285,6 +1518,13 @@ async def chat_completions(request: ChatCompletionRequest):
                     payload = {"error": friendly_error}
                 else:
                     payload = {"error": exc.detail}
+                payload["analysis_event"] = {
+                    **build_analysis_event(
+                        session_id=session_id,
+                        stream_context=_refresh_stream_context(),
+                    ),
+                    "type": "analysis_error",
+                }
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else _failure_detail(
@@ -1302,6 +1542,13 @@ async def chat_completions(request: ChatCompletionRequest):
                     payload = {"error": friendly_error}
                 else:
                     payload = {"error": detail}
+                payload["analysis_event"] = {
+                    **build_analysis_event(
+                        session_id=session_id,
+                        stream_context=_refresh_stream_context(),
+                    ),
+                    "type": "request_error",
+                }
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             except asyncio.CancelledError:
                 # Client disconnected — signal the running agent to stop
@@ -1332,6 +1579,13 @@ async def chat_completions(request: ChatCompletionRequest):
                     payload = {"error": friendly_error}
                 else:
                     payload = {"error": error_detail}
+                payload["analysis_event"] = {
+                    **build_analysis_event(
+                        session_id=session_id,
+                        stream_context=_refresh_stream_context(),
+                    ),
+                    "type": "analysis_error",
+                }
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             finally:
                 # Guarantee cleanup of cancel event regardless of exit path
@@ -1346,7 +1600,13 @@ async def chat_completions(request: ChatCompletionRequest):
         )
 
     try:
-        output, gen_files = await _run_analysis(session_id, session, user_message, file_path_to_use)
+        output, gen_files = await _run_analysis(
+            session_id,
+            session,
+            user_message,
+            file_path_to_use,
+            semantic_context=semantic_context,
+        )
     except AnalysisFailureError as exc:
         if transformer:
             friendly_error = transformer.transform_error_response(

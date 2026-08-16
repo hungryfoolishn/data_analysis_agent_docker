@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from pathlib import Path
 
 from langchain_core.tools import tool
 
@@ -15,6 +17,11 @@ from langgraph_langchain.config import (
     CONVERGENCE_NUDGE_MIN_FINDINGS as _NUDGE_MIN_FINDINGS,
     CONVERGENCE_NUDGE_MIN_STEPS as _NUDGE_MIN_STEPS,
 )
+from langgraph_langchain.runtime.context import (
+    record_session_execution,
+    register_session_artifact,
+)
+from langgraph_langchain.runtime.models import new_id
 from langgraph_langchain.tracing import get_trace_context
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,8 @@ def _factory(session):
         error_msg = _validate("python_repl")
         if error_msg:
             return f"[ERROR] {error_msg}"
+        started_at = time.monotonic()
+        execution_id = new_id("exec")
 
         trace_ctx = get_trace_context(session.session_id)
         if trace_ctx:
@@ -87,6 +96,15 @@ def _factory(session):
         session.start_stage("deep_dive")
         validation_error = _validate_python_repl_step(code)
         if validation_error:
+            record_session_execution(
+                session,
+                execution_id=execution_id,
+                tool_name="python_repl",
+                status="failed",
+                code_or_query=code,
+                error={"type": "ValidationError", "message": validation_error},
+                duration_ms=(time.monotonic() - started_at) * 1000,
+            )
             if trace_ctx:
                 trace_ctx.end_current_span(status="failed", error_message=validation_error)
             return validation_error
@@ -110,15 +128,30 @@ def _factory(session):
                 trace_ctx.current_span.set_attribute("output_length", len(output))
                 trace_ctx.end_current_span(status="completed")
         files_after = set(session.workspace_dir.rglob("*"))
+        artifact_ids: list[str] = []
         for f in files_after - files_before:
             if f.is_file():
-                rel = f.relative_to(session.workspace_dir.parent)
-                session.new_artifacts.append({
-                    "name": f.name,
-                    "path": str(f),
-                    "relative_path": str(rel),
-                    "url": f"/workspace/files/{rel}",
-                })
+                if not _is_user_artifact_path(f, session.workspace_dir):
+                    continue
+                metadata = register_session_artifact(
+                    session,
+                    f,
+                    created_by_tool="python_repl",
+                    execution_id=execution_id,
+                )
+                if metadata.get("artifact_id"):
+                    artifact_ids.append(metadata["artifact_id"])
+        record_session_execution(
+            session,
+            execution_id=execution_id,
+            tool_name="python_repl",
+            status="failed" if has_error else "succeeded",
+            code_or_query=code,
+            output_artifact_ids=artifact_ids,
+            stdout_preview=output,
+            error={"type": "PythonExecutionError", "message": stripped_output[:1000]} if has_error else None,
+            duration_ms=(time.monotonic() - started_at) * 1000,
+        )
         result = output if output.strip() else "(no output)"
         # Only nudge toward finish_report on successful steps - on error the
         # priority is fixing the code, not converging.
@@ -129,6 +162,17 @@ def _factory(session):
         return result
 
     return python_repl
+
+
+def _is_user_artifact_path(path: Path, workspace_dir: Path) -> bool:
+    """Exclude runtime metadata and atomic temp files from analysis artifacts."""
+    try:
+        relative_parts = path.resolve().relative_to(workspace_dir.resolve()).parts
+    except ValueError:
+        return False
+    return bool(relative_parts) and not any(
+        part.startswith(".") for part in relative_parts
+    )
 
 
 registry.register(
