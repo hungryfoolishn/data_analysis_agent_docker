@@ -190,6 +190,20 @@ def _factory(session):
             if missing_context:
                 issues.append(f"Data Context section is incomplete - missing: {', '.join(missing_context)}")
 
+        runtime = getattr(session, "analysis_runtime", None)
+        sampled_assets = [
+            asset for asset in getattr(runtime, "assets", {}).values()
+            if getattr(asset, "source_metadata", {}).get("sampling")
+        ] if runtime is not None else []
+        if sampled_assets and not any(
+            marker in (data_context_section or "").lower()
+            for marker in ("sampling", "sampled", "sample", "抽样", "采样", "样本")
+        ):
+            issues.append(
+                "sampling_disclosure_missing: Data Context must state the sampling method, "
+                "seed, sampled rows, and original row count"
+            )
+
         # Check if metric definitions were declared
         if len(session.metric_definitions) == 0:
             issues.append("no metrics were declared using declare_metric - use declare_metric to document key metric definitions")

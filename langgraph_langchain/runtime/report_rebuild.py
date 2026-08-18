@@ -73,11 +73,20 @@ def rebuild_report_markdown(snapshot: dict[str, Any]) -> str:
     lines.extend(["", "## Data Context", ""])
     for asset in assets:
         schema = asset.get("schema_snapshot") or {}
+        source_metadata = asset.get("source_metadata") or {}
         lines.append(
             f"- Asset `{_clean(asset.get('asset_id'))}`: `{_clean(asset.get('name'))}`, "
             f"{schema.get('row_count', 0)} rows x {schema.get('column_count', 0)} columns, "
             f"SHA-256 `{_clean(asset.get('content_hash')) or 'not-recorded'}`."
         )
+        sampling = source_metadata.get("sampling") or {}
+        if sampling:
+            lines.append(
+                f"  - Sampling disclosure: method={_clean(sampling.get('method'))}, "
+                f"seed={_clean(sampling.get('random_seed')) or 'not-applicable'}, "
+                f"sampled={sampling.get('sampled_row_count', schema.get('row_count', 0))}/"
+                f"{sampling.get('original_row_count', source_metadata.get('estimated_rows', 'unknown'))} rows."
+            )
     if not time_columns:
         lines.append("- Time range: not applicable; no datetime field was identified, so this is a static cross-sectional analysis.")
     elif metric_windows:

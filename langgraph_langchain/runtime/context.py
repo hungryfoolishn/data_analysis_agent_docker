@@ -108,12 +108,14 @@ class AnalysisRuntime:
         source_path: Path,
         source_type: Optional[str] = None,
         sheet_name: Optional[str] = None,
+        source_metadata: Optional[dict] = None,
     ) -> DataAsset:
         asset = DataAsset.from_dataframe(
             dataframe=dataframe,
             source_path=source_path,
             source_type=source_type,
             sheet_name=sheet_name,
+            source_metadata=source_metadata,
         )
         for existing in self.assets.values():
             if (

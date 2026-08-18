@@ -118,7 +118,7 @@ DeepAnalyze 平台内核
 - SSE 与工作台显示 provider/context version，完整上下文通过 runtime 快照审计。
 - WrenAI 字段映射和安全边界见 `semantic-context-contract.md`。
 
-后续顺序：
+后续批次实施记录：
 
 第六批已完成：
 
@@ -181,7 +181,30 @@ GET  /analysis/metrics
 - 运行时优先消费同方法的 pending 计划步骤，避免恢复后重复创建步骤 ID；SSE 和工作台显示 Plan 版本及状态。
 - 工作台提供暂停、确认和“方法 | 目标”格式的剩余计划编辑控件。
 
+P0 第十二至十四批已于 2026-08-17 完成首期平台实现：
+
+- 新增独立 `evaluation/` 模块，定义事实容差、禁止结论、指标/维度/时间窗口、Artifact 和 Finding 血缘断言；评分完全确定性执行，并按 calculation、evidence、overclaim、workflow、report、artifact 和 coverage 分项报告。
+- 评测结果可输出稳定 JSON/HTML；发布门禁支持关键用例、最低分类分数和相对历史基线回归检查，`make evaluation-gate CURRENT=... BASELINE=...` 返回机器可用退出码。
+- `python_repl` 默认进入独立 worker 进程；父进程负责超时、取消、进程组终止和 stdout/stderr 结构化回收，不再使用超时后仍可能继续运行的线程内 `exec`。
+- worker 清空后端环境变量，只接收显式环境；文件审计拒绝 `.env`、其他 Session 和 workspace 外部路径，图表临时目录限制在当前 Session；结果只回写可序列化分析变量。
+- Python 执行请求支持输入资产、允许目录、超时、可选内存预算和产物大小预算；输出包含状态、异常类型、退出码、命名空间更新和产物清单。
+- 新增 `DataSource` 契约以及 CSV/Excel/Parquet、Memory 和 QueryResult Adapter；统一 `scan_schema`、`estimate_rows`、`preview`、`sample` 和 `materialize`。
+- CSV 支持分块扫描和有固定种子的内存有界抽样；抽样方法、种子、原始/样本行数及覆盖信息写入 DataAsset，并由报告重建和报告门禁强制披露。
+- 数据缓存 key 包含源内容哈希、Adapter 版本、字段、过滤、参数和代码版本，支持原子写入、TTL 和容量淘汰；源文件变化会得到不同 key。
+- 恢复提示不再要求 Agent 临时调用 `df.sample()`，统一引导平台 DataSource 采样协议。
+- 服务器使用 `deepanalyze:latest` 一次性容器挂载隔离代码副本完成回归：`526 passed, 1 skipped`；正式容器、`.env`、workspace 和上传文件未参与测试写入。
+
+本轮不包含：
+
+- 第十五批 DuckDB、`execute_sql`、多表 Join、粒度声明和膨胀门禁，按产品决策暂缓；
+- 真实 WrenAI HTTP/SDK Adapter；
+- 容器/虚拟机级恶意代码强沙箱。当前 worker 提供进程终止、环境最小化和文件访问边界，不能替代后续企业安全批次的 OS 级隔离。
+
 后续顺序：
 
-1. 使用真实 WrenAI HTTP/SDK adapter 做受治理查询结果联调。
-2. 建立大文件分块、统一采样和数据版本缓存协议。
+后续实施改由 `deepanalyze-general-platform-roadmap-v2.md` 管理：
+
+1. 第十二批先建立分析评测基线与发布门禁。
+2. 第十三批实施 Python 执行进程隔离。
+3. 第十四批建立数据扫描、统一采样和缓存协议。
+4. 真实 WrenAI HTTP/SDK Adapter 暂缓，待业务语义、测试数据和联调环境成熟后重新评估。

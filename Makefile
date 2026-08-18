@@ -1,4 +1,4 @@
-.PHONY: help setup install clean server frontend test
+.PHONY: help setup install clean server frontend test evaluation-gate
 
 help:
 	@echo "DeepAnalyze 数据分析 Agent - 可用命令"
@@ -48,6 +48,10 @@ dev:
 test:
 	@echo "运行 LangGraph 可靠性测试..."
 	python -m pytest langgraph_langchain/test_reliability.py
+
+evaluation-gate:
+	@test -n "$(CURRENT)" || (echo "CURRENT=<evaluation-summary.json> is required" && exit 2)
+	python -m langgraph_langchain.evaluation.cli $(CURRENT) $(if $(BASELINE),--baseline $(BASELINE),) $(if $(POLICY),--policy $(POLICY),)
 
 test-api:
 	@echo "测试 API 端点..."

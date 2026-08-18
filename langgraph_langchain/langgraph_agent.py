@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
 import os
 import re
 import sys
-import threading
 import time
-import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Optional
@@ -1064,7 +1061,7 @@ class _Session:
         return None
 
     def run_code(self, code: str) -> str:
-        """Execute code in the persistent namespace with timeout; capture stdout+stderr."""
+        """Execute code in a bounded worker process and merge safe state updates."""
         safety_error = self._validate_code_safety(code)
         if safety_error:
             return safety_error
@@ -1102,37 +1099,32 @@ class _Session:
                 "Please fix the syntax error and retry."
             )
 
-        buf = io.StringIO()
-        had_exception: list = []
+        from langgraph_langchain.execution import IsolatedPythonExecutor, PythonExecutionRequest
 
-        def _target():
-            old_out, old_err = sys.stdout, sys.stderr
-            sys.stdout = sys.stderr = buf
-            try:
-                exec(compile(code, "<agent>", "exec"), self.ns)  # noqa: S102
-            except Exception:
-                traceback.print_exc(file=buf)
-                had_exception.append(True)
-            finally:
-                sys.stdout, sys.stderr = old_out, old_err
-
-        t = threading.Thread(target=_target, daemon=True)
-        t.start()
-        t.join(timeout=_CODE_TIMEOUT)
-        if t.is_alive():
+        result = IsolatedPythonExecutor().execute(PythonExecutionRequest(
+            code=code,
+            workspace_dir=str(self.workspace_dir),
+            source_path=self.source_path,
+            namespace=self.ns,
+            timeout_seconds=_CODE_TIMEOUT,
+            max_output_chars=_MAX_OUTPUT_LEN,
+            input_asset_ids=[self.current_asset_id] if self.current_asset_id else [],
+            allowed_directories=[str(self.workspace_dir)],
+        ), cancel_event=self.cancel_event)
+        if result.status == "succeeded":
+            # The worker never receives closures or service objects. Merge only
+            # serializable analysis values, retaining parent-side helper functions.
+            self.ns.update(result.namespace_updates)
+            return result.output
+        if result.status == "timed_out":
             return (
-                f"[ERROR] Execution timed out after {_CODE_TIMEOUT}s. "
+                f"[ERROR] Execution timed out after {_CODE_TIMEOUT}s and the worker was terminated. "
                 "Break the code into smaller steps and retry."
             )
-
-        output = buf.getvalue()
-        if had_exception:
-            output = "[ERROR]\n" + output
-
-        if len(output) > _MAX_OUTPUT_LEN:
-            output = output[:_MAX_OUTPUT_LEN] + f"\n...[output truncated at {_MAX_OUTPUT_LEN} chars]"
-
-        return output
+        if result.status == "cancelled":
+            return "[ERROR] Execution was cancelled and the worker was terminated."
+        details = result.output.strip() or result.error_message or "Python worker failed"
+        return f"[ERROR]\n{details}"
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────────

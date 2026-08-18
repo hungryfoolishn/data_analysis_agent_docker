@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 import time
 
-import pandas as pd
 from langchain_core.tools import tool
 
+from langgraph_langchain.data import DataCache, FileDataSource, SamplingSpec, cache_key
+from langgraph_langchain.config import DATA_SAMPLE_ROWS, MAX_IN_MEMORY_ROWS
 from langgraph_langchain.tools.registry import registry
 from langgraph_langchain.tools._shared import (
     _resolve_load_path,
@@ -88,41 +89,50 @@ def _factory(session):
 
             path = safe_path
             suffix = path.suffix.lower()
-            if suffix == ".csv":
-                for enc in ["utf-8", "utf-8-sig", "gbk", "gb2312", "latin-1"]:
-                    try:
-                        df = pd.read_csv(str(safe_path), encoding=enc)
-                        break
-                    except UnicodeDecodeError:
-                        continue
-                else:
-                    record_session_execution(
-                        session,
-                        tool_name="load_data",
-                        status="failed",
-                        code_or_query=str(safe_path),
-                        error={"type": "UnicodeDecodeError", "message": "Cannot decode CSV file"},
-                        duration_ms=(time.monotonic() - started_at) * 1000,
-                    )
-                    if trace_ctx:
-                        trace_ctx.end_current_span(status="failed", error_message="Cannot decode CSV file")
-                    return "ERROR: Cannot decode CSV file."
-            elif suffix in (".xlsx", ".xls"):
-                sheets = pd.ExcelFile(str(safe_path)).sheet_names
+            actual = sheet_name or None
+            if suffix in (".xlsx", ".xls"):
+                # Preserve historical fallback to the first sheet while routing
+                # all physical reads through the DataSource contract.
+                import pandas as pd
+                sheets = pd.ExcelFile(str(path)).sheet_names
                 actual = sheet_name if sheet_name in sheets else sheets[0]
-                df = pd.read_excel(str(safe_path), sheet_name=actual)
-            else:
-                record_session_execution(
-                    session,
-                    tool_name="load_data",
-                    status="failed",
-                    code_or_query=str(safe_path),
-                    error={"type": "UnsupportedFileType", "message": f"Unsupported file type '{suffix}'"},
-                    duration_ms=(time.monotonic() - started_at) * 1000,
-                )
-                if trace_ctx:
-                    trace_ctx.end_current_span(status="failed", error_message=f"Unsupported file type '{suffix}'")
-                return f"ERROR: Unsupported file type '{suffix}'."
+            source = FileDataSource(path, sheet_name=actual)
+            scan = source.scan_schema()
+            sampling_spec = (
+                SamplingSpec(method="random", target_rows=DATA_SAMPLE_ROWS, random_seed=20260817)
+                if scan.estimated_rows > MAX_IN_MEMORY_ROWS else None
+            )
+            data_cache = DataCache(session.workspace_dir / ".data_cache")
+            load_key = cache_key(
+                source_hash=scan.source_hash or "unknown",
+                adapter_version=source.adapter_version,
+                parameters={
+                    "sheet_name": actual or "",
+                    "sampling": sampling_spec.model_dump() if sampling_spec else None,
+                },
+            )
+            df = data_cache.get(load_key)
+            cache_hit = df is not None
+            sampling_metadata = None
+            if df is None:
+                if sampling_spec:
+                    df, sampling_metadata = source.sample(sampling_spec)
+                else:
+                    df = source.materialize()
+                data_cache.put(load_key, df, metadata={
+                    "source_hash": scan.source_hash,
+                    "source_type": source.source_type,
+                    "sheet_name": actual,
+                    "sampling": sampling_metadata.model_dump() if sampling_metadata else None,
+                })
+            elif sampling_spec:
+                sampling_metadata = {
+                    "method": sampling_spec.method,
+                    "random_seed": sampling_spec.random_seed,
+                    "target_rows": sampling_spec.target_rows,
+                    "original_row_count": scan.estimated_rows,
+                    "sampled_row_count": len(df),
+                }
 
             # Inject df into exec namespace so subsequent python_repl calls can use it
             session.ns["df"] = df
@@ -132,6 +142,17 @@ def _factory(session):
                 source_path=path,
                 source_type=suffix.lstrip("."),
                 sheet_name=actual if suffix in (".xlsx", ".xls") else None,
+                source_metadata={
+                    **scan.metadata,
+                    "source_hash": scan.source_hash,
+                    "estimated_rows": scan.estimated_rows,
+                    "cache_key": load_key,
+                    "cache_hit": cache_hit,
+                    "sampling": (
+                        sampling_metadata.model_dump()
+                        if hasattr(sampling_metadata, "model_dump") else sampling_metadata
+                    ),
+                },
             )
             if asset is not None:
                 session.current_asset_id = asset.asset_id
@@ -153,8 +174,14 @@ def _factory(session):
             lines = [
                 f"File: {path.name}",
                 f"Shape: {df.shape[0]} rows × {df.shape[1]} columns",
+                f"Source scan: estimated {scan.estimated_rows} rows; cache {'hit' if cache_hit else 'miss'}",
                 "\nColumns and dtypes:",
             ]
+            if sampling_spec:
+                lines.insert(3, (
+                    f"Sampling: deterministic random, seed={sampling_spec.random_seed}, "
+                    f"{len(df)}/{scan.estimated_rows} rows"
+                ))
             for col, dtype in df.dtypes.items():
                 null_count = df[col].isna().sum()
                 lines.append(f"  {col} ({dtype}) — {null_count} nulls")

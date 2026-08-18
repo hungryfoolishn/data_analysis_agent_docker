@@ -19,6 +19,7 @@ The Data Context section must explicitly document:
 - Deduplication rule, including the rule used when zero duplicates were found.
 - Denominator and scope for ratios or shares.
 - Key assumptions and any field-meaning uncertainty.
+- When `load_data` reports sampling: sampling method, random seed, sampled rows, original rows, and that numeric conclusions are sample-based.
 
 The Visualizations section must do more than list filenames. For each chart, name the chart, state the numerical pattern or comparison it shows, and identify the finding it supports. If no chart was created, omit this section.
 

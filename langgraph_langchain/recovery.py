@@ -98,7 +98,8 @@ class RecoveryStrategy:
             hint_text = (
                 "\n\nIMPORTANT: Previous attempt ran out of memory. "
                 "Load only necessary columns. "
-                "Use df.sample(n=5000) for large datasets before analysis. "
+                "Use the platform DataSource sampling protocol instead of ad-hoc df.sample(), "
+                "and preserve its seed, source row count, and sampled row count disclosure. "
                 "Avoid creating multiple copies of the DataFrame."
             )
         elif self.failure_code == "disk_space_exhausted":
@@ -150,12 +151,9 @@ class RecoveryStrategy:
 
         hint_text = (
             "\n\nIMPORTANT: Previous attempt hit resource limits. "
-            "Add sampling at the start of your analysis:\n"
-            "```python\n"
-            "df = df.sample(n=min(5000, len(df)), random_state=42)\n"
-            "print(f'Sampled {len(df)} rows for analysis')\n"
-            "```\n"
-            "Then proceed with the analysis on the sampled data."
+            "Retry through the platform DataSource sampling protocol; do not call df.sample() directly. "
+            "The retry must retain a deterministic seed and disclose original and sampled row counts "
+            "in Data Context before drawing conclusions."
         )
         modified_instruction = original_instruction + hint_text
 

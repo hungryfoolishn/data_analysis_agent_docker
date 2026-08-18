@@ -97,6 +97,7 @@ class DataAsset(BaseModel):
     sheet_name: Optional[str] = None
     schema_snapshot: SchemaSnapshot
     grain: Optional[str] = None
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=_utc_now)
 
     @classmethod
@@ -107,6 +108,7 @@ class DataAsset(BaseModel):
         source_path: Path,
         source_type: Optional[str] = None,
         sheet_name: Optional[str] = None,
+        source_metadata: Optional[dict[str, Any]] = None,
     ) -> "DataAsset":
         resolved = source_path.resolve()
         return cls(
@@ -116,4 +118,5 @@ class DataAsset(BaseModel):
             content_hash=hash_file(resolved) if resolved.is_file() else None,
             sheet_name=sheet_name or None,
             schema_snapshot=SchemaSnapshot.from_dataframe(dataframe),
+            source_metadata=source_metadata or {},
         )

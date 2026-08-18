@@ -86,6 +86,11 @@ SESSION_TTL_HOURS: float = float(os.environ.get("SESSION_TTL_HOURS", "24"))
 WORKSPACE_DIR: Path = Path(os.environ.get("WORKSPACE_DIR", "./workspace"))
 MAX_WORKSPACE_SIZE_MB: int = int(os.environ.get("MAX_WORKSPACE_SIZE_MB", "1024"))
 MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
+MAX_IN_MEMORY_ROWS: int = int(os.environ.get("MAX_IN_MEMORY_ROWS", "500000"))
+"""Rows above which file loading uses a disclosed deterministic sample."""
+
+DATA_SAMPLE_ROWS: int = int(os.environ.get("DATA_SAMPLE_ROWS", "100000"))
+"""Default sample size for sources larger than ``MAX_IN_MEMORY_ROWS``."""
 
 # ── Artifact retention ───────────────────────────────────────────────────────
 MAX_RETAINED_ARTIFACTS: int = 50
