@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -52,6 +52,10 @@ from langgraph_langchain.runtime.finding_lineage import (
     expand_finding_lineage,
 )
 from langgraph_langchain.runtime.report_rebuild import write_rebuilt_report
+from langgraph_langchain.runtime.models import RuntimePlanStep
+from langgraph_langchain.runtime.plans import AnalysisPlan, PlanBudget
+from langgraph_langchain.runtime.quality import check_analysis_quality
+from langgraph_langchain.evaluation.release_candidate import ReleaseCandidateInput, assess_release_candidate
 from langgraph_langchain.semantic.models import SemanticResolution
 from langgraph_langchain.config import (
     DEEPSEEK_API_KEY,
@@ -61,6 +65,8 @@ from langgraph_langchain.config import (
     SESSION_TTL_HOURS,
     WORKSPACE_DIR,
     MAX_UPLOAD_SIZE_MB,
+    API_AUTH_TOKEN,
+    CORS_ALLOWED_ORIGINS,
 )
 
 load_dotenv()
@@ -118,6 +124,75 @@ SESSIONS: Dict[str, Dict[str, Any]] = {}
 _ACTIVE_CANCELS: Dict[str, asyncio.Event] = {}
 # session_id -> event requesting a recoverable pause at the next tool boundary
 _ACTIVE_PAUSES: Dict[str, asyncio.Event] = {}
+_TASKS: Dict[str, Dict[str, Any]] = {}
+_TASK_IDEMPOTENCY: Dict[str, str] = {}
+_TASKS_LOCK = asyncio.Lock()
+_TASKS_FILE = WORKSPACE_DIR / ".analysis_tasks.json"
+
+
+def _task_public(task: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in task.items() if key not in {"_worker", "events"}}
+
+
+def _save_tasks() -> None:
+    payload = {
+        key: {item_key: item_value for item_key, item_value in value.items() if item_key != "_worker"}
+        for key, value in _TASKS.items()
+    }
+    _TASKS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _mark_interrupted_run_failed(task: Dict[str, Any]) -> None:
+    run_id = task.get("run_id")
+    session_id = task.get("session_id")
+    if not run_id or not session_id:
+        return
+    paths = [
+        WORKSPACE_DIR / session_id / ".analysis_runtime.json",
+        WORKSPACE_DIR / session_id / ".analysis_runs" / f"{run_id}.json",
+    ]
+    snapshot = None
+    for path in paths:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        run = data.get("run") or {}
+        if run.get("run_id") != run_id or run.get("status") not in {"created", "running", "paused"}:
+            continue
+        run["status"] = "failed"
+        run["updated_at"] = datetime.now().isoformat()
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        snapshot = data
+    if snapshot is not None:
+        try:
+            from langgraph_langchain.runtime.sqlite_store import SQLiteMetadataStore
+            SQLiteMetadataStore(WORKSPACE_DIR / ".analysis_metadata.sqlite").save_snapshot(snapshot)
+        except Exception:
+            pass
+
+
+def _load_tasks() -> None:
+    if not _TASKS_FILE.exists():
+        return
+    try:
+        data = json.loads(_TASKS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    for task_id, task in data.items():
+        task.setdefault("events", [])
+        if task.get("status") in {"queued", "running", "cancel_requested"}:
+            task["status"] = "failed"
+            task["error"] = "Backend restarted before task completion; task is not recoverable."
+            _mark_interrupted_run_failed(task)
+        _TASKS[task_id] = task
+        if task.get("idempotency_key"):
+            _TASK_IDEMPOTENCY[task["idempotency_key"]] = task_id
+
+
+def _persist_task(task: Dict[str, Any]) -> None:
+    task["updated_at"] = datetime.now().isoformat()
+    _save_tasks()
 
 # Lock to prevent race conditions on SESSIONS / _ACTIVE_CANCELS mutations
 _sessions_lock = asyncio.Lock()
@@ -794,6 +869,14 @@ class ChatCompletionRequest(BaseModel):
     semantic_context: Optional[SemanticResolution] = None
 
 
+class AnalysisTaskCreateRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    session_id: Optional[str] = None
+    file_path: Optional[str] = None
+    idempotency_key: Optional[str] = Field(default=None, max_length=200)
+    semantic_context: Optional[SemanticResolution] = None
+
+
 class StepRetryRequest(BaseModel):
     reason: Optional[str] = None
 
@@ -818,6 +901,25 @@ class PlanRevisionRequest(BaseModel):
     steps: List[PlanStepRequest]
 
 
+class PlanBudgetRequest(BaseModel):
+    max_steps: int = Field(default=20, ge=1, le=200)
+    max_duration_seconds: float = Field(default=900.0, gt=0, le=86400)
+    max_memory_mb: Optional[int] = Field(default=None, ge=128, le=262144)
+
+
+class PlanProposalRequest(BaseModel):
+    goal: str = Field(..., min_length=1)
+    success_criteria: List[str] = Field(default_factory=list)
+    input_asset_ids: List[str] = Field(default_factory=list)
+    metrics: List[str] = Field(default_factory=list)
+    dimensions: List[str] = Field(default_factory=list)
+    time_field: Optional[str] = None
+    steps: List[PlanStepRequest]
+    budget: PlanBudgetRequest = Field(default_factory=PlanBudgetRequest)
+    require_confirmation: bool = False
+    strict_execution: bool = True
+
+
 class PlanConfirmationRequest(BaseModel):
     confirmed_by: str = "user"
     note: Optional[str] = None
@@ -836,14 +938,27 @@ async def lifespan(app: FastAPI):
     _agent_semaphore = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
     _load_sessions()
     _prune_stale_sessions()
+    _load_tasks()
     yield
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="LangGraph ReAct Data Analysis API", lifespan=lifespan)
+@app.middleware("http")
+async def api_security_middleware(request: Request, call_next):
+    from langgraph_langchain.security import verify_bearer_token
+    if request.url.path != "/health" and not verify_bearer_token(request.headers.get("authorization"), API_AUTH_TOKEN):
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -864,6 +979,11 @@ async def _startup():
     _agent_semaphore = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
     _load_sessions()
     _prune_stale_sessions()
+
+
+@app.post("/release/candidate/assess")
+async def assess_candidate_release(request: ReleaseCandidateInput):
+    return assess_release_candidate(request).model_dump(mode="json")
 
 
 @app.get("/health")
@@ -1400,7 +1520,31 @@ async def get_analysis_plan(run_id: str):
         "steps": run.get("steps") or [],
         "revisions": run.get("plan_revisions") or [],
         "confirmation": run.get("plan_confirmation"),
+        "plan": run.get("plan"),
     }
+
+
+@app.post("/analysis/runs/{run_id}/plan/propose")
+async def propose_analysis_plan(run_id: str, request: PlanProposalRequest):
+    """Validate and persist the complete plan before analytical execution."""
+    runtime = _load_mutable_analysis_runtime(run_id)
+    try:
+        plan = AnalysisPlan(
+            goal=request.goal,
+            success_criteria=request.success_criteria,
+            input_asset_ids=request.input_asset_ids,
+            metrics=request.metrics,
+            dimensions=request.dimensions,
+            time_field=request.time_field,
+            steps=[RuntimePlanStep.model_validate(item.model_dump(exclude_none=True)) for item in request.steps],
+            budget=PlanBudget(**request.budget.model_dump()),
+            require_confirmation=request.require_confirmation,
+            strict_execution=request.strict_execution,
+        )
+        runtime.propose_plan(plan)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return (await get_analysis_plan(run_id))
 
 
 @app.post("/analysis/runs/{run_id}/plan/pause")
@@ -1462,6 +1606,14 @@ async def confirm_analysis_plan(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return run.model_dump(mode="json")
+
+
+@app.get("/analysis/runs/{run_id}/quality")
+async def get_analysis_run_quality(run_id: str):
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    return check_analysis_quality(snapshot).model_dump(mode="json")
 
 
 @app.get("/analysis/runs/{run_id}/artifacts")
@@ -1655,6 +1807,92 @@ async def retry_analysis_step(
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(retry_sse_generator(), media_type="text/event-stream")
+
+
+
+async def _background_analysis_task(task_id: str, session_id: str, session: Dict[str, Any], request: AnalysisTaskCreateRequest, file_path: str):
+    task = _TASKS[task_id]
+    try:
+        semantic_context = request.semantic_context.to_external_context() if request.semantic_context else None
+        async for text, artifacts in _run_analysis_stream(
+            session_id=session_id, session=session, user_message=request.question,
+            file_path_to_use=file_path, semantic_context=semantic_context,
+            task_question=request.question,
+        ):
+            task["events"].append({"cursor": len(task["events"]), "type": "content", "text": text, "artifacts": artifacts})
+            try:
+                snapshot = json.loads((Path(session["workspace"]) / ".analysis_runtime.json").read_text(encoding="utf-8"))
+                discovered_run_id = (snapshot.get("run") or {}).get("run_id")
+                if discovered_run_id and discovered_run_id != task.get("run_id"):
+                    task["run_id"] = discovered_run_id
+                    _persist_task(task)
+            except (OSError, json.JSONDecodeError):
+                pass
+        task["status"] = "completed"
+        _persist_task(task)
+    except asyncio.CancelledError:
+        task["status"] = "cancelled"
+        _persist_task(task)
+        raise
+    except Exception as exc:
+        task["status"] = "failed"
+        task["error"] = str(exc)
+        _persist_task(task)
+    finally:
+        _persist_task(task)
+
+
+@app.post("/analysis/tasks")
+async def create_analysis_task(request: AnalysisTaskCreateRequest):
+    if request.idempotency_key and request.idempotency_key in _TASK_IDEMPOTENCY:
+        return _task_public(_TASKS[_TASK_IDEMPOTENCY[request.idempotency_key]])
+    session_id, session = await get_or_create_session(request.session_id)
+    session = await _check_session(session_id)
+    file_path = _resolve_data_file(session, request.file_path)
+    task_id = f"task_{uuid.uuid4().hex}"
+    task = {
+        "task_id": task_id, "session_id": session_id, "run_id": None,
+        "status": "queued", "question": request.question, "events": [],
+        "error": None, "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+        "idempotency_key": request.idempotency_key,
+    }
+    async with _TASKS_LOCK:
+        _TASKS[task_id] = task
+        if request.idempotency_key:
+            _TASK_IDEMPOTENCY[request.idempotency_key] = task_id
+    task["status"] = "running"
+    task["_worker"] = asyncio.create_task(_background_analysis_task(task_id, session_id, session, request, file_path))
+    _persist_task(task)
+    return _task_public(task)
+
+
+@app.get("/analysis/tasks/{task_id}")
+async def get_analysis_task(task_id: str):
+    task = _TASKS.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Analysis task not found")
+    return _task_public(task)
+
+
+@app.get("/analysis/tasks/{task_id}/events")
+async def get_analysis_task_events(task_id: str, after: int = 0):
+    task = _TASKS.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Analysis task not found")
+    return {"task_id": task_id, "next_cursor": len(task["events"]), "events": task["events"][max(0, after):]}
+
+
+@app.post("/analysis/tasks/{task_id}/cancel")
+async def cancel_analysis_task(task_id: str):
+    task = _TASKS.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Analysis task not found")
+    event = _ACTIVE_CANCELS.get(task["session_id"])
+    if event:
+        event.set()
+    task["status"] = "cancel_requested"
+    return {"task_id": task_id, "status": task["status"]}
 
 
 @app.post("/v1/chat/completions")

@@ -27,6 +27,10 @@ class RunHistoryStore:
     def __init__(self, workspace_root: Path):
         self.workspace_root = workspace_root.resolve()
 
+    def _sqlite(self):
+        from langgraph_langchain.runtime.sqlite_store import SQLiteMetadataStore
+        return SQLiteMetadataStore(self.workspace_root / ".analysis_metadata.sqlite")
+
     def _snapshot_paths(self, session_id: Optional[str] = None):
         if session_id:
             session_dir = (self.workspace_root / session_id).resolve()
@@ -80,6 +84,13 @@ class RunHistoryStore:
                 error["type"] = "ReportValidationFeedback"
 
     def list_runs(self, *, session_id: Optional[str] = None, limit: int = 50) -> list[dict]:
+        try:
+            snapshots = self._sqlite().list_runs(session_id=session_id)
+            if snapshots:
+                snapshots.sort(key=lambda item: item["run"]["created_at"], reverse=True)
+                return [self._summary(item) for item in snapshots[: max(1, min(limit, 200))]]
+        except Exception:
+            pass
         snapshots = [
             snapshot
             for path in self._snapshot_paths(session_id)
@@ -91,6 +102,14 @@ class RunHistoryStore:
     def get_run(self, run_id: str) -> Optional[dict[str, Any]]:
         if re.fullmatch(r"run_[0-9a-f]{32}", run_id) is None:
             return None
+        try:
+            snapshot = self._sqlite().get_run(run_id)
+            if snapshot is not None:
+                self._normalize_recoverable_validation_statuses(snapshot)
+                self._load_legacy_findings(snapshot)
+                return snapshot
+        except Exception:
+            pass
         for path in self.workspace_root.glob(f"*/.analysis_runs/{run_id}.json"):
             snapshot = self._load_path(path)
             if snapshot is not None:

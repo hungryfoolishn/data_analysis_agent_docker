@@ -88,6 +88,8 @@ _RATE_LIMIT_PATTERNS = [
     "try again in",
     "please retry after",
     "resource_exhausted",
+    "concurrency limit",
+    "concurrent request",
 ]
 
 _OVERLOADED_PATTERNS = [

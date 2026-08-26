@@ -827,6 +827,7 @@ class _Session:
                 force_new_run=force_new_run,
                 parent_run_id=parent_run_id,
                 retry_of_step_id=retry_of_step_id,
+                plan_first=True,
             )
         except Exception as exc:
             self.logger.warning("analysis_runtime_init_failed session=%s error=%s", session_id, exc)
@@ -1091,10 +1092,11 @@ class _Session:
                 )
             error_lines = code.splitlines()
             line_info = ""
+            display_message = "invalid decimal literal" if hint else e.msg
             if 1 <= e.lineno <= len(error_lines):
                 line_info = f"\n  Line {e.lineno}: {error_lines[e.lineno - 1]}"
             return (
-                f"[ERROR] SyntaxError: {e.msg}.{hint}\n"
+                f"[ERROR] SyntaxError: {display_message}.{hint}\n"
                 f"  Offending text: {offending_line}{line_info}\n"
                 "Please fix the syntax error and retry."
             )
@@ -1390,6 +1392,31 @@ def _complete_runtime_step(
     finally:
         if session.current_runtime_step_id == step_id:
             session.current_runtime_step_id = None
+
+
+def _bind_runtime_execution_step(
+    session: "_Session", tool_name: str, step_id: Optional[str]
+) -> None:
+    """Backfill lineage when tool execution finishes before its stream event is consumed."""
+    runtime = getattr(session, "analysis_runtime", None)
+    if not step_id or runtime is None:
+        return
+    execution = next(
+        (
+            item
+            for item in reversed(getattr(runtime, "executions", []) or [])
+            if item.tool_name == tool_name and not item.step_id
+        ),
+        None,
+    )
+    if execution is None:
+        return
+    execution.step_id = step_id
+    for artifact_id in execution.output_artifact_ids:
+        artifact = (getattr(runtime, "artifacts", {}) or {}).get(artifact_id)
+        if artifact is not None and not artifact.step_id:
+            artifact.step_id = step_id
+    runtime.persist()
 
 
 def _set_runtime_run_status(
@@ -1703,6 +1730,7 @@ async def run_analysis_stream(
                         runtime_entry = active_runtime_steps.pop(matching_key)
                 runtime_step_id = runtime_entry[1] if runtime_entry else session.current_runtime_step_id
                 runtime_status = _tool_output_status(runtime_output)
+                _bind_runtime_execution_step(session, name, runtime_step_id)
                 _complete_runtime_step(
                     session,
                     runtime_step_id,
@@ -1949,15 +1977,12 @@ async def run_analysis_stream(
             # For transient API errors, provide a user-friendly retry hint
             from langgraph_langchain.retry_utils import jittered_backoff
             delay = jittered_backoff(1, base_delay=3.0, max_delay=30.0)
-            log.info("api_retry session=%s reason=%s delay=%.1fs", session_id, classified.reason.value, delay)
+            log.info("api_retry_recommended session=%s reason=%s delay=%.1fs", session_id, classified.reason.value, delay)
             yield (
                 f"\n\n**API 临时错误** ({classified.reason.value})，"
-                f"等待 {delay:.0f} 秒后自动重试...\n",
+                f"建议等待至少 {delay:.0f} 秒后重试。\n",
                 [],
             )
-            # Note: full auto-retry requires restarting the agent loop,
-            # which is handled by the frontend's retry button. Here we just
-            # provide a clear error message with the classified reason.
 
         # End trace on error
         trace_context.end_trace()

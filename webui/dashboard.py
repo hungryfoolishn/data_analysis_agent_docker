@@ -6,6 +6,7 @@
 
 import streamlit as st
 import requests
+import os
 import time
 from datetime import datetime
 from typing import Dict, Any, List
@@ -13,6 +14,7 @@ from typing import Dict, Any, List
 # API 配置
 API_BASE_URL = "http://localhost:8888"
 DASHBOARD_ENDPOINT = f"{API_BASE_URL}/metrics/dashboard"
+API_AUTH_TOKEN = os.environ.get("API_AUTH_TOKEN", "")
 
 # 页面配置
 st.set_page_config(
@@ -26,7 +28,8 @@ st.set_page_config(
 def fetch_dashboard_metrics() -> Dict[str, Any]:
     """获取仪表板指标"""
     try:
-        response = requests.get(DASHBOARD_ENDPOINT, timeout=5)
+        headers = {"Authorization": f"Bearer {API_AUTH_TOKEN}"} if API_AUTH_TOKEN else {}
+        response = requests.get(DASHBOARD_ENDPOINT, headers=headers, timeout=5)
         if response.status_code == 200:
             return response.json()
         else:

@@ -23,6 +23,7 @@ from langgraph_langchain.runtime.models import (
     new_id,
     utc_now,
 )
+from langgraph_langchain.runtime.plans import AnalysisPlan, validate_plan
 
 _RUNTIME_STATE_FILE = ".analysis_runtime.json"
 _RUN_HISTORY_DIR = ".analysis_runs"
@@ -65,6 +66,7 @@ class AnalysisRuntime:
         force_new_run: bool = False,
         parent_run_id: Optional[str] = None,
         retry_of_step_id: Optional[str] = None,
+        plan_first: bool = False,
     ) -> None:
         self.workspace_dir = workspace_dir.resolve()
         self.session_id = session_id or "default"
@@ -91,6 +93,8 @@ class AnalysisRuntime:
             external_context=external_context,
         )
         self.run = AnalysisRun(task_id=self.task.task_id)
+        if plan_first:
+            self.propose_default_plan(question)
         self._persist()
 
     @property
@@ -230,6 +234,51 @@ class AnalysisRuntime:
             self._persist()
         return payload
 
+    def propose_default_plan(self, question: str) -> AnalysisPlan:
+        from langgraph_langchain.runtime.plans import default_analysis_plan
+
+        plan = default_analysis_plan(question)
+        self.run.plan = plan.model_dump(mode="json")
+        self.run.plan_version = plan.version
+        self.run.plan_status = "active"
+        self.run.updated_at = utc_now()
+        return plan
+
+    def propose_plan(self, plan: AnalysisPlan) -> AnalysisPlan:
+        """Validate and persist a complete plan before execution."""
+        from langgraph_langchain.tools.registry import registry
+
+        asset_columns = {
+            asset_id: {column.name for column in asset.schema_snapshot.columns}
+            for asset_id, asset in self.assets.items()
+        }
+        errors = validate_plan(
+            plan,
+            available_methods=registry.get_tool_names(),
+            available_asset_ids=self.assets,
+            asset_columns=asset_columns,
+        )
+        if errors:
+            raise ValueError("Plan validation failed: " + "; ".join(errors))
+        if any(step.status in {"running", "succeeded", "failed"} for step in self.run.steps):
+            raise ValueError("A plan can only be proposed before execution or after pausing")
+        plan.version = self.run.plan_version
+        self.run.plan = plan.model_dump(mode="json")
+        self.run.steps = [item.model_copy(deep=True) for item in plan.steps]
+        self.run.plan_confirmation = None
+        self.run.plan_status = "awaiting_confirmation" if plan.require_confirmation else "active"
+        self.run.status = "awaiting_confirmation" if plan.require_confirmation else "running"
+        self.run.updated_at = utc_now()
+        self._persist()
+        return plan
+
+    def _sync_plan_steps(self) -> None:
+        if self.run.plan is not None and self.run.plan.get("strict_execution"):
+            self.run.plan["version"] = self.run.plan_version
+            self.run.plan["steps"] = [
+                item.model_dump(mode="json") for item in self.run.steps
+            ]
+
     def start_step(
         self,
         *,
@@ -249,6 +298,22 @@ class AnalysisRuntime:
             ),
             None,
         )
+        if self.run.plan and self.run.plan.get("strict_execution"):
+            if step is None:
+                raise ValueError(f"Method '{method}' is not present in the approved plan")
+            blocked = [
+                dependency
+                for dependency in step.depends_on
+                if not any(
+                    item.step_id == dependency and item.status in {"succeeded", "skipped"}
+                    for item in self.run.steps
+                )
+            ]
+            if blocked:
+                raise ValueError(
+                    f"Plan step '{step.step_id}' is waiting for dependencies: "
+                    + ", ".join(blocked)
+                )
         if step is None:
             step = RuntimePlanStep(
                 objective=objective,
@@ -270,6 +335,7 @@ class AnalysisRuntime:
             if not step.expected_outputs:
                 step.expected_outputs = list(expected_outputs or [])
         self.run.current_step_id = step.step_id
+        self._sync_plan_steps()
         self.run.status = "running"
         self.run.plan_status = "active"
         self.run.updated_at = now
@@ -297,6 +363,7 @@ class AnalysisRuntime:
             step.error = error[:1000] if error else None
         if self.run.current_step_id == step_id:
             self.run.current_step_id = None
+        self._sync_plan_steps()
         self.run.updated_at = utc_now()
         self._persist()
         return step
@@ -381,6 +448,7 @@ class AnalysisRuntime:
         self.run.status = "awaiting_confirmation"
         self.run.pause_reason = reason.strip()
         self.run.current_step_id = None
+        self._sync_plan_steps()
         self.run.updated_at = utc_now()
         self._persist()
         return self.run
@@ -567,6 +635,11 @@ class AnalysisRuntime:
                 raise
         except Exception as exc:
             logger.warning("Runtime history archival failed: %s", exc)
+        try:
+            from langgraph_langchain.runtime.sqlite_store import SQLiteMetadataStore
+            SQLiteMetadataStore(self.workspace_dir.parent / ".analysis_metadata.sqlite").save_snapshot(snapshot)
+        except Exception as exc:
+            logger.warning("Runtime SQLite persistence failed: %s", exc)
 
 
 def register_session_artifact(

@@ -81,6 +81,15 @@ REQUIRED_STEP_MARKER_ALIASES: dict[str, tuple[str, ...]] = {
 # ── Server / session ─────────────────────────────────────────────────────────
 MAX_CONCURRENT_AGENTS: int = int(os.environ.get("MAX_CONCURRENT_AGENTS", "3"))
 SESSION_TTL_HOURS: float = float(os.environ.get("SESSION_TTL_HOURS", "24"))
+API_AUTH_TOKEN: str = os.environ.get("API_AUTH_TOKEN", "")
+CORS_ALLOWED_ORIGINS: list[str] = [
+    item.strip()
+    for item in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:18501,http://127.0.0.1:18501",
+    ).split(",")
+    if item.strip()
+]
 
 # ── Workspace ────────────────────────────────────────────────────────────────
 WORKSPACE_DIR: Path = Path(os.environ.get("WORKSPACE_DIR", "./workspace"))

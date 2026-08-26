@@ -11,6 +11,8 @@ from langgraph_langchain.runtime.report_rebuild import (
     rebuild_report_markdown,
     write_rebuilt_report,
 )
+from langgraph_langchain.runtime.plans import AnalysisPlan, PlanBudget, default_analysis_plan, validate_plan
+from langgraph_langchain.runtime.quality import AnalysisQualityResult, QualityIssue, check_analysis_quality
 from langgraph_langchain.runtime.models import (
     AnalysisRun,
     AnalysisTask,
@@ -21,6 +23,13 @@ from langgraph_langchain.runtime.models import (
 )
 
 __all__ = [
+    "AnalysisQualityResult",
+    "QualityIssue",
+    "check_analysis_quality",
+    "AnalysisPlan",
+    "PlanBudget",
+    "default_analysis_plan",
+    "validate_plan",
     "AnalysisRun",
     "AnalysisRuntime",
     "AnalysisTask",

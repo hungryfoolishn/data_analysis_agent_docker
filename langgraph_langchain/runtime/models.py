@@ -82,6 +82,8 @@ class AnalysisRun(BaseModel):
     paused_at: Optional[str] = None
     plan_revisions: list[PlanRevision] = Field(default_factory=list)
     plan_confirmation: Optional[PlanConfirmation] = None
+    # Serialized AnalysisPlan; kept optional for legacy snapshots.
+    plan: Optional[dict[str, Any]] = None
 
 
 class ExecutionResult(BaseModel):

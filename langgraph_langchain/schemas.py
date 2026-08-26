@@ -30,6 +30,10 @@ FailureCode = Literal[
     "corrupted_data_file",
     "permission_denied",
     "missing_api_key",
+    "overloaded",
+    "server_error",
+    "rate_limit",
+    "unknown",
 ]
 
 StageStatus = Literal["started", "completed", "failed"]

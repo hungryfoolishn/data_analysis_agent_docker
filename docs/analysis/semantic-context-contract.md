@@ -96,4 +96,4 @@ WrenAI 适配器应位于 WrenAI 一侧或独立集成层。它可以通过 HTTP
 - `/v1/chat/completions` 的可选 `semantic_context` 字段。
 - runtime 持久化、恢复、prompt 投影和 SSE 版本标识。
 
-真实 WrenAI 联调当前暂缓。未来恢复实施时，只需实现 `SemanticContextProvider.resolve_question()` 或在 WrenAI API 层直接输出本契约，并将受治理查询结果作为 DeepAnalyze 的输入资产提交；近期顺序以 `deepanalyze-general-platform-roadmap-v2.md` 为准。
+下一步接真实 WrenAI 时，只需实现 `SemanticContextProvider.resolve_question()` 或在 WrenAI API 层直接输出本契约，并将受治理查询结果作为 DeepAnalyze 的输入资产提交。

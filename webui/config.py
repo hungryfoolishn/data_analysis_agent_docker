@@ -10,6 +10,16 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8888")
 # 可通过环境变量覆盖：FILE_SERVER_BASE
 FILE_SERVER_BASE = os.environ.get("FILE_SERVER_BASE", "http://localhost:8888")
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "deepseek-chat")
+API_AUTH_TOKEN = os.environ.get("API_AUTH_TOKEN", "")
+
+
+def api_headers(json_content: bool = False) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if API_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {API_AUTH_TOKEN}"
+    if json_content:
+        headers["Content-Type"] = "application/json"
+    return headers
 
 # Gradio配置
 GRADIO_SERVER_NAME = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")

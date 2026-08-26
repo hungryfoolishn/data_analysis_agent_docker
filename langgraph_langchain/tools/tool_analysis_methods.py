@@ -15,6 +15,11 @@ from langgraph_langchain.analysis_methods import (
     compare_groups as compute_group_comparison,
     decompose_contribution as compute_contribution,
     detect_iqr_anomalies,
+    profile_distribution,
+    analyze_correlation,
+    compare_periods,
+    calculate_ratio,
+    analyze_funnel, analyze_retention, test_group_difference, analyze_concentration, run_sensitivity_check,
 )
 from langgraph_langchain.runtime import SessionExecutionRecorder
 from langgraph_langchain.tools._shared import _validate_tool_stage_factory
@@ -61,6 +66,15 @@ def _run_method(session, tool_name: str, inputs: dict, compute: Callable, rows_k
             "periods": ["period", "value", "row_count", "absolute_change", "percent_change"],
             "contributions": ["dimension", "group", "previous", "current", "contribution", "contribution_share"],
             "anomalies": ["row_index", "value"],
+            "distribution": ["statistic", "value"],
+            "correlations": ["x_field", "y_field", "correlation", "sample_size"],
+            "period_comparison": ["period", "value", "row_count"],
+            "ratios": ["numerator", "denominator", "ratio"],
+            "funnel": ["stage", "entity_count", "conversion_from_first"],
+            "retention": ["cohort", "cohort_size"],
+            "group_difference": ["group_a", "group_b", "difference", "effect_size"],
+            "concentration": ["group", "value", "share"],
+            "sensitivity": ["scenario", "value"],
         }[rows_key]
         _write_rows(artifact_path, rows, artifact_columns)
         metadata = recorder.register_artifact(artifact_path)
@@ -250,3 +264,135 @@ registry.register(
     factory=_anomaly_factory,
     description="Structured IQR anomaly detection with bounds and source row indices.",
 )
+
+
+def _distribution_factory(session):
+    @tool
+    def profile_distribution(metric: str) -> str:
+        """Profile quantiles, spread, skewness, long-tail signal, and missingness."""
+        return _run_method(session, "profile_distribution", {"metric": metric}, compute_profile_distribution, "distribution")
+    return profile_distribution
+
+
+def _correlation_factory(session):
+    @tool
+    def analyze_correlation(
+        x_field: str,
+        y_field: str,
+        correlation_method: Literal["pearson", "spearman"] = "pearson",
+    ) -> str:
+        """Calculate an association with pairwise-complete sample size and non-causal disclosure."""
+        return _run_method(
+            session, "analyze_correlation",
+            {"x_field": x_field, "y_field": y_field, "correlation_method": correlation_method},
+            compute_correlation, "correlations",
+        )
+    return analyze_correlation
+
+
+def _period_comparison_factory(session):
+    @tool
+    def compare_periods(
+        date_field: str,
+        metric: str,
+        frequency: Literal["day", "week", "month", "quarter", "year"] = "month",
+        aggregation: Literal["sum", "mean", "median", "count"] = "sum",
+        current_period: str = "",
+        previous_period: str = "",
+    ) -> str:
+        """Compare two declared or latest adjacent periods with denominator disclosure."""
+        return _run_method(
+            session, "compare_periods",
+            {
+                "date_field": date_field, "metric": metric, "frequency": frequency,
+                "aggregation": aggregation,
+                "current_period": current_period or None,
+                "previous_period": previous_period or None,
+            },
+            compute_period_comparison, "period_comparison",
+        )
+    return compare_periods
+
+
+def _ratio_factory(session):
+    @tool
+    def calculate_ratio(
+        numerator_field: str,
+        denominator_field: str,
+        aggregation: Literal["sum", "mean", "count"] = "sum",
+    ) -> str:
+        """Calculate an explicit numerator/denominator ratio with zero-denominator handling."""
+        return _run_method(
+            session, "calculate_ratio",
+            {
+                "numerator_field": numerator_field,
+                "denominator_field": denominator_field,
+                "aggregation": aggregation,
+            },
+            compute_ratio, "ratios",
+        )
+    return calculate_ratio
+
+
+compute_profile_distribution = profile_distribution
+compute_correlation = analyze_correlation
+compute_period_comparison = compare_periods
+compute_ratio = calculate_ratio
+
+registry.register(name="profile_distribution", toolset="analysis", factory=_distribution_factory, description="Distribution quantiles, spread, skewness and long-tail profiling.")
+registry.register(name="analyze_correlation", toolset="analysis", factory=_correlation_factory, description="Pearson or Spearman association with sample and non-causal disclosure.")
+registry.register(name="compare_periods", toolset="analysis", factory=_period_comparison_factory, description="Explicit adjacent-period comparison with comparability checks.")
+registry.register(name="calculate_ratio", toolset="analysis", factory=_ratio_factory, description="Explicit numerator/denominator ratio with zero-denominator handling.")
+
+
+def _funnel_factory(session):
+    @tool
+    def analyze_funnel(entity_field: str, stage_field: str, stage_order: list[str]) -> str:
+        """Deduplicate entities by ordered stage and calculate descriptive conversion."""
+        return _run_method(session, "analyze_funnel", {"entity_field": entity_field, "stage_field": stage_field, "stage_order": stage_order}, compute_funnel, "funnel")
+    return analyze_funnel
+
+
+def _retention_factory(session):
+    @tool
+    def analyze_retention(entity_field: str, period_field: str, cohort_field: str = "") -> str:
+        """Build cohort activity and retention rates with right-censoring disclosure."""
+        return _run_method(session, "analyze_retention", {"entity_field": entity_field, "period_field": period_field, "cohort_field": cohort_field or None}, compute_retention, "retention")
+    return analyze_retention
+
+
+def _difference_factory(session):
+    @tool
+    def test_group_difference(metric: str, group_field: str, group_a: str, group_b: str) -> str:
+        """Compare two groups with pooled spread and descriptive effect size."""
+        return _run_method(session, "test_group_difference", {"metric": metric, "group_field": group_field, "group_a": group_a, "group_b": group_b}, compute_difference, "group_difference")
+    return test_group_difference
+
+
+def _concentration_factory(session):
+    @tool
+    def analyze_concentration(dimension: str, metric: str, top_n: int = 5) -> str:
+        """Calculate Top-N share and HHI concentration at an explicit grain."""
+        return _run_method(session, "analyze_concentration", {"dimension": dimension, "metric": metric, "top_n": top_n}, compute_concentration, "concentration")
+    return analyze_concentration
+
+
+def _sensitivity_factory(session):
+    @tool
+    def run_sensitivity_check(metric: str, trim_fraction: float = 0.05) -> str:
+        """Compare mean with median and optional trimmed mean."""
+        return _run_method(session, "run_sensitivity_check", {"metric": metric, "trim_fraction": trim_fraction}, compute_sensitivity, "sensitivity")
+    return run_sensitivity_check
+
+
+compute_funnel = analyze_funnel
+compute_retention = analyze_retention
+compute_difference = test_group_difference
+compute_concentration = analyze_concentration
+compute_sensitivity = run_sensitivity_check
+
+registry.register(name="analyze_funnel", toolset="analysis", factory=_funnel_factory, description="Ordered entity funnel with deduplication and conversion.")
+registry.register(name="analyze_retention", toolset="analysis", factory=_retention_factory, description="Cohort activity and retention with right-censoring disclosure.")
+registry.register(name="test_group_difference", toolset="analysis", factory=_difference_factory, description="Descriptive two-group difference and pooled effect size.")
+registry.register(name="analyze_concentration", toolset="analysis", factory=_concentration_factory, description="Top-N share and HHI concentration analysis.")
+registry.register(name="run_sensitivity_check", toolset="analysis", factory=_sensitivity_factory, description="Mean/median/trimmed sensitivity check.")

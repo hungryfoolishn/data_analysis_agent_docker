@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 from config import (
     API_BASE_URL, FILE_SERVER_BASE, DEFAULT_MODEL,
+    api_headers,
     QUICK_INSTRUCTIONS, ALLOWED_FILE_TYPES,
     GRADIO_SERVER_NAME, GRADIO_SERVER_PORT, GRADIO_SHARE
 )
@@ -77,7 +78,7 @@ def upload_file_to_backend(file_path: str) -> Optional[Dict[str, str]]:
         with open(file_path, "rb") as f:
             files = {"file": (os.path.basename(file_path), f, "application/octet-stream")}
             data = {"session_id": st.session_state.session_id}
-            response = requests.post(ENDPOINTS["WORKSPACE_UPLOAD"], files=files, data=data, timeout=30)
+            response = requests.post(ENDPOINTS["WORKSPACE_UPLOAD"], files=files, data=data, headers=api_headers(), timeout=30)
 
         if response.status_code == 200:
             result = response.json()
@@ -121,6 +122,7 @@ def fetch_runtime_snapshot() -> Optional[Dict[str, Any]]:
     try:
         response = requests.get(
             f"{API_BASE_URL}/sessions/{st.session_state.session_id}/runtime",
+            headers=api_headers(),
             timeout=5,
         )
         if response.status_code == 200:
@@ -138,6 +140,7 @@ def pause_current_plan(reason: str = "Paused from analysis workbench") -> Tuple[
         response = requests.post(
             f"{API_BASE_URL}/analysis/runs/{run_id}/plan/pause",
             json={"reason": reason, "require_confirmation": False},
+            headers=api_headers(),
             timeout=10,
         )
         if response.status_code == 200:
@@ -155,6 +158,7 @@ def confirm_current_plan() -> Tuple[bool, str]:
         response = requests.post(
             f"{API_BASE_URL}/analysis/runs/{run_id}/plan/confirm",
             json={"confirmed_by": "workbench-user"},
+            headers=api_headers(),
             timeout=10,
         )
         if response.status_code == 200:
@@ -189,6 +193,7 @@ def revise_current_plan(text: str, reason: str) -> Tuple[bool, str]:
                 "revised_by": "workbench-user",
                 "steps": steps,
             },
+            headers=api_headers(),
             timeout=10,
         )
         if response.status_code == 200:
@@ -317,7 +322,7 @@ def start_analysis_stream(instruction: str):
         response = requests.post(
             ENDPOINTS["CHAT_COMPLETIONS"],
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers=api_headers(json_content=True),
             stream=True,
             timeout=600
         )
@@ -422,6 +427,7 @@ def check_resumable() -> Optional[Dict[str, Any]]:
     try:
         resp = requests.get(
             f"{API_BASE_URL}/sessions/{st.session_state.session_id}/resumable",
+            headers=api_headers(),
             timeout=5,
         )
         if resp.status_code == 200:
@@ -447,7 +453,7 @@ def start_resume_stream():
     try:
         response = requests.post(
             f"{API_BASE_URL}/sessions/{st.session_state.session_id}/resume",
-            headers={"Content-Type": "application/json"},
+            headers=api_headers(json_content=True),
             stream=True,
             timeout=600,
         )

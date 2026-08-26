@@ -42,6 +42,9 @@ def empty_workbench_state() -> dict[str, Any]:
         "executions": [],
         "artifacts": [],
         "findings": [],
+        "quality": None,
+        "task_status": "idle",
+        "event_cursor": 0,
     }
 
 
@@ -331,3 +334,16 @@ def render_executions_html(executions: list[dict]) -> str:
             f'<div class="execution-detail">{detail}</div></details>'
         )
     return '<div class="execution-list">' + "".join(rows) + "</div>"
+
+
+def render_quality_html(result: dict[str, Any] | None) -> str:
+    if not result:
+        return '<div class="empty-state compact">尚未执行分析质量检查。</div>'
+    status = "通过" if result.get("passed") else "未通过"
+    issues = result.get("issues") or []
+    rows = "".join(
+        f'<div class="quality-{html.escape(str(item.get("severity") or "warning"))}">'
+        f'{html.escape(str(item.get("code") or "issue"))}: {html.escape(str(item.get("message") or ""))}</div>'
+        for item in issues
+    )
+    return f'<div class="quality-summary"><strong>质量门禁：{status}</strong><span>检查 {int(result.get("checked_findings") or 0)} 条 Finding</span>{rows}</div>'

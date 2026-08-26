@@ -210,9 +210,12 @@ GET /analysis/runs/{run_id}/report/rebuild
 
 ```bash
 GET  /analysis/runs/{run_id}/plan
+POST /analysis/runs/{run_id}/plan/propose
 POST /analysis/runs/{run_id}/plan/pause
 POST /analysis/runs/{run_id}/plan/revise
 POST /analysis/runs/{run_id}/plan/confirm
+
+Plan proposal is validated against registered tools, assets, fields, DAG dependencies, and the step budget before persistence.
 ```
 
 暂停活动 Run 会在当前工具安全结束后生效：
