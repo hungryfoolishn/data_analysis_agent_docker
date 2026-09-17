@@ -7,12 +7,43 @@ without touching business logic.
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 
 # ── LLM / API ────────────────────────────────────────────────────────────────
-DEEPSEEK_API_KEY: str = os.environ.get("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL_ID: str = os.environ.get("DEEPSEEK_MODEL_ID", "deepseek-chat")
-DEEPSEEK_API_BASE: str = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
+# Keep the historical names for compatibility, while allowing deployment
+# against any OpenAI-compatible internal gateway.
+def _env_first_nonempty(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return default
+
+
+DEEPSEEK_API_KEY: str = _env_first_nonempty("LLM_API_KEY", "DEEPSEEK_API_KEY")
+DEEPSEEK_MODEL_ID: str = _env_first_nonempty(
+    "LLM_MODEL_ID", "DEEPSEEK_MODEL_ID", default="deepseek-chat"
+)
+DEEPSEEK_API_BASE: str = _env_first_nonempty(
+    "LLM_API_BASE", "DEEPSEEK_API_BASE", default="https://api.deepseek.com/v1"
+)
+
+_thinking_raw = os.environ.get("LLM_ENABLE_THINKING", "")
+LLM_ENABLE_THINKING: bool | None = (
+    None if not _thinking_raw else _thinking_raw.strip().lower() in {"1", "true", "yes", "on"}
+)
+"""Whether to enable Qwen-style reasoning; unset means do not send the option."""
+
+LLM_EXTRA_BODY: dict = {}
+_raw_extra_body = os.environ.get("LLM_EXTRA_BODY", "")
+if _raw_extra_body:
+    try:
+        parsed = json.loads(_raw_extra_body)
+        if isinstance(parsed, dict):
+            LLM_EXTRA_BODY = parsed
+    except json.JSONDecodeError:
+        pass
 
 LLM_REQUEST_TIMEOUT: int = int(os.environ.get("LLM_REQUEST_TIMEOUT", "600"))
 """Seconds for each LLM API request (covers slow streaming on laggy networks).

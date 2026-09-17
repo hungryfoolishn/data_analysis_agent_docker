@@ -66,6 +66,10 @@ DEEPSEEK_API_BASE=https://api.deepseek.com/v1
 MAX_CONCURRENT_AGENTS=3
 ```
 
+部署到内网 OpenAI 兼容网关时，也可以使用 `LLM_API_KEY`、`LLM_MODEL_ID`、
+`LLM_API_BASE` 覆盖默认配置；Qwen 模型关闭思考输出时设置
+`LLM_ENABLE_THINKING=false`。
+
 3. 启动后端：
 
 ```bash

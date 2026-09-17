@@ -171,6 +171,19 @@ DEEPSEEK_API_BASE=https://api.deepseek.com/v1
 MAX_CONCURRENT_AGENTS=3
 ```
 
+内网 OpenAI 兼容模型（例如 Qwen/vLLM）可使用通用变量覆盖上述配置：
+
+```bash
+LLM_API_KEY=your_internal_token
+LLM_MODEL_ID=Qwen3.6-27B
+LLM_API_BASE=http://ai-code.sdc.icbc:9070/icbc/jdt/model/api/openai/v1
+LLM_ENABLE_THINKING=false
+```
+
+`LLM_ENABLE_THINKING=false` 会在每次模型请求中透传
+`chat_template_kwargs.enable_thinking=false`。如网关还需要其他 JSON 字段，可通过
+`LLM_EXTRA_BODY` 设置 JSON 对象。
+
 前端相关环境变量见 `webui/config.py`，默认包括：
 
 - `API_BASE_URL=http://localhost:8888`

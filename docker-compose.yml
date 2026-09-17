@@ -24,6 +24,14 @@ services:
       # Extra HTTP headers for internal API gateways (comma-separated key=val pairs)
       # e.g. LLM_EXTRA_HEADERS=ucid=usertest,Auth-Token=eyJ...
       LLM_EXTRA_HEADERS: ${LLM_EXTRA_HEADERS:-}
+      # OpenAI-compatible gateways (for example internal Qwen/vLLM):
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL_ID: ${LLM_MODEL_ID:-}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      # Set false to send chat_template_kwargs.enable_thinking=false.
+      LLM_ENABLE_THINKING: ${LLM_ENABLE_THINKING:-}
+      # Optional JSON body fields passed through to the gateway.
+      LLM_EXTRA_BODY: ${LLM_EXTRA_BODY:-}
       # File server base URL shown to users. Set to the host's externally
       # reachable URL for the backend port (e.g. http://<host_ip>:8888).
       FILE_SERVER_BASE: ${FILE_SERVER_BASE:-http://localhost:8888}

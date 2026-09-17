@@ -78,6 +78,8 @@ from langgraph_langchain.config import (
     LLM_REQUEST_TIMEOUT as _LLM_REQUEST_TIMEOUT,
     LLM_MAX_RETRIES as _LLM_MAX_RETRIES,
     LLM_EXTRA_HEADERS as _LLM_EXTRA_HEADERS,
+    LLM_ENABLE_THINKING as _LLM_ENABLE_THINKING,
+    LLM_EXTRA_BODY as _LLM_EXTRA_BODY,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -1522,6 +1524,14 @@ async def run_analysis_stream(
         _llm_client_kwargs["http_async_client"] = _httpx.AsyncClient(
             headers=dict(_LLM_EXTRA_HEADERS), timeout=_timeout,
         )
+
+    _llm_extra_body = dict(_LLM_EXTRA_BODY)
+    if _LLM_ENABLE_THINKING is not None:
+        template_kwargs = dict(_llm_extra_body.get("chat_template_kwargs") or {})
+        template_kwargs["enable_thinking"] = _LLM_ENABLE_THINKING
+        _llm_extra_body["chat_template_kwargs"] = template_kwargs
+    if _llm_extra_body:
+        _llm_client_kwargs["extra_body"] = _llm_extra_body
 
     llm = ChatOpenAI(
         model=model_id,
