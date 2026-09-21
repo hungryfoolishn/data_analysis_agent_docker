@@ -1,0 +1,394 @@
+[
+  {
+    "case_id": "trend_analysis_001",
+    "name": "趋势分析 1",
+    "question": "杭州开发一部 2026 年第一季度逐月收入是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "monthly_revenue",
+        "value": 491744,
+        "tolerance": 0.01,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 533544,
+        "tolerance": 0.01,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 593692,
+        "tolerance": 0.01,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "monthly_revenue",
+      "杭州开发一部",
+      "2026-01",
+      "2026-02",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "monthly"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "trend_analysis_002",
+    "name": "趋势分析 2",
+    "question": "杭州开发二部 2026 年第一季度逐月收入是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "monthly_revenue",
+        "value": 564344,
+        "tolerance": 0.01,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 611094,
+        "tolerance": 0.01,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 678667,
+        "tolerance": 0.01,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "monthly_revenue",
+      "杭州开发二部",
+      "2026-01",
+      "2026-02",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "monthly"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "trend_analysis_003",
+    "name": "趋势分析 3",
+    "question": "数据分析部 2026 年第一季度逐月收入是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "monthly_revenue",
+        "value": 636944,
+        "tolerance": 0.01,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 688644,
+        "tolerance": 0.01,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 763642,
+        "tolerance": 0.01,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "monthly_revenue",
+      "数据分析部",
+      "2026-01",
+      "2026-02",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "monthly"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "trend_analysis_004",
+    "name": "趋势分析 4",
+    "question": "平台架构部 2026 年第一季度逐月收入是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "monthly_revenue",
+        "value": 709544,
+        "tolerance": 0.01,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 766194,
+        "tolerance": 0.01,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 848617,
+        "tolerance": 0.01,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "monthly_revenue",
+      "平台架构部",
+      "2026-01",
+      "2026-02",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "monthly"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "trend_analysis_005",
+    "name": "趋势分析 5",
+    "question": "杭州开发一部 2026 年第二季度逐月收入是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "expected_metrics": [
+      {
+        "metric": "monthly_revenue",
+        "value": 0,
+        "tolerance": 0.01,
+        "period": "2026-04",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": "CNY"
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 0,
+        "tolerance": 0.01,
+        "period": "2026-05",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": "CNY"
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 0,
+        "tolerance": 0.01,
+        "period": "2026-06",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": "CNY"
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "monthly_revenue",
+      "杭州开发一部",
+      "2026-04",
+      "2026-05",
+      "2026-06"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "quarterly"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "trend_analysis_006",
+    "name": "趋势分析 6",
+    "question": "杭州开发二部 2026 年第二季度逐月收入是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "expected_metrics": [
+      {
+        "metric": "monthly_revenue",
+        "value": 0,
+        "tolerance": 0.01,
+        "period": "2026-04",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": "CNY"
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 0,
+        "tolerance": 0.01,
+        "period": "2026-05",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": "CNY"
+      },
+      {
+        "metric": "monthly_revenue",
+        "value": 0,
+        "tolerance": 0.01,
+        "period": "2026-06",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": "CNY"
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "monthly_revenue",
+      "杭州开发二部",
+      "2026-04",
+      "2026-05",
+      "2026-06"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "quarterly"
+    ],
+    "critical": false
+  }
+]

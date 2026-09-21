@@ -1,0 +1,338 @@
+[
+  {
+    "case_id": "period_comparison_001",
+    "name": "同比环比分析 1",
+    "question": "杭州开发二部 2026-01 相对 2026-01 的收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.0,
+        "tolerance": 0.001,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部",
+          "compare_period": "2026-01"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_change_pct",
+      "杭州开发二部",
+      "2026-01",
+      "2026-01"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "period_comparison"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "period_comparison_002",
+    "name": "同比环比分析 2",
+    "question": "数据分析部 2026-02 相对 2026-02 的收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.0,
+        "tolerance": 0.001,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部",
+          "compare_period": "2026-02"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_change_pct",
+      "数据分析部",
+      "2026-02",
+      "2026-02"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "period_comparison"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "period_comparison_003",
+    "name": "同比环比分析 3",
+    "question": "平台架构部 2026-03 相对 2026-03 的收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.0,
+        "tolerance": 0.001,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部",
+          "compare_period": "2026-03"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_change_pct",
+      "平台架构部",
+      "2026-03",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "period_comparison"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "period_comparison_004",
+    "name": "同比环比分析 4",
+    "question": "杭州开发一部 2026-04 相对 2026-04 的收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.0,
+        "tolerance": 0.001,
+        "period": "2026-04",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部",
+          "compare_period": "2026-04"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_change_pct",
+      "杭州开发一部",
+      "2026-04",
+      "2026-04"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "period_comparison"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "period_comparison_005",
+    "name": "同比环比分析 5",
+    "question": "杭州开发二部 2026-02 相对 2026-01 的收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.0828,
+        "tolerance": 0.001,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部",
+          "compare_period": "2026-01"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_change_pct",
+      "杭州开发二部",
+      "2026-02",
+      "2026-01"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "period_comparison"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "period_comparison_006",
+    "name": "同比环比分析 6",
+    "question": "数据分析部 2026-03 相对 2026-02 的收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.1089,
+        "tolerance": 0.001,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部",
+          "compare_period": "2026-02"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_change_pct",
+      "数据分析部",
+      "2026-03",
+      "2026-02"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "period_comparison"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "period_comparison_007",
+    "name": "同比环比分析 7",
+    "question": "平台架构部 2026-04 相对 2026-03 的收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.0597,
+        "tolerance": 0.001,
+        "period": "2026-04",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部",
+          "compare_period": "2026-03"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_change_pct",
+      "平台架构部",
+      "2026-04",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "period_comparison"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "period_comparison_008",
+    "name": "同比环比分析 8",
+    "question": "杭州开发一部 2026-05 相对 2026-04 的收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "trend",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.0526,
+        "tolerance": 0.001,
+        "period": "2026-05",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部",
+          "compare_period": "2026-04"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_change_pct",
+      "杭州开发一部",
+      "2026-05",
+      "2026-04"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "trend",
+      "period_comparison"
+    ],
+    "critical": false
+  }
+]

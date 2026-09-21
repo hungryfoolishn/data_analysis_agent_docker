@@ -174,6 +174,8 @@ class RuntimeV2Controller:
             match = self.skill_retriever.retrieve_for_task(task)
             metadata["skill"] = {
                 "name": match.skill_name,
+                "version": match.skill_version,
+                "hash": match.skill_hash,
                 "score": match.score,
                 "source": match.source,
                 "fallback": match.fallback,

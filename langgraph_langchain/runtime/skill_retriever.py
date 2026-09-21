@@ -24,6 +24,8 @@ class SkillMatch(BaseModel):
 
     skill_name: Optional[str] = Field(default=None, description="Matched skill name")
     skill: Optional[SkillMeta] = Field(default=None, description="Matched skill metadata")
+    skill_version: Optional[str] = Field(default=None, description="Matched skill version")
+    skill_hash: Optional[str] = Field(default=None, description="SHA-256 hash of the matched SKILL.md")
     score: float = Field(default=0.0, ge=0, le=1, description="Match confidence")
     source: MatchSource = Field(default="fallback", description="How the match was made")
     reason: str = Field(default="No relevant skill; use the task's structured tool")
@@ -98,6 +100,16 @@ class SkillRetriever:
             self._task_type_tools.update(task_type_tools)
         self._learning_memory = learning_memory
 
+    def _identity(self, skill: Optional[SkillMeta]) -> tuple[Optional[str], Optional[str]]:
+        if skill is None or self._skills_loader is None:
+            return None, None
+        version = getattr(self._skills_loader, "skill_version", None)
+        skill_hash = getattr(self._skills_loader, "skill_hash", None)
+        return (
+            version(skill.name) if callable(version) else skill.version,
+            skill_hash(skill.name) if callable(skill_hash) else None,
+        )
+
     @property
     def skills(self) -> list[SkillMeta]:
         if self._skills_loader is None:
@@ -109,6 +121,8 @@ class SkillRetriever:
         return SkillMatch(
             skill_name=None,
             skill=None,
+            skill_version=None,
+            skill_hash=None,
             score=0.0,
             source="fallback",
             reason=reason,
@@ -226,9 +240,12 @@ class SkillRetriever:
 
         scored.sort(key=lambda item: (-item[0], item[1].name))
         best_score, best_skill, reasons = scored[0]
+        version, skill_hash = self._identity(best_skill)
         return SkillMatch(
             skill_name=best_skill.name,
             skill=best_skill,
+            skill_version=version,
+            skill_hash=skill_hash,
             score=best_score,
             source="metadata",
             reason="; ".join(reasons),

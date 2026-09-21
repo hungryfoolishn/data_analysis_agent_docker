@@ -104,6 +104,16 @@ def build_execution_result(
         if isinstance(skill_payload, dict)
         else None
     )
+    skill_version = (
+        skill_payload.get("version")
+        if isinstance(skill_payload, dict)
+        else None
+    )
+    skill_hash = (
+        skill_payload.get("hash")
+        if isinstance(skill_payload, dict)
+        else None
+    )
     return ExecutionResult(
         run_id=request.run_id,
         task_id=request.task.task_id,
@@ -111,6 +121,8 @@ def build_execution_result(
         tool_name=tool_name,
         status=status,  # type: ignore[arg-type]
         skill_name=skill_name,
+        skill_version=skill_version,
+        skill_hash=skill_hash,
         code_or_query=request.code,
         input_asset_ids=request.input_asset_ids,
         output_artifact_ids=output_artifact_ids or [],

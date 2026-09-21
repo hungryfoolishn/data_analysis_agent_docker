@@ -1,0 +1,402 @@
+[
+  {
+    "case_id": "single_metric_001",
+    "name": "单指标查询 1",
+    "question": "杭州开发一部 2026-01 的q2_1_attainment是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "q2_1_attainment",
+        "value": 0.968,
+        "tolerance": 0.001,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "q2_1_attainment",
+      "杭州开发一部",
+      "2026-01"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_002",
+    "name": "单指标查询 2",
+    "question": "杭州开发二部 2026-02 的q2_1_attainment是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "q2_1_attainment",
+        "value": 1.034,
+        "tolerance": 0.001,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "q2_1_attainment",
+      "杭州开发二部",
+      "2026-02"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_003",
+    "name": "单指标查询 3",
+    "question": "数据分析部 2026-03 的q2_1_attainment是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "q2_1_attainment",
+        "value": 1.133,
+        "tolerance": 0.001,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "q2_1_attainment",
+      "数据分析部",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_004",
+    "name": "单指标查询 4",
+    "question": "平台架构部 2026-04 的q2_1_attainment是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "q2_1_attainment",
+        "value": 1.188,
+        "tolerance": 0.001,
+        "period": "2026-04",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "q2_1_attainment",
+      "平台架构部",
+      "2026-04"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_005",
+    "name": "单指标查询 5",
+    "question": "杭州开发一部 2026-01 的revenue_actual是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 491744,
+        "tolerance": 0.001,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "杭州开发一部",
+      "2026-01"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_006",
+    "name": "单指标查询 6",
+    "question": "杭州开发二部 2026-02 的revenue_actual是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 611094,
+        "tolerance": 0.001,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "杭州开发二部",
+      "2026-02"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_007",
+    "name": "单指标查询 7",
+    "question": "数据分析部 2026-05 的orders是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "orders",
+        "value": 189,
+        "tolerance": 0.001,
+        "period": "2026-05",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "orders",
+      "数据分析部",
+      "2026-05"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_008",
+    "name": "单指标查询 8",
+    "question": "平台架构部 2026-06 的avg_order_value是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "avg_order_value",
+        "value": 4509.17,
+        "tolerance": 0.001,
+        "period": "2026-06",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "avg_order_value",
+      "平台架构部",
+      "2026-06"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_009",
+    "name": "单指标查询 9",
+    "question": "数据分析部 2026-03 的revenue_actual是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 763642,
+        "tolerance": 0.001,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "数据分析部",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "single_metric_010",
+    "name": "单指标查询 10",
+    "question": "杭州开发二部 2026-06 的q2_1_actual是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "metric",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "q2_1_actual",
+        "value": 239855.0,
+        "tolerance": 0.001,
+        "period": "2026-06",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 1,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "q2_1_actual",
+      "杭州开发二部",
+      "2026-06"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "metric",
+      "single"
+    ],
+    "critical": false
+  }
+]

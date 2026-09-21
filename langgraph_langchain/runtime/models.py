@@ -101,6 +101,8 @@ class ExecutionResult(BaseModel):
     error: Optional[dict[str, Any]] = None
     duration_ms: float = 0.0
     skill_name: Optional[str] = None
+    skill_version: Optional[str] = None
+    skill_hash: Optional[str] = None
     verification_results: list[VerificationResult] = Field(default_factory=list)
     evidence: Optional[EvidenceItem] = None
     created_at: str = Field(default_factory=utc_now)

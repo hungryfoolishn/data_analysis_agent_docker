@@ -1,0 +1,398 @@
+[
+  {
+    "case_id": "comprehensive_001",
+    "name": "综合分析 1",
+    "question": "杭州开发一部 2026-01 的收入、Q2-1 达标率和收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "report",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 491744,
+        "tolerance": 0.01,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "q2_1_attainment",
+        "value": 0.968,
+        "tolerance": 0.001,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.1,
+        "tolerance": 0.001,
+        "period": "2026-01",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "q2_1_attainment",
+      "revenue_change_pct",
+      "杭州开发一部",
+      "2026-01"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "comprehensive",
+      "multi_dimension"
+    ],
+    "critical": true
+  },
+  {
+    "case_id": "comprehensive_002",
+    "name": "综合分析 2",
+    "question": "杭州开发二部 2026-02 的收入、Q2-1 达标率和收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "report",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 611094,
+        "tolerance": 0.01,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "q2_1_attainment",
+        "value": 1.034,
+        "tolerance": 0.001,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.0828,
+        "tolerance": 0.001,
+        "period": "2026-02",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "q2_1_attainment",
+      "revenue_change_pct",
+      "杭州开发二部",
+      "2026-02"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "comprehensive",
+      "multi_dimension"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "comprehensive_003",
+    "name": "综合分析 3",
+    "question": "数据分析部 2026-03 的收入、Q2-1 达标率和收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "report",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 763642,
+        "tolerance": 0.01,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "q2_1_attainment",
+        "value": 1.133,
+        "tolerance": 0.001,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.1989,
+        "tolerance": 0.001,
+        "period": "2026-03",
+        "dimension": "department",
+        "group": "数据分析部",
+        "filters": {
+          "department": "数据分析部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "q2_1_attainment",
+      "revenue_change_pct",
+      "数据分析部",
+      "2026-03"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "comprehensive",
+      "multi_dimension"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "comprehensive_004",
+    "name": "综合分析 4",
+    "question": "平台架构部 2026-04 的收入、Q2-1 达标率和收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "report",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 899316,
+        "tolerance": 0.01,
+        "period": "2026-04",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "q2_1_attainment",
+        "value": 1.188,
+        "tolerance": 0.001,
+        "period": "2026-04",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.2675,
+        "tolerance": 0.001,
+        "period": "2026-04",
+        "dimension": "department",
+        "group": "平台架构部",
+        "filters": {
+          "department": "平台架构部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "q2_1_attainment",
+      "revenue_change_pct",
+      "平台架构部",
+      "2026-04"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "comprehensive",
+      "multi_dimension"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "comprehensive_005",
+    "name": "综合分析 5",
+    "question": "杭州开发一部 2026-05 的收入、Q2-1 达标率和收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "report",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 665280,
+        "tolerance": 0.01,
+        "period": "2026-05",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "q2_1_attainment",
+        "value": 1.232,
+        "tolerance": 0.001,
+        "period": "2026-05",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.3529,
+        "tolerance": 0.001,
+        "period": "2026-05",
+        "dimension": "department",
+        "group": "杭州开发一部",
+        "filters": {
+          "department": "杭州开发一部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "q2_1_attainment",
+      "revenue_change_pct",
+      "杭州开发一部",
+      "2026-05"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "comprehensive",
+      "multi_dimension"
+    ],
+    "critical": false
+  },
+  {
+    "case_id": "comprehensive_006",
+    "name": "综合分析 6",
+    "question": "杭州开发二部 2026-06 的收入、Q2-1 达标率和收入变化率是多少？",
+    "dataset": "../data/sales_performance_2025_2026h1.csv",
+    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "task_type": "report",
+    "executor_type": "structured",
+    "skill_name": null,
+    "expected_metrics": [
+      {
+        "metric": "revenue_actual",
+        "value": 719565,
+        "tolerance": 0.01,
+        "period": "2026-06",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "q2_1_attainment",
+        "value": 1.155,
+        "tolerance": 0.001,
+        "period": "2026-06",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      },
+      {
+        "metric": "revenue_change_pct",
+        "value": 0.275,
+        "tolerance": 0.001,
+        "period": "2026-06",
+        "dimension": "department",
+        "group": "杭州开发二部",
+        "filters": {
+          "department": "杭州开发二部"
+        },
+        "unit": null
+      }
+    ],
+    "required_evidence": true,
+    "minimum_verified_evidence": 2,
+    "required_sql": false,
+    "required_finding": true,
+    "required_report": true,
+    "report_must_contain": [
+      "revenue_actual",
+      "q2_1_attainment",
+      "revenue_change_pct",
+      "杭州开发二部",
+      "2026-06"
+    ],
+    "report_must_not_contain": [],
+    "tags": [
+      "comprehensive",
+      "multi_dimension"
+    ],
+    "critical": false
+  }
+]

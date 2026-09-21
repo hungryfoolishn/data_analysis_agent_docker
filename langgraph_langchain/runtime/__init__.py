@@ -20,6 +20,17 @@ from langgraph_langchain.runtime.skill_retriever import SkillMatch, SkillRetriev
 from langgraph_langchain.runtime.verification_policy import VerificationPolicy
 from langgraph_langchain.runtime.finding_builder import FindingBuilder, FindingProvenanceError
 from langgraph_langchain.runtime.report_validator import ReportValidationResult, validate_report
+from langgraph_langchain.runtime.evaluation import (
+    GoldenCase,
+    GoldenCandidateResult,
+    GoldenCaseLoader,
+    GoldenEvaluationRunner,
+    MetricAnswer,
+    MetricComparison,
+    MetricExpectation,
+    EvaluationRun,
+    EvaluationScore,
+)
 from langgraph_langchain.runtime.learning import (
     LearningMemoryStore,
     LearningSnapshot,
@@ -65,6 +76,15 @@ __all__ = [
     "FindingProvenanceError",
     "ReportValidationResult",
     "validate_report",
+    "GoldenCase",
+    "GoldenCandidateResult",
+    "GoldenCaseLoader",
+    "GoldenEvaluationRunner",
+    "MetricAnswer",
+    "MetricComparison",
+    "MetricExpectation",
+    "EvaluationRun",
+    "EvaluationScore",
     "LearningMemoryStore",
     "LearningSnapshot",
     "SkillQuality",

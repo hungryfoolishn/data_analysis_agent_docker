@@ -183,7 +183,10 @@ def build_task_evaluation(runtime: Any, result: ExecutionResult) -> "TaskEvaluat
         task_type=str(_value(task, "task_type", "unknown")),
         executor_type=str(_value(task, "executor_type", "unknown")),
         method=_value(task, "method", result.tool_name),
+        skill_id=result.skill_name,
         skill_name=result.skill_name,
+        skill_version=result.skill_version,
+        skill_hash=result.skill_hash,
         skill_fallback=result.skill_name is None,
         status=str(result.status),
         verification_status=verification_status,
@@ -300,49 +303,92 @@ def build_failure_cases(evaluations: Iterable["TaskEvaluation"]) -> list["Failur
 
 
 def build_skill_quality(evaluations: Iterable["TaskEvaluation"]) -> list["SkillQuality"]:
-    """Aggregate deterministic task outcomes into skill-quality records."""
-    grouped: dict[tuple[str, str, str], list[TaskEvaluation]] = defaultdict(list)
+    """Aggregate outcomes into confidence-aware, versioned skill quality."""
+    grouped: dict[tuple[str, Optional[str], Optional[str], str, str], list[TaskEvaluation]] = defaultdict(list)
     for evaluation in evaluations:
         skill_name = evaluation.skill_name or "__fallback__"
-        key = (skill_name, str(evaluation.task_type), str(evaluation.executor_type))
+        key = (
+            skill_name,
+            evaluation.skill_version,
+            evaluation.skill_hash,
+            str(evaluation.task_type),
+            str(evaluation.executor_type),
+        )
         grouped[key].append(evaluation)
 
+    task_type_totals: dict[str, list[TaskEvaluation]] = defaultdict(list)
+    executor_totals: dict[str, list[TaskEvaluation]] = defaultdict(list)
+    for evaluation in evaluations:
+        task_type_totals[str(evaluation.task_type)].append(evaluation)
+        executor_totals[str(evaluation.executor_type)].append(evaluation)
+
+    def rate(items: list[TaskEvaluation]) -> float:
+        return sum(1.0 for item in items if item.passed) / len(items) if items else 0.0
+
+    task_type_rates = {key: rate(items) for key, items in task_type_totals.items()}
+    executor_rates = {key: rate(items) for key, items in executor_totals.items()}
+
     records: list[SkillQuality] = []
-    for (skill_name, task_type, executor_type), items in grouped.items():
+    for (
+        (skill_name, skill_version, skill_hash, task_type, executor_type),
+        items,
+    ) in grouped.items():
         ordered = sorted(items, key=lambda item: item.created_at)
-        successes = [item for item in items if item.passed]
+        recent = ordered[-10:]
+        attempts = len(items)
+        success_count = sum(1.0 for item in items if item.passed)
+        recent_success_count = sum(1.0 for item in recent if item.passed)
+        success_rate = success_count / attempts if attempts else 0.0
+        smoothed_success_rate = (success_count + 1.0) / (attempts + 2.0)
+        recent_success_rate = recent_success_count / len(recent) if recent else 0.0
+        confidence = attempts / (attempts + 5.0)
+        task_type_success_rate = task_type_rates.get(task_type, 0.0)
+        executor_success_rate = executor_rates.get(executor_type, 0.0)
+
         verification_failures = [
             item for item in items if item.failure_kind == "verification"
         ]
         evidence_failures = [item for item in items if item.failure_kind == "evidence"]
         finding_failures = [item for item in items if item.failure_kind == "finding"]
         report_failures = [item for item in items if item.failure_kind == "report"]
-        attempts = len(items)
-        success_count = len(successes)
-        success_rate = success_count / attempts if attempts else 0.0
-        quality_score = sum(
-            1.0 if item.passed else 0.25 for item in items
-        ) / attempts
-        if attempts >= 3 and success_rate >= 0.8:
+
+        # Small samples are smoothed toward neutral.  Recent outcomes matter, but
+        # low confidence prevents one or two lucky runs from becoming "reliable".
+        quality_score = (
+            0.45 * smoothed_success_rate
+            + 0.25 * recent_success_rate
+            + 0.15 * success_rate
+            + 0.075 * task_type_success_rate
+            + 0.075 * executor_success_rate
+        )
+        if attempts >= 3 and smoothed_success_rate >= 0.7 and confidence >= 0.375:
             recommendation = "reliable"
-        elif attempts >= 2 and success_rate < 0.5:
+        elif attempts >= 2 and smoothed_success_rate < 0.5:
             recommendation = "needs_review"
         else:
             recommendation = "neutral"
 
         records.append(
             SkillQuality(
+                skill_id=None if skill_name == "__fallback__" else skill_name,
                 skill_name=None if skill_name == "__fallback__" else skill_name,
+                skill_version=skill_version,
+                skill_hash=skill_hash,
                 task_type=task_type,
                 executor_type=executor_type,
                 attempts=attempts,
-                successes=success_count,
-                failures=attempts - success_count,
+                successes=int(success_count),
+                failures=attempts - int(success_count),
                 verification_failures=len(verification_failures),
                 evidence_failures=len(evidence_failures),
                 finding_failures=len(finding_failures),
                 report_failures=len(report_failures),
                 success_rate=round(success_rate, 4),
+                smoothed_success_rate=round(smoothed_success_rate, 4),
+                recent_success_rate=round(recent_success_rate, 4),
+                confidence=round(confidence, 4),
+                task_type_success_rate=round(task_type_success_rate, 4),
+                executor_success_rate=round(executor_success_rate, 4),
                 quality_score=round(quality_score, 4),
                 recommendation=recommendation,
                 last_used_at=ordered[-1].created_at,
@@ -351,7 +397,12 @@ def build_skill_quality(evaluations: Iterable["TaskEvaluation"]) -> list["SkillQ
         )
     return sorted(
         records,
-        key=lambda item: (-item.attempts, item.skill_name or "__fallback__", item.task_type),
+        key=lambda item: (
+            -item.attempts,
+            item.skill_name or "__fallback__",
+            item.task_type,
+            item.skill_version or "",
+        ),
     )
 
 
@@ -364,7 +415,10 @@ class TaskEvaluation(BaseModel):
     task_type: str = "unknown"
     executor_type: str = "unknown"
     method: Optional[str] = None
+    skill_id: Optional[str] = None
     skill_name: Optional[str] = None
+    skill_version: Optional[str] = None
+    skill_hash: Optional[str] = None
     skill_fallback: bool = True
     status: str
     verification_status: str = "skipped"
@@ -405,7 +459,10 @@ class FailureCase(BaseModel):
 
 
 class SkillQuality(BaseModel):
+    skill_id: Optional[str] = None
     skill_name: Optional[str] = None
+    skill_version: Optional[str] = None
+    skill_hash: Optional[str] = None
     task_type: str
     executor_type: str
     attempts: int = Field(default=0, ge=0)
@@ -416,6 +473,11 @@ class SkillQuality(BaseModel):
     finding_failures: int = Field(default=0, ge=0)
     report_failures: int = Field(default=0, ge=0)
     success_rate: float = Field(default=0.0, ge=0, le=1)
+    smoothed_success_rate: float = Field(default=0.0, ge=0, le=1)
+    recent_success_rate: float = Field(default=0.0, ge=0, le=1)
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    task_type_success_rate: float = Field(default=0.0, ge=0, le=1)
+    executor_success_rate: float = Field(default=0.0, ge=0, le=1)
     quality_score: float = Field(default=0.0, ge=0, le=1)
     recommendation: SkillRecommendation = "neutral"
     last_used_at: str = Field(default_factory=utc_now)

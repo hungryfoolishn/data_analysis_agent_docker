@@ -10,6 +10,7 @@ Compatible with the agentskills.io YAML-frontmatter convention.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -155,6 +156,18 @@ class SkillsLoader:
         return skill.content if skill else None
 
     # ── Tier 3: references ─────────────────────────────────────────────────
+
+    def skill_version(self, name: str) -> Optional[str]:
+        """Return declared metadata version for a loaded skill."""
+        skill = self._cache.get(name)
+        return skill.meta.version if skill else None
+
+    def skill_hash(self, name: str) -> Optional[str]:
+        """Return the SHA-256 hash of the loaded SKILL.md file."""
+        skill = self._cache.get(name)
+        if not skill:
+            return None
+        return f"sha256:{hashlib.sha256(skill.path.read_bytes()).hexdigest()}"
 
     def skill_reference(self, name: str, ref_name: str) -> Optional[str]:
         """Load a reference document from a skill."""
