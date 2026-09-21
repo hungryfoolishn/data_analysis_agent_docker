@@ -5,7 +5,9 @@ from .verifier import (
     verify_artifact_existence,
     verify_evidence_existence,
     verify_execution_result,
+    verify_group_consistency,
     verify_numeric_consistency,
+    verify_schema_consistency,
     verify_time_consistency,
 )
 

@@ -272,6 +272,134 @@ def verify_aggregation_consistency(
     )
 
 
+def _normalise_scalar(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, Real):
+        return float(value)
+    return str(value).strip().lower() if isinstance(value, str) else value
+
+
+def verify_group_consistency(
+    *,
+    expected: Any,
+    actual: Any,
+    tolerance: Any = 0.0,
+    context: Optional[Mapping[str, Any]] = None,
+) -> VerificationResult:
+    """Check that declared group values match observed group values."""
+    normalised_tolerance = _normalise_tolerance(tolerance)
+    if normalised_tolerance is None:
+        return _result(
+            check_type="group_consistency",
+            passed=False,
+            message="Tolerance must be a non-negative number",
+            expected=expected,
+            actual=actual,
+            context=context,
+        )
+    if not isinstance(expected, Mapping) or not isinstance(actual, Mapping):
+        return _result(
+            check_type="group_consistency",
+            passed=False,
+            message="Expected and actual groups must be mappings",
+            expected=expected,
+            actual=actual,
+            context=context,
+        )
+
+    expected_keys = {str(key) for key in expected}
+    actual_keys = {str(key) for key in actual}
+    differences: dict[str, Any] = {}
+    numeric_differences: list[float] = []
+    for key in sorted(expected_keys | actual_keys):
+        if key not in expected or key not in actual:
+            differences[key] = "missing group"
+            continue
+        left, right = expected[key], actual[key]
+        if _is_number(left) and _is_number(right):
+            difference = abs(float(right) - float(left))
+            numeric_differences.append(difference)
+            if difference > normalised_tolerance:
+                differences[key] = {
+                    "difference": difference,
+                    "expected": float(left),
+                    "actual": float(right),
+                }
+        elif _normalise_scalar(left) != _normalise_scalar(right):
+            differences[key] = {"expected": left, "actual": right}
+
+    passed = not differences
+    return _result(
+        check_type="group_consistency",
+        passed=passed,
+        message=(
+            "Declared groups match observed groups"
+            if passed
+            else "Declared groups differ from observed groups: " + ", ".join(differences)
+        ),
+        expected=expected,
+        actual=actual,
+        tolerance=normalised_tolerance,
+        details={"differences": differences},
+        context=context,
+    )
+
+
+def verify_schema_consistency(
+    *,
+    expected_fields: Any,
+    actual_fields: Any,
+    context: Optional[Mapping[str, Any]] = None,
+) -> VerificationResult:
+    """Check that an execution touched only the declared schema fields."""
+    if isinstance(expected_fields, Mapping):
+        expected_fields = expected_fields.get("columns", [])
+    if isinstance(actual_fields, Mapping):
+        actual_fields = actual_fields.get("columns", [])
+    if isinstance(expected_fields, (str, bytes)) or not isinstance(expected_fields, Iterable):
+        return _result(
+            check_type="schema_consistency",
+            passed=False,
+            message="expected_fields must be a field sequence",
+            expected=expected_fields,
+            actual=actual_fields,
+            context=context,
+        )
+    if isinstance(actual_fields, (str, bytes)) or not isinstance(actual_fields, Iterable):
+        return _result(
+            check_type="schema_consistency",
+            passed=False,
+            message="actual_fields must be a field sequence",
+            expected=expected_fields,
+            actual=actual_fields,
+            context=context,
+        )
+
+    expected_names = {str(item) for item in expected_fields}
+    actual_names = {str(item) for item in actual_fields}
+    missing = sorted(expected_names - actual_names)
+    unexpected = sorted(actual_names - expected_names)
+    passed = not missing and not unexpected
+    return _result(
+        check_type="schema_consistency",
+        passed=passed,
+        message=(
+            "Schema fields match the declared contract"
+            if passed
+            else (
+                "Schema fields differ: "
+                + (f"missing={missing}; " if missing else "")
+                + (f"unexpected={unexpected}" if unexpected else "")
+            ).strip()
+        ),
+        expected=sorted(expected_names),
+        actual=sorted(actual_names),
+        details={"missing": missing, "unexpected": unexpected},
+        context=context,
+    )
+
+
 def verify_artifact_existence(
     artifact: Any,
     *,

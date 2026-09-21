@@ -1475,7 +1475,7 @@ async def _run_runtime_v2_graph_stream(
     from langgraph_langchain.runtime.context import register_session_artifact
     from langgraph_langchain.runtime.plans import AnalysisPlan
     from langgraph_langchain.runtime.skill_retriever import SkillRetriever
-    from langgraph_langchain.verification import verify_execution_result
+    from langgraph_langchain.runtime.verification_policy import VerificationPolicy
 
     session.runtime_v2_fallback = False
     runtime = getattr(session, "analysis_runtime", None)
@@ -1583,21 +1583,12 @@ async def _run_runtime_v2_graph_stream(
         on_task_start=on_task_start,
         on_task_finish=on_task_finish,
         skill_retriever=SkillRetriever(_skills_loader),
-        verifier=lambda result: verify_execution_result(
-            result,
-            artifacts=runtime.artifacts,
-            workspace_dir=runtime.workspace_dir,
-            context={
-                "run_id": result.run_id,
-                "task_id": result.task_id,
-                "step_id": result.step_id,
-            },
-        ),
         evidence_factory=lambda result, verifications: EvidenceCollector().collect(
             execution=result,
             verification_results=verifications,
             artifacts=runtime.artifacts,
         ),
+        verification_policy=VerificationPolicy(),
     )
 
     try:

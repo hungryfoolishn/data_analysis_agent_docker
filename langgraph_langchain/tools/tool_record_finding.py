@@ -244,18 +244,20 @@ def _factory(session):
                 trace_ctx.end_current_span(status="failed", error_message=str(exc))
             return f"[ERROR] Invalid evidence: {exc}"
 
+        runtime = getattr(session, "analysis_runtime", None)
         finding_id = f"F{len(session.findings) + 1:03d}"
 
         finding = Finding(
             finding_id=finding_id,
             statement=statement,
             evidence=[evidence_item],
+            supported_by=[evidence_item.evidence_id],
             confidence_level=confidence_level,
             evidence_level=evidence_level,
             hypothesis_flag=hypothesis_flag,
             category=category,
-            run_id=getattr(getattr(session, "analysis_runtime", None), "run", None).run_id
-            if getattr(getattr(session, "analysis_runtime", None), "run", None)
+            run_id=getattr(runtime, "run", None).run_id
+            if runtime is not None and getattr(runtime, "run", None)
             else None,
             recorded_by_execution_id=recorder.execution_id,
             recorded_by_step_id=recorder.step_id,
@@ -308,11 +310,104 @@ def _factory(session):
             finding, available_artifacts
         )
 
-        session.findings.append(finding)
-        runtime = getattr(session, "analysis_runtime", None)
-        if runtime is not None and hasattr(runtime, "record_finding"):
-            runtime.record_finding(finding)
-        if runtime is not None and hasattr(runtime, "record_verification"):
+        runtime_v2_active = runtime is not None and runtime.scheduler is not None
+        if runtime_v2_active:
+            from langgraph_langchain.runtime.finding_builder import FindingProvenanceError
+
+            executions_by_id = {
+                item.execution_id: item for item in (runtime.executions or [])
+            }
+            execution_ids = [
+                execution_id
+                for execution_id in lineage["execution_ids"]
+                if execution_id in executions_by_id
+            ]
+            if not execution_ids:
+                error_msg = (
+                    "[ERROR] Finding evidence must cite at least one succeeded Runtime execution. "
+                    "Finding NOT recorded."
+                )
+                recorder.fail(
+                    "evidence has no Runtime execution lineage",
+                    error_type="FindingProvenanceError",
+                )
+                if trace_ctx and span_id:
+                    trace_ctx.end_current_span(
+                        status="failed",
+                        error_message="evidence has no Runtime execution lineage",
+                    )
+                return error_msg
+
+            source_execution = executions_by_id[execution_ids[0]]
+            if source_execution.status != "succeeded":
+                error_msg = (
+                    "[ERROR] Finding evidence cites a Runtime execution that did not succeed. "
+                    "Finding NOT recorded."
+                )
+                recorder.fail(
+                    f"source execution {source_execution.execution_id} did not succeed",
+                    error_type="FindingProvenanceError",
+                )
+                if trace_ctx and span_id:
+                    trace_ctx.end_current_span(
+                        status="failed",
+                        error_message="source execution did not succeed",
+                    )
+                return error_msg
+
+            source_has_passed_verification = any(
+                item.execution_id == source_execution.execution_id
+                and item.status == "passed"
+                and item.passed is True
+                for item in (runtime.verifications or [])
+            )
+            if not source_has_passed_verification:
+                error_msg = (
+                    "[ERROR] Finding evidence cites a Runtime execution without a passing "
+                    "verification. Finding NOT recorded."
+                )
+                recorder.fail(
+                    f"source execution {source_execution.execution_id} has no passing verification",
+                    error_type="FindingProvenanceError",
+                )
+                if trace_ctx and span_id:
+                    trace_ctx.end_current_span(
+                        status="failed",
+                        error_message="source execution has no passing verification",
+                    )
+                return error_msg
+
+            verification_result = VerificationResult(
+                run_id=runtime.run.run_id,
+                step_id=source_execution.step_id or session.current_runtime_step_id,
+                task_id=source_execution.task_id,
+                execution_id=source_execution.execution_id,
+                evidence_id=evidence_item.evidence_id,
+                check_type="evidence_existence",
+                status="passed",
+                passed=True,
+                expected="non-empty evidence bound to a verified Runtime execution",
+                actual={"evidence_id": evidence_item.evidence_id},
+                message="Finding evidence exists and is bound to a verified execution",
+            )
+            runtime.record_verification(verification_result)
+            evidence_item.verification_status = "verified"
+            evidence_item.verification_result_id = verification_result.verification_id
+            runtime.record_evidence(evidence_item)
+
+            try:
+                runtime.record_verified_finding(finding)
+            except Exception as exc:
+                recorder.fail(str(exc), error_type=type(exc).__name__)
+                if trace_ctx and span_id:
+                    trace_ctx.end_current_span(status="failed", error_message=str(exc))
+                return f"[ERROR] Finding provenance validation failed: {exc}\n\nFinding NOT recorded."
+
+            session.findings.append(finding)
+        elif runtime is not None:
+            # Metadata-only Runtime compatibility path.  These sessions have no
+            # V2 scheduler, so the existing evidence-existence check remains
+            # authoritative; FindingBuilder's full lineage gate is not enabled.
             verification_result = VerificationResult(
                 run_id=runtime.run.run_id,
                 step_id=session.current_runtime_step_id,
@@ -328,8 +423,11 @@ def _factory(session):
             runtime.record_verification(verification_result)
             evidence_item.verification_status = "verified"
             evidence_item.verification_result_id = verification_result.verification_id
-        if runtime is not None and hasattr(runtime, "record_evidence"):
             runtime.record_evidence(evidence_item)
+            runtime.record_finding(finding)
+            session.findings.append(finding)
+        else:
+            session.findings.append(finding)
 
         # Build response message
         response_msg = f"Finding {finding_id} recorded: {statement[:80]}..."

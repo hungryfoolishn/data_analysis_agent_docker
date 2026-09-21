@@ -83,6 +83,8 @@ VerificationCheckType = Literal[
     "numeric_consistency",
     "time_consistency",
     "aggregation_consistency",
+    "group_consistency",
+    "schema_consistency",
     "artifact_existence",
     "evidence_existence",
     "custom",

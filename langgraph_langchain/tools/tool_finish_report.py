@@ -431,6 +431,18 @@ def _factory(session):
             for error in recommendation_errors:
                 issues.append(f"recommendation_evidence_mismatch: {error}")
 
+        runtime = getattr(session, "analysis_runtime", None)
+        if runtime is not None and runtime.scheduler is not None:
+            from langgraph_langchain.runtime.report_validator import validate_report
+
+            report_provenance = validate_report(
+                key_findings_section or markdown,
+                session.findings,
+                runtime.evidence,
+            )
+            for error in report_provenance.errors:
+                issues.append(f"report_integrity: {error}")
+
         if issues:
             session.pending_report_markdown = None
             session.fail_stage(

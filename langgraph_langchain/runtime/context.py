@@ -27,7 +27,8 @@ from langgraph_langchain.runtime.plans import AnalysisPlan, validate_plan
 from langgraph_langchain.runtime.scheduler import TaskScheduler
 from langgraph_langchain.runtime.runner import TaskRunner
 from langgraph_langchain.runtime.executor import TaskExecutor
-from langgraph_langchain.schemas import EvidenceItem, VerificationResult
+from langgraph_langchain.runtime.finding_builder import FindingProvenanceError
+from langgraph_langchain.schemas import Finding, EvidenceItem, VerificationResult
 
 _RUNTIME_STATE_FILE = ".analysis_runtime.json"
 _RUN_HISTORY_DIR = ".analysis_runs"
@@ -260,14 +261,36 @@ class AnalysisRuntime:
         *,
         verifier=None,
         evidence_factory=None,
+        verification_policy=None,
     ) -> TaskRunner:
         """Attach an executor and create the Runtime-owned task runner."""
         if self.scheduler is None:
             raise RuntimeError("Call initialize_plan before configuring an executor")
+
+        effective_verifier = verifier
+        if verification_policy is not None:
+            base_verifier = verifier
+
+            def policy_verifier(result):
+                task = self.scheduler.get_task(result.task_id)
+                checks = list(
+                    verification_policy.verify(
+                        task,
+                        result,
+                        artifacts=self.artifacts,
+                        workspace_dir=self.workspace_dir,
+                    )
+                )
+                if base_verifier is not None:
+                    checks.extend(base_verifier(result))
+                return checks
+
+            effective_verifier = policy_verifier
+
         runner = TaskRunner(
             scheduler=self.scheduler,
             executor=executor,
-            verifier=verifier,
+            verifier=effective_verifier,
             evidence_factory=evidence_factory,
         )
         return self.attach_runner(runner)
@@ -288,6 +311,7 @@ class AnalysisRuntime:
         skill_retriever=None,
         verifier=None,
         evidence_factory=None,
+        verification_policy=None,
     ):
         """Build the V6 controller around this Runtime-owned scheduler."""
         from langgraph_langchain.runtime.graph import RuntimeV2Controller
@@ -304,6 +328,7 @@ class AnalysisRuntime:
             executor,
             verifier=verifier,
             evidence_factory=evidence_factory,
+            verification_policy=verification_policy,
         )
         controller = RuntimeV2Controller(
             scheduler=self.scheduler,
@@ -627,6 +652,20 @@ class AnalysisRuntime:
         }:
             self.run.current_step_id = None
         self._sync_plan_steps()
+
+    def record_verified_finding(self, finding) -> dict[str, Any]:
+        """Persist a finding only after checking its complete V7 provenance."""
+        from langgraph_langchain.runtime.finding_builder import FindingBuilder
+
+        finding = (
+            Finding.model_validate(finding)
+            if not isinstance(finding, Finding) and isinstance(finding, dict)
+            else finding
+        )
+        errors = FindingBuilder(self).validate_finding(finding)
+        if errors:
+            raise FindingProvenanceError(errors)
+        return self.record_finding(finding)
 
     def record_finding(self, finding) -> dict[str, Any]:
         """Persist one structured finding as part of the authoritative run snapshot."""
