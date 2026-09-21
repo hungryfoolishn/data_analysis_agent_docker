@@ -8,7 +8,7 @@ results through graph state.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Sequence, TypedDict
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -20,8 +20,12 @@ from langgraph_langchain.schemas import EvidenceItem, VerificationResult
 from langgraph_langchain.runtime.plans import AnalysisPlan
 from langgraph_langchain.runtime.runner import TaskRunner, TaskRunnerStep
 from langgraph_langchain.runtime.scheduler import TaskScheduler
+from langgraph_langchain.runtime.context import AnalysisRuntime
 from langgraph_langchain.runtime.skill_retriever import SkillRetriever
 from langgraph_langchain.schemas import AnalysisTask
+
+if TYPE_CHECKING:
+    from langgraph_langchain.runtime.context import AnalysisRuntime
 
 
 class RuntimeV2State(TypedDict, total=False):
@@ -50,6 +54,7 @@ class RuntimeV2Controller:
         on_task_start: Optional[Callable[[AnalysisTask], None]] = None,
         on_task_finish: Optional[Callable[[ExecutionResult], None]] = None,
         skill_retriever: Optional[SkillRetriever] = None,
+        analysis_runtime: Optional["AnalysisRuntime"] = None,
     ) -> None:
         self.scheduler = scheduler
         self.runner = runner
@@ -58,6 +63,7 @@ class RuntimeV2Controller:
         self.on_task_start = on_task_start
         self.on_task_finish = on_task_finish
         self.skill_retriever = skill_retriever
+        self.analysis_runtime = analysis_runtime
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -66,10 +72,35 @@ class RuntimeV2Controller:
             if next_task is not None and self.on_task_start is not None:
                 self.on_task_start(next_task)
 
-            step: TaskRunnerStep = self.runner.execute_next(
-                run_id=self.run_id,
-                request_factory=self._request_factory,
-            )
+            if self.analysis_runtime is not None:
+                result = self.analysis_runtime.execute_next_task()
+                if result is None:
+                    failed_tasks = [
+                        task for task in self.scheduler.tasks
+                        if task.status == "failed"
+                    ]
+                    action = "failed" if failed_tasks else "completed"
+                    step = TaskRunnerStep(
+                        action=action,
+                        result=None,
+                        reason=(
+                            "Runtime has no ready tasks; failed tasks remain"
+                            if failed_tasks
+                            else "Runtime has no ready tasks"
+                        ),
+                    )
+                else:
+                    action = (
+                        "failed"
+                        if result.status == "failed"
+                        else "executed"
+                    )
+                    step = TaskRunnerStep(action=action, result=result)
+            else:
+                step: TaskRunnerStep = self.runner.execute_next(
+                    run_id=self.run_id,
+                    request_factory=self._request_factory,
+                )
 
             if step.result is not None and self.on_task_finish is not None:
                 self.on_task_finish(step.result)
@@ -157,6 +188,7 @@ def build_runtime_v2_controller(
         Callable[[ExecutionResult, Sequence[VerificationResult]], EvidenceItem]
     ] = None,
     skill_retriever: Optional[SkillRetriever] = None,
+    analysis_runtime: Optional["AnalysisRuntime"] = None,
 ) -> RuntimeV2Controller:
     """Build the Runtime V2 graph for a plan and session-bound tool resolver."""
     scheduler = TaskScheduler.from_plan(
@@ -182,4 +214,5 @@ def build_runtime_v2_controller(
         on_task_start=on_task_start,
         on_task_finish=on_task_finish,
         skill_retriever=skill_retriever,
+        analysis_runtime=analysis_runtime,
     )

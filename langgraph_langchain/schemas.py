@@ -124,6 +124,10 @@ class AnalysisTask(BaseModel):
         description="Linked RuntimePlanStep ID when the task comes from a plan",
     )
     status: TaskStatus = Field(default="pending", description="Task status")
+    error: Optional[str] = Field(
+        default=None,
+        description="Failure message when a task has failed",
+    )
     depends_on: List[str] = Field(default_factory=list, description="Upstream task IDs")
     required_inputs: List[str] = Field(default_factory=list, description="Required input names")
     expected_outputs: List[str] = Field(default_factory=list, description="Expected output names")

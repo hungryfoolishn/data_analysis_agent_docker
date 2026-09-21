@@ -103,8 +103,8 @@ class TaskRunner:
     ) -> tuple[list[VerificationResult], Optional[EvidenceItem], list[str]]:
         """Run optional deterministic verification and evidence generation."""
         errors: list[str] = []
-        verifications: list[VerificationResult] = []
-        evidence: Optional[EvidenceItem] = None
+        verifications = list(result.verification_results)
+        evidence = result.evidence
 
         if self.verifier is not None:
             try:

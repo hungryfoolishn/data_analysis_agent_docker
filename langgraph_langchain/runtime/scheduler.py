@@ -349,6 +349,7 @@ class TaskScheduler:
         task.status = "failed"
         if error:
             self._errors[task_id] = error
+            task.error = error
         return task
 
     def mark_cancelled(self, task_id: str) -> AnalysisTask:

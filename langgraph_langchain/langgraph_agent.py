@@ -1467,7 +1467,9 @@ async def _run_runtime_v2_graph_stream(
     legacy ReAct stream.
     """
     from langgraph_langchain.evidence import EvidenceCollector
-    from langgraph_langchain.runtime.graph import build_runtime_v2_controller
+    from langgraph_langchain.runtime.executor import TaskExecutor
+    from langgraph_langchain.runtime.graph import RuntimeV2Controller
+    from langgraph_langchain.execution.structured_executor import StructuredTaskExecutor
     from langgraph_langchain.runtime.plans import AnalysisPlan
     from langgraph_langchain.runtime.skill_retriever import SkillRetriever
     from langgraph_langchain.verification import verify_execution_result
@@ -1484,15 +1486,13 @@ async def _run_runtime_v2_graph_stream(
         yield "\n\nRuntime V2 fallback: invalid structured plan.\n", []
         return
 
-    # A proposed default plan is reviewable and intentionally not copied into
-    # run.steps until an executor takes ownership of it.
-    if not runtime.run.steps:
-        from langgraph_langchain.runtime.models import RuntimePlanStep
-
-        runtime.run.steps = [
-            RuntimePlanStep.model_validate(step.model_dump(mode="json"))
-            for step in plan.steps
-        ]
+    runtime.initialize_plan(
+        plan,
+        max_running_tasks=1,
+        argument_defaults_by_method={
+            "load_data": {"file_path": source_path, "sheet_name": ""},
+        },
+    )
 
     tool_map = {getattr(tool, "name", ""): tool for tool in tools}
     unsupported = sorted({step.method for step in plan.steps if step.method not in tool_map})
@@ -1510,6 +1510,7 @@ async def _run_runtime_v2_graph_stream(
         session.current_runtime_step_id = task.plan_step_id or task.task_id
 
     def on_task_finish(result) -> None:
+        runtime.record_execution_result(result)
         _complete_runtime_step(
             session,
             result.step_id or result.task_id,
@@ -1526,17 +1527,19 @@ async def _run_runtime_v2_graph_stream(
                 session.complete_stage("schema_understanding")
             elif result.tool_name == "eda_profile":
                 session.complete_stage("data_quality_check")
+            elif result.tool_name in {
+                "analyze_time_trend",
+                "compare_groups",
+                "decompose_contribution",
+            }:
+                session.state_machine.current_stage = AnalysisStage.DEEP_DIVE
+                session.current_stage = AnalysisStage.DEEP_DIVE
 
-    controller = build_runtime_v2_controller(
-        plan=plan,
-        session_id=runtime.session_id,
-        run_id=runtime.run.run_id,
-        tool_resolver=lambda name: tool_map.get(name),
-        argument_defaults_by_method={
-            "load_data": {"file_path": source_path, "sheet_name": ""},
-        },
-        on_task_start=on_task_start,
-        on_task_finish=on_task_finish,
+    executor = TaskExecutor(
+        structured=StructuredTaskExecutor(tool_resolver=lambda name: tool_map.get(name)),
+    )
+    runtime.configure_executor(
+        executor,
         verifier=lambda result: verify_execution_result(
             result,
             artifacts=runtime.artifacts,
@@ -1552,7 +1555,16 @@ async def _run_runtime_v2_graph_stream(
             verification_results=verifications,
             artifacts=runtime.artifacts,
         ),
+    )
+    controller = RuntimeV2Controller(
+        scheduler=runtime.scheduler,
+        runner=runtime.runner,
+        run_id=runtime.run.run_id,
+        session_id=runtime.session_id,
+        on_task_start=on_task_start,
+        on_task_finish=on_task_finish,
         skill_retriever=SkillRetriever(_skills_loader),
+        analysis_runtime=runtime,
     )
 
     try:

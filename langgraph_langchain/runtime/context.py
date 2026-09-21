@@ -24,6 +24,10 @@ from langgraph_langchain.runtime.models import (
     utc_now,
 )
 from langgraph_langchain.runtime.plans import AnalysisPlan, validate_plan
+from langgraph_langchain.runtime.scheduler import TaskScheduler
+from langgraph_langchain.runtime.runner import TaskRunner
+from langgraph_langchain.runtime.executor import TaskExecutor
+from langgraph_langchain.schemas import EvidenceItem, VerificationResult
 
 _RUNTIME_STATE_FILE = ".analysis_runtime.json"
 _RUN_HISTORY_DIR = ".analysis_runs"
@@ -76,6 +80,15 @@ class AnalysisRuntime:
         self.findings: list[dict[str, Any]] = []
         self.metric_definitions: list[dict[str, Any]] = []
         self.assumptions: list[dict[str, Any]] = []
+        self.plan: Optional[AnalysisPlan] = None
+        self.scheduler: Optional[TaskScheduler] = None
+        self.executor: Optional[TaskExecutor] = None
+        self.runner: Optional[TaskRunner] = None
+        self.verifications: list[VerificationResult] = []
+        self.evidence: list[EvidenceItem] = []
+        self.failures: list[dict[str, Any]] = []
+        self.execution_namespace: dict[str, Any] = {}
+        self.status: str = "created"
         if force_new_run:
             self._create_retry_run(
                 question=question,
@@ -94,7 +107,8 @@ class AnalysisRuntime:
         )
         self.run = AnalysisRun(task_id=self.task.task_id)
         if plan_first:
-            self.propose_default_plan(question)
+            self.plan = self.propose_default_plan(question)
+        self.status = self.run.status
         self._persist()
 
     @property
@@ -194,6 +208,339 @@ class AnalysisRuntime:
         self.run.updated_at = utc_now()
         self._persist()
         return result
+
+    def initialize_plan(
+        self,
+        plan: AnalysisPlan,
+        *,
+        max_running_tasks: int = 1,
+        argument_defaults_by_method: Optional[dict[str, dict[str, Any]]] = None,
+    ) -> TaskScheduler:
+        """Adopt an approved plan and hand scheduling control to Runtime V2."""
+        if max_running_tasks < 1:
+            raise ValueError("max_running_tasks must be at least 1")
+        if not plan.steps:
+            raise ValueError("Plan has no steps")
+
+        self.plan = plan.model_copy(deep=True)
+        self.run.plan = self.plan.model_dump(mode="json")
+        self.run.plan_version = self.plan.version
+        self.run.plan_status = "active"
+        self.run.steps = [
+            item.model_copy(deep=True) for item in self.plan.steps
+        ]
+        self.run.current_step_id = None
+        self.run.status = "running"
+        self.run.plan_status = "active"
+        self.run.updated_at = utc_now()
+        self.status = "running"
+        self.scheduler = TaskScheduler.from_plan(
+            self.plan,
+            session_id=self.session_id,
+            max_running_tasks=max_running_tasks,
+            argument_defaults_by_method=argument_defaults_by_method,
+        )
+        self._persist()
+        return self.scheduler
+
+    def attach_runner(self, runner: TaskRunner) -> TaskRunner:
+        """Attach a runner whose scheduler is owned by this Runtime."""
+        if self.scheduler is None:
+            raise RuntimeError("Call initialize_plan before attaching a runner")
+        if runner.scheduler is not self.scheduler:
+            raise ValueError("Runner scheduler does not belong to this Runtime")
+        self.executor = getattr(runner, "executor", None)
+        self.runner = runner
+        return runner
+
+    def configure_executor(
+        self,
+        executor: TaskExecutor,
+        *,
+        verifier=None,
+        evidence_factory=None,
+    ) -> TaskRunner:
+        """Attach an executor and create the Runtime-owned task runner."""
+        if self.scheduler is None:
+            raise RuntimeError("Call initialize_plan before configuring an executor")
+        runner = TaskRunner(
+            scheduler=self.scheduler,
+            executor=executor,
+            verifier=verifier,
+            evidence_factory=evidence_factory,
+        )
+        return self.attach_runner(runner)
+
+    def next_task(self):
+        if self.scheduler is None:
+            raise RuntimeError("Runtime has no scheduler")
+        task = self.scheduler.next_task()
+        if task is not None:
+            self._sync_runtime_step_from_task(task)
+        self.status = "running" if task is not None else self.status
+        return task
+
+    def start_task(self, task_id: str):
+        if self.scheduler is None:
+            raise RuntimeError("Runtime has no scheduler")
+        task = self.scheduler.get_task(task_id)
+        self.scheduler.mark_running(task_id)
+        self._sync_runtime_step_from_task(task)
+        self.run.current_step_id = task_id
+        self.status = "running"
+        self.run.status = "running"
+        self.run.updated_at = utc_now()
+        self._persist()
+        return task
+
+    def complete_task(self, task_id: str):
+        if self.scheduler is None:
+            raise RuntimeError("Runtime has no scheduler")
+        task = self.scheduler.get_task(task_id)
+        self.scheduler.mark_succeeded(task_id)
+        self._sync_runtime_step_from_task(task)
+        if self.run.current_step_id == task_id:
+            self.run.current_step_id = None
+        self.run.updated_at = utc_now()
+        self._persist()
+        return task
+
+    def fail_task(self, task_id: str, *, error: Optional[str] = None):
+        if self.scheduler is None:
+            raise RuntimeError("Runtime has no scheduler")
+        task = self.scheduler.get_task(task_id)
+        self.scheduler.mark_failed(task_id, error=error)
+        self._sync_runtime_step_from_task(task)
+        self.failures.append(
+            {
+                "task_id": task_id,
+                "error": error or "Task failed",
+                "created_at": utc_now(),
+            }
+        )
+        self.status = "failed"
+        self.run.status = "failed"
+        self.run.updated_at = utc_now()
+        self._persist()
+        return task
+
+    def resolve_arguments(self, task) -> dict[str, Any]:
+        arguments = task.constraints.get("arguments")
+        return dict(arguments) if isinstance(arguments, dict) else {}
+
+    def build_execution_request(self, task):
+        from langgraph_langchain.execution.task_models import TaskExecutionRequest
+
+        return TaskExecutionRequest(
+            task=task,
+            run_id=self.run.run_id,
+            arguments=self.resolve_arguments(task),
+            code=task.constraints.get("code"),
+            namespace=self.execution_namespace,
+            workspace_dir=str(self.workspace_dir),
+            source_path=task.constraints.get("source_path"),
+            timeout_seconds=float(task.constraints.get("timeout_seconds", 60.0)),
+            max_output_chars=int(task.constraints.get("max_output_chars", 3000)),
+        )
+
+    def execute_next_task(self):
+        """Execute one scheduler-ready task and record its full V2 lineage."""
+        if self.runner is None or self.scheduler is None:
+            raise RuntimeError("Runtime has no runner; call configure_executor first")
+
+        step = self.runner.execute_next(
+            run_id=self.run.run_id,
+            request_factory=self.build_execution_request,
+        )
+        result = step.result
+        if result is not None:
+            self.record_execution_result(result)
+            task = self.scheduler.get_task(result.task_id)
+            self._sync_runtime_step_from_task(task)
+            if result.status == "failed":
+                self.status = "failed"
+                self.run.status = "failed"
+            elif all(
+                task.status in {"succeeded", "failed", "skipped", "cancelled"}
+                for task in self.scheduler.tasks
+            ):
+                self.status = "completed"
+                self.run.status = "completed"
+        elif step.action == "completed":
+            self.status = "completed"
+            self.run.status = "completed"
+        elif step.action == "failed":
+            self.status = "failed"
+            self.run.status = "failed"
+        self.run.updated_at = utc_now()
+        self._persist()
+        return result
+
+    def record_execution_result(self, result: ExecutionResult) -> ExecutionResult:
+        """Record one V2 result, plus verification and evidence lineage."""
+        if not result.task_id:
+            raise ValueError("ExecutionResult is missing task_id")
+
+        existing = next(
+            (
+                item
+                for item in self.executions
+                if item.execution_id == result.execution_id
+                or (
+                    result.step_id
+                    and item.step_id == result.step_id
+                    and item.tool_name == result.tool_name
+                )
+            ),
+            None,
+        )
+        if existing is not None:
+            # Structured tools may already record the concrete execution via
+            # SessionExecutionRecorder.  The V2 wrapper must adopt that ID so
+            # artifacts, verification, and evidence share one execution node.
+            actual_execution_id = existing.execution_id
+            result.execution_id = actual_execution_id
+            for verification in result.verification_results:
+                verification.execution_id = actual_execution_id
+            if result.evidence is not None:
+                source_ids = list(
+                    dict.fromkeys(
+                        [actual_execution_id, *(result.evidence.source_execution_ids or [])]
+                    )
+                )
+                result.evidence.source_execution_ids = source_ids
+        if existing is not None:
+            # Reconcile artifacts registered directly by the wrapped tool.
+            artifact_ids = list(result.output_artifact_ids)
+            for artifact_id, artifact in self.artifacts.items():
+                if artifact.execution_id == actual_execution_id:
+                    artifact_ids.append(artifact_id)
+
+            # Ensure each reconciled artifact has at least an existence check.
+            from langgraph_langchain.verification import verify_artifact_existence
+
+            existing_verification_ids = {
+                item.artifact_id for item in result.verification_results
+            }
+            for artifact_id in dict.fromkeys(artifact_ids):
+                artifact = self.artifacts.get(artifact_id)
+                if artifact is None:
+                    continue
+                if artifact_id not in existing_verification_ids:
+                    result.verification_results.append(
+                        verify_artifact_existence(
+                            artifact,
+                            workspace_dir=self.workspace_dir,
+                            context={
+                                "run_id": result.run_id,
+                                "task_id": result.task_id,
+                                "step_id": result.step_id,
+                                "execution_id": actual_execution_id,
+                                "artifact_id": artifact_id,
+                            },
+                        )
+                    )
+            result.output_artifact_ids = list(dict.fromkeys(artifact_ids))
+
+        if existing is None:
+            self.executions.append(result.model_copy(deep=True))
+        else:
+            index = self.executions.index(existing)
+            self.executions[index] = result.model_copy(deep=True)
+
+        for verification in result.verification_results:
+            self.record_verification(verification)
+
+        if result.evidence is not None:
+            self.record_evidence(result.evidence)
+
+        if result.status == "failed":
+            failure_payload = {
+                "task_id": result.task_id,
+                "error": (
+                    result.error.get("message")
+                    if isinstance(result.error, dict) and result.error.get("message")
+                    else "Task execution failed"
+                ),
+                "execution_id": result.execution_id,
+                "created_at": utc_now(),
+            }
+            failure_index = next(
+                (
+                    index
+                    for index, item in enumerate(self.failures)
+                    if item.get("task_id") == result.task_id
+                ),
+                None,
+            )
+            if failure_index is None:
+                self.failures.append(failure_payload)
+            else:
+                self.failures[failure_index] = failure_payload
+
+        task = self.scheduler.get_task(result.task_id) if self.scheduler else None
+        if task is not None:
+            self._sync_runtime_step_from_task(task)
+
+        # The execution result is the final authority for terminal step state;
+        # apply it after scheduler sync so replay/direct recording works too.
+        result_like = type(
+            "ResultStatusView",
+            (),
+            {"task_id": result.task_id, "status": result.status, "error": result.error},
+        )()
+        self._sync_runtime_step_from_task(result_like)
+
+        self.run.updated_at = utc_now()
+        self._persist()
+        return result
+
+    def record_verification(self, verification: VerificationResult) -> VerificationResult:
+        for index, item in enumerate(self.verifications):
+            if item.verification_id == verification.verification_id:
+                self.verifications[index] = verification.model_copy(deep=True)
+                return self.verifications[index]
+        self.verifications.append(verification.model_copy(deep=True))
+        return verification
+
+    def record_evidence(self, evidence: EvidenceItem) -> EvidenceItem:
+        for index, item in enumerate(self.evidence):
+            if item.evidence_id == evidence.evidence_id:
+                self.evidence[index] = evidence.model_copy(deep=True)
+                return self.evidence[index]
+        self.evidence.append(evidence.model_copy(deep=True))
+        return evidence
+
+    def _sync_runtime_step_from_task(self, task) -> None:
+        status_map = {
+            "pending": "pending",
+            "running": "running",
+            "succeeded": "succeeded",
+            "failed": "failed",
+            "skipped": "skipped",
+            "cancelled": "skipped",
+        }
+        step = next(
+            (item for item in self.run.steps if item.step_id == task.task_id),
+            None,
+        )
+        if step is None:
+            return
+        mapped_status = status_map.get(task.status, step.status)
+        if step.status != mapped_status:
+            step.status = mapped_status
+            if mapped_status == "running" and step.started_at is None:
+                step.started_at = utc_now()
+            if mapped_status in {"succeeded", "failed", "skipped"}:
+                step.completed_at = utc_now()
+        if mapped_status == "failed":
+            step.error = getattr(task, "error", None)
+        if self.run.current_step_id == task.task_id and task.status not in {
+            "pending",
+            "running",
+        }:
+            self.run.current_step_id = None
+        self._sync_plan_steps()
 
     def record_finding(self, finding) -> dict[str, Any]:
         """Persist one structured finding as part of the authoritative run snapshot."""
@@ -513,6 +860,13 @@ class AnalysisRuntime:
             "findings": list(self.findings),
             "metric_definitions": list(self.metric_definitions),
             "assumptions": list(self.assumptions),
+            "verifications": [
+                item.model_dump(mode="json") for item in self.verifications
+            ],
+            "evidence": [
+                item.model_dump(mode="json") for item in self.evidence
+            ],
+            "failures": list(self.failures),
         }
 
     def _restore(self, question: str, external_context: Optional[dict]) -> bool:
@@ -547,6 +901,21 @@ class AnalysisRuntime:
                 dict(item) for item in raw.get("metric_definitions", [])
             ]
             self.assumptions = [dict(item) for item in raw.get("assumptions", [])]
+            self.verifications = [
+                VerificationResult.model_validate(item)
+                for item in raw.get("verifications", [])
+            ]
+            self.evidence = [
+                EvidenceItem.model_validate(item)
+                for item in raw.get("evidence", [])
+            ]
+            self.failures = [dict(item) for item in raw.get("failures", [])]
+            self.plan = (
+                AnalysisPlan.model_validate(self.run.plan)
+                if self.run.plan
+                else None
+            )
+            self.status = self.run.status
             return True
         except (KeyError, OSError, ValueError, json.JSONDecodeError):
             return False

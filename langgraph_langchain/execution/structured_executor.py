@@ -51,11 +51,25 @@ class StructuredTaskExecutor:
             duration_ms = (time.perf_counter() - started_at) * 1000
             status = "succeeded"
             error = None
+            output_text = output if isinstance(output, str) else str(output)
+            normalized_output = output_text.lstrip()
             if isinstance(output, dict) and output.get("status") == "needs_revision":
                 status = "needs_revision"
                 error = {
                     "type": "NeedsRevision",
                     "message": str(output.get("message", "Tool requested revision")),
+                }
+            elif normalized_output.startswith("[ERROR]"):
+                status = "failed"
+                error = {
+                    "type": "ToolExecutionError",
+                    "message": normalized_output,
+                }
+            elif normalized_output.startswith("REPORT REJECTED"):
+                status = "needs_revision"
+                error = {
+                    "type": "ReportValidationFeedback",
+                    "message": normalized_output,
                 }
             return build_execution_result(
                 request,

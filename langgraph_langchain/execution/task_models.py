@@ -37,6 +37,12 @@ def extract_artifact_ids(value: Any) -> list[str]:
         if isinstance(artifact_id, str) and artifact_id:
             ids.append(artifact_id)
 
+        singular_artifact = payload.get("artifact")
+        if isinstance(singular_artifact, dict):
+            artifact_id = singular_artifact.get("artifact_id")
+            if isinstance(artifact_id, str) and artifact_id:
+                ids.append(artifact_id)
+
         raw_ids = payload.get("artifact_ids")
         if isinstance(raw_ids, list):
             ids.extend(item for item in raw_ids if isinstance(item, str) and item)

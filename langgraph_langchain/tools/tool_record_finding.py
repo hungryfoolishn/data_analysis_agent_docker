@@ -13,7 +13,7 @@ from langgraph_langchain.tools._shared import (
     _is_rd_domain_session,
     _validate_tool_stage_factory,
 )
-from langgraph_langchain.schemas import EvidenceItem, Finding
+from langgraph_langchain.schemas import EvidenceItem, Finding, VerificationResult
 from langgraph_langchain.rd_validators import validate_rd_finding
 from langgraph_langchain.runtime import SessionExecutionRecorder
 from langgraph_langchain.tracing import get_trace_context
@@ -312,6 +312,24 @@ def _factory(session):
         runtime = getattr(session, "analysis_runtime", None)
         if runtime is not None and hasattr(runtime, "record_finding"):
             runtime.record_finding(finding)
+        if runtime is not None and hasattr(runtime, "record_verification"):
+            verification_result = VerificationResult(
+                run_id=runtime.run.run_id,
+                step_id=session.current_runtime_step_id,
+                execution_id=recorder.execution_id,
+                evidence_id=evidence_item.evidence_id,
+                check_type="evidence_existence",
+                status="passed",
+                passed=True,
+                expected="non-empty evidence with an ID",
+                actual={"evidence_id": evidence_item.evidence_id},
+                message="Finding evidence exists and is bound to this execution",
+            )
+            runtime.record_verification(verification_result)
+            evidence_item.verification_status = "verified"
+            evidence_item.verification_result_id = verification_result.verification_id
+        if runtime is not None and hasattr(runtime, "record_evidence"):
+            runtime.record_evidence(evidence_item)
 
         # Build response message
         response_msg = f"Finding {finding_id} recorded: {statement[:80]}..."
