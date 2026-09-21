@@ -82,6 +82,11 @@ class PythonTaskExecutor:
             )
             raw = self._executor.execute(execution_request)
 
+            if raw.status == "succeeded" and raw.namespace_updates:
+                # The isolated worker returns only serializable values, so merge
+                # them back without discarding parent-side helper functions.
+                namespace.update(raw.namespace_updates)
+
             artifact_ids: list[str] = []
             if self._artifact_recorder is not None:
                 metadata = []

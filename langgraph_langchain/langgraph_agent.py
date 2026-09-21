@@ -81,6 +81,7 @@ from langgraph_langchain.config import (
     LLM_ENABLE_THINKING as _LLM_ENABLE_THINKING,
     LLM_EXTRA_BODY as _LLM_EXTRA_BODY,
     RUNTIME_V2_ENABLED as _RUNTIME_V2_ENABLED,
+    RUNTIME_V2_FALLBACK_ENABLED as _RUNTIME_V2_FALLBACK_ENABLED,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -1459,6 +1460,7 @@ async def _run_runtime_v2_graph_stream(
     *,
     tools: List,
     source_path: str,
+    react_agent=None,
 ) -> AsyncGenerator[tuple[str, list], None]:
     """Try to execute a structured plan through Runtime V2.
 
@@ -1467,21 +1469,25 @@ async def _run_runtime_v2_graph_stream(
     legacy ReAct stream.
     """
     from langgraph_langchain.evidence import EvidenceCollector
-    from langgraph_langchain.runtime.executor import TaskExecutor
-    from langgraph_langchain.runtime.graph import RuntimeV2Controller
+    from langgraph_langchain.execution.python_task_executor import PythonTaskExecutor
+    from langgraph_langchain.execution.react_executor import ReactTaskExecutor
     from langgraph_langchain.execution.structured_executor import StructuredTaskExecutor
+    from langgraph_langchain.runtime.context import register_session_artifact
     from langgraph_langchain.runtime.plans import AnalysisPlan
     from langgraph_langchain.runtime.skill_retriever import SkillRetriever
     from langgraph_langchain.verification import verify_execution_result
 
+    session.runtime_v2_fallback = False
     runtime = getattr(session, "analysis_runtime", None)
     if runtime is None or not runtime.run.plan:
+        session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
         yield "\n\nRuntime V2 fallback: no structured plan.\n", []
         return
 
     try:
         plan = AnalysisPlan.model_validate(runtime.run.plan)
     except Exception as exc:
+        session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
         session.logger.warning("runtime_v2_plan_restore_failed error=%s", exc)
         yield "\n\nRuntime V2 fallback: invalid structured plan.\n", []
         return
@@ -1495,8 +1501,15 @@ async def _run_runtime_v2_graph_stream(
     )
 
     tool_map = {getattr(tool, "name", ""): tool for tool in tools}
-    unsupported = sorted({step.method for step in plan.steps if step.method not in tool_map})
+    unsupported = sorted({
+        step.method
+        for step in plan.steps
+        if step.method not in tool_map
+        and step.method != "python_repl"
+        and not step.method.startswith("react_")
+    })
     if unsupported:
+        session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
         yield (
             "\n\nRuntime V2 fallback: unsupported structured tools "
             f"({', '.join(unsupported)}).\n",
@@ -1535,11 +1548,41 @@ async def _run_runtime_v2_graph_stream(
                 session.state_machine.current_stage = AnalysisStage.DEEP_DIVE
                 session.current_stage = AnalysisStage.DEEP_DIVE
 
-    executor = TaskExecutor(
-        structured=StructuredTaskExecutor(tool_resolver=lambda name: tool_map.get(name)),
-    )
-    runtime.configure_executor(
-        executor,
+    runtime.execution_namespace = session.ns
+
+    def _python_artifact_recorder(raw_artifact: dict) -> dict:
+        relative_path = raw_artifact.get("relative_path")
+        if not relative_path:
+            raise ValueError("Python execution artifact is missing relative_path")
+        metadata = register_session_artifact(
+            session,
+            runtime.workspace_dir / relative_path,
+            created_by_tool="python_repl",
+            step_id=session.current_runtime_step_id,
+        )
+        return metadata
+
+    controller = runtime.build_execution_controller(
+        structured_executor=StructuredTaskExecutor(
+            tool_resolver=lambda name: tool_map.get(name),
+        ),
+        react_executor=ReactTaskExecutor(
+            agent=react_agent,
+            prompt_builder=lambda request: (
+                f"Task: {request.task.question}\n"
+                f"Data file: {source_path}\n"
+                "Use the available analysis tools and finish with a concise result."
+            ),
+        ),
+        python_executor=PythonTaskExecutor(
+            workspace_dir=runtime.workspace_dir,
+            source_path=source_path,
+            timeout_seconds=float(_CODE_TIMEOUT),
+            artifact_recorder=_python_artifact_recorder,
+        ),
+        on_task_start=on_task_start,
+        on_task_finish=on_task_finish,
+        skill_retriever=SkillRetriever(_skills_loader),
         verifier=lambda result: verify_execution_result(
             result,
             artifacts=runtime.artifacts,
@@ -1555,16 +1598,6 @@ async def _run_runtime_v2_graph_stream(
             verification_results=verifications,
             artifacts=runtime.artifacts,
         ),
-    )
-    controller = RuntimeV2Controller(
-        scheduler=runtime.scheduler,
-        runner=runtime.runner,
-        run_id=runtime.run.run_id,
-        session_id=runtime.session_id,
-        on_task_start=on_task_start,
-        on_task_finish=on_task_finish,
-        skill_retriever=SkillRetriever(_skills_loader),
-        analysis_runtime=runtime,
     )
 
     try:
@@ -1594,28 +1627,42 @@ async def _run_runtime_v2_graph_stream(
                 yield "", artifacts
 
             if update.get("action") in {"failed", "blocked", "incomplete", "limit_reached"}:
+                # A failed task is business-owned by Runtime. It should be retried
+                # or replanned later; only scheduling/runtime infrastructure is an
+                # emergency fallback boundary.
+                infrastructure_failure = update.get("action") in {
+                    "blocked",
+                    "incomplete",
+                    "limit_reached",
+                } and update.get("result") is None
+                session.runtime_v2_fallback = bool(
+                    infrastructure_failure and _RUNTIME_V2_FALLBACK_ENABLED
+                )
                 _set_runtime_run_status(
                     session,
                     "failed",
                     error=update.get("reason") or "Runtime V2 plan did not complete",
                 )
-                yield "\n\n**Runtime V2 plan stopped.** Falling back to the legacy agent.\n", []
+                yield "\n\n**Runtime V2 plan stopped.**\n", []
                 return
 
         all_succeeded = all(task.status == "succeeded" for task in controller.scheduler.tasks)
         if not all_succeeded:
-            yield "\n\nRuntime V2 fallback: plan did not finish successfully.\n", []
+            session.runtime_v2_fallback = False
+            yield "\n\nRuntime V2 stopped: plan did not finish successfully.\n", []
             return
         if not session.report:
+            session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
             yield "\n\nRuntime V2 fallback: structured plan completed without a report.\n", []
             return
 
         session.runtime_v2_completed = True
         yield "\n\n**Runtime V2 structured plan completed.**\n", []
     except Exception as exc:
+        session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
         session.logger.warning("runtime_v2_stream_failed error=%s", exc)
         _set_runtime_run_status(session, "failed", error=str(exc))
-        yield "\n\n**Runtime V2 failed.** Falling back to the legacy agent.\n", []
+        yield "\n\n**Runtime V2 failed.**\n", []
 
 
 # ── Public async stream ───────────────────────────────────────────────────────
@@ -1765,6 +1812,7 @@ async def run_analysis_stream(
             session,
             tools=tools,
             source_path=source_path,
+            react_agent=agent,
         ):
             yield chunk, artifacts
         if getattr(session, "runtime_v2_completed", False):
@@ -1794,6 +1842,13 @@ async def run_analysis_stream(
                 total_steps=session.total_steps,
                 failure_code=None,
             )
+            remove_trace_context(session_id)
+            session.cleanup()
+            return
+        if not getattr(session, "runtime_v2_fallback", False):
+            log = session.logger
+            log.info("runtime_v2_stopped_without_fallback session=%s", session_id)
+            yield "\n\n**Runtime V2 stopped without legacy fallback.**\n", []
             remove_trace_context(session_id)
             session.cleanup()
             return

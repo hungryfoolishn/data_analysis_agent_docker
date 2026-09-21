@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from langgraph_langchain.execution.python_task_executor import PythonTaskExecutor
+from langgraph_langchain.execution.react_executor import ReactTaskExecutor
 from langgraph_langchain.execution.structured_executor import StructuredTaskExecutor
 from langgraph_langchain.execution.task_models import TaskExecutionRequest
 from langgraph_langchain.runtime.executor import TaskExecutor
@@ -73,7 +75,9 @@ class RuntimeV2Controller:
                 self.on_task_start(next_task)
 
             if self.analysis_runtime is not None:
-                result = self.analysis_runtime.execute_next_task()
+                result = self.analysis_runtime.execute_next_task(
+                    request_factory=self._request_factory,
+                )
                 if result is None:
                     failed_tasks = [
                         task for task in self.scheduler.tasks
@@ -145,9 +149,25 @@ class RuntimeV2Controller:
         return "running"
 
     def _request_factory(self, task: AnalysisTask) -> TaskExecutionRequest:
-        arguments = task.constraints.get("arguments")
-        if not isinstance(arguments, dict):
-            arguments = {}
+        if self.analysis_runtime is not None:
+            # Runtime owns workspace, namespace, timeout, and persistence-oriented
+            # request fields; the controller only augments it with skill metadata.
+            request = self.analysis_runtime.build_execution_request(task)
+        else:
+            arguments = task.constraints.get("arguments")
+            if not isinstance(arguments, dict):
+                arguments = {}
+
+            request = TaskExecutionRequest(
+                task=task,
+                run_id=self.run_id,
+                arguments=arguments,
+                code=task.constraints.get("code"),
+                workspace_dir=task.constraints.get("workspace_dir"),
+                source_path=task.constraints.get("source_path"),
+                timeout_seconds=float(task.constraints.get("timeout_seconds", 60.0)),
+                max_output_chars=int(task.constraints.get("max_output_chars", 3000)),
+            )
 
         metadata: dict[str, Any] = {}
         if self.skill_retriever is not None:
@@ -160,17 +180,8 @@ class RuntimeV2Controller:
                 "reason": match.reason,
             }
 
-        return TaskExecutionRequest(
-            task=task,
-            run_id=self.run_id,
-            arguments=arguments,
-            code=task.constraints.get("code"),
-            workspace_dir=task.constraints.get("workspace_dir"),
-            source_path=task.constraints.get("source_path"),
-            timeout_seconds=float(task.constraints.get("timeout_seconds", 60.0)),
-            max_output_chars=int(task.constraints.get("max_output_chars", 3000)),
-            metadata=metadata,
-        )
+        request.metadata = metadata
+        return request
 
 
 def build_runtime_v2_controller(
@@ -178,7 +189,10 @@ def build_runtime_v2_controller(
     plan: AnalysisPlan,
     session_id: str,
     run_id: str,
-    tool_resolver: Callable[[str], Any],
+    tool_resolver: Optional[Callable[[str], Any]] = None,
+    structured_executor: Optional[StructuredTaskExecutor] = None,
+    react_executor: Optional[ReactTaskExecutor] = None,
+    python_executor: Optional[PythonTaskExecutor] = None,
     max_running_tasks: int = 1,
     argument_defaults_by_method: Optional[dict[str, dict[str, Any]]] = None,
     on_task_start: Optional[Callable[[AnalysisTask], None]] = None,
@@ -190,15 +204,21 @@ def build_runtime_v2_controller(
     skill_retriever: Optional[SkillRetriever] = None,
     analysis_runtime: Optional["AnalysisRuntime"] = None,
 ) -> RuntimeV2Controller:
-    """Build the Runtime V2 graph for a plan and session-bound tool resolver."""
+    """Build the Runtime V2 graph with explicit Structured/ReAct/Python workers."""
     scheduler = TaskScheduler.from_plan(
         plan,
         session_id=session_id,
         max_running_tasks=max_running_tasks,
         argument_defaults_by_method=argument_defaults_by_method,
     )
+    if structured_executor is None:
+        if tool_resolver is None:
+            raise ValueError("structured_executor or tool_resolver is required")
+        structured_executor = StructuredTaskExecutor(tool_resolver=tool_resolver)
     executor = TaskExecutor(
-        structured=StructuredTaskExecutor(tool_resolver=tool_resolver),
+        structured=structured_executor,
+        react=react_executor,
+        python=python_executor,
     )
     runner = TaskRunner(
         scheduler=scheduler,

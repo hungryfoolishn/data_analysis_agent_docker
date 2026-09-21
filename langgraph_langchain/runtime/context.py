@@ -84,6 +84,7 @@ class AnalysisRuntime:
         self.scheduler: Optional[TaskScheduler] = None
         self.executor: Optional[TaskExecutor] = None
         self.runner: Optional[TaskRunner] = None
+        self.controller: Optional[object] = None
         self.verifications: list[VerificationResult] = []
         self.evidence: list[EvidenceItem] = []
         self.failures: list[dict[str, Any]] = []
@@ -271,6 +272,77 @@ class AnalysisRuntime:
         )
         return self.attach_runner(runner)
 
+    @property
+    def verification_results(self) -> list[VerificationResult]:
+        """Compatibility alias for Runtime V6's canonical verification collection."""
+        return self.verifications
+
+    def build_execution_controller(
+        self,
+        *,
+        structured_executor=None,
+        react_executor=None,
+        python_executor=None,
+        on_task_start=None,
+        on_task_finish=None,
+        skill_retriever=None,
+        verifier=None,
+        evidence_factory=None,
+    ):
+        """Build the V6 controller around this Runtime-owned scheduler."""
+        from langgraph_langchain.runtime.graph import RuntimeV2Controller
+
+        if self.plan is None or self.scheduler is None:
+            raise RuntimeError("Call initialize_plan before building an execution controller")
+
+        executor = TaskExecutor(
+            structured=structured_executor,
+            react=react_executor,
+            python=python_executor,
+        )
+        self.configure_executor(
+            executor,
+            verifier=verifier,
+            evidence_factory=evidence_factory,
+        )
+        controller = RuntimeV2Controller(
+            scheduler=self.scheduler,
+            runner=self.runner,
+            run_id=self.run.run_id,
+            session_id=self.session_id,
+            on_task_start=on_task_start,
+            on_task_finish=on_task_finish,
+            skill_retriever=skill_retriever,
+            analysis_runtime=self,
+        )
+        self.controller = controller
+        return controller
+
+    def execute_all(
+        self,
+        *,
+        max_steps: Optional[int] = None,
+        stop_on_failure: bool = True,
+    ) -> list[ExecutionResult]:
+        """Execute the Runtime-owned plan until completion or an owner-visible stop."""
+        if self.runner is None or self.scheduler is None:
+            raise RuntimeError("Runtime has no runner; call build_execution_controller first")
+        if max_steps is not None and max_steps < 1:
+            raise ValueError("max_steps must be at least 1")
+
+        results: list[ExecutionResult] = []
+        remaining = max_steps
+        while remaining is None or remaining > 0:
+            result = self.execute_next_task()
+            if result is None:
+                break
+            results.append(result)
+            if remaining is not None:
+                remaining -= 1
+            if stop_on_failure and result.status == "failed":
+                break
+        return results
+
     def next_task(self):
         if self.scheduler is None:
             raise RuntimeError("Runtime has no scheduler")
@@ -343,14 +415,14 @@ class AnalysisRuntime:
             max_output_chars=int(task.constraints.get("max_output_chars", 3000)),
         )
 
-    def execute_next_task(self):
+    def execute_next_task(self, *, request_factory=None):
         """Execute one scheduler-ready task and record its full V2 lineage."""
         if self.runner is None or self.scheduler is None:
             raise RuntimeError("Runtime has no runner; call configure_executor first")
 
         step = self.runner.execute_next(
             run_id=self.run.run_id,
-            request_factory=self.build_execution_request,
+            request_factory=request_factory or self.build_execution_request,
         )
         result = step.result
         if result is not None:
@@ -409,9 +481,16 @@ class AnalysisRuntime:
                     )
                 )
                 result.evidence.source_execution_ids = source_ids
+        # Link artifacts registered by PythonTaskExecutor even when the exact
+        # execution ID was not known before the ExecutionResult was built.
+        artifact_ids = list(result.output_artifact_ids)
+        for artifact_id in artifact_ids:
+            artifact = self.artifacts.get(artifact_id)
+            if artifact is not None and not artifact.execution_id:
+                artifact.execution_id = result.execution_id
+
         if existing is not None:
             # Reconcile artifacts registered directly by the wrapped tool.
-            artifact_ids = list(result.output_artifact_ids)
             for artifact_id, artifact in self.artifacts.items():
                 if artifact.execution_id == actual_execution_id:
                     artifact_ids.append(artifact_id)
@@ -494,6 +573,13 @@ class AnalysisRuntime:
         self.run.updated_at = utc_now()
         self._persist()
         return result
+
+    def record_verification_results(
+        self,
+        results,
+    ) -> list[VerificationResult]:
+        """Record a batch of verification results and return the canonical copies."""
+        return [self.record_verification(item) for item in results]
 
     def record_verification(self, verification: VerificationResult) -> VerificationResult:
         for index, item in enumerate(self.verifications):
