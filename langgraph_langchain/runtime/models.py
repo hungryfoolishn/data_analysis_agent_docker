@@ -7,6 +7,7 @@ from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+from langgraph_langchain.schemas import EvidenceItem, VerificationResult
 
 
 def utc_now() -> str:
@@ -89,6 +90,7 @@ class AnalysisRun(BaseModel):
 class ExecutionResult(BaseModel):
     execution_id: str = Field(default_factory=lambda: new_id("exec"))
     run_id: str
+    task_id: Optional[str] = None
     step_id: Optional[str] = None
     tool_name: str
     status: Literal["succeeded", "needs_revision", "failed", "cancelled"]
@@ -98,6 +100,9 @@ class ExecutionResult(BaseModel):
     stdout_preview: str = ""
     error: Optional[dict[str, Any]] = None
     duration_ms: float = 0.0
+    skill_name: Optional[str] = None
+    verification_results: list[VerificationResult] = Field(default_factory=list)
+    evidence: Optional[EvidenceItem] = None
     created_at: str = Field(default_factory=utc_now)
 
 

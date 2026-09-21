@@ -80,6 +80,7 @@ from langgraph_langchain.config import (
     LLM_EXTRA_HEADERS as _LLM_EXTRA_HEADERS,
     LLM_ENABLE_THINKING as _LLM_ENABLE_THINKING,
     LLM_EXTRA_BODY as _LLM_EXTRA_BODY,
+    RUNTIME_V2_ENABLED as _RUNTIME_V2_ENABLED,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -1453,6 +1454,158 @@ def _tool_output_status(output: str) -> str:
     return "succeeded"
 
 
+async def _run_runtime_v2_graph_stream(
+    session: "_Session",
+    *,
+    tools: List,
+    source_path: str,
+) -> AsyncGenerator[tuple[str, list], None]:
+    """Try to execute a structured plan through Runtime V2.
+
+    This is an opt-in bridge.  When a plan contains LLM-decided tasks, has
+    unknown tools, or fails to produce a report, the caller falls back to the
+    legacy ReAct stream.
+    """
+    from langgraph_langchain.evidence import EvidenceCollector
+    from langgraph_langchain.runtime.graph import build_runtime_v2_controller
+    from langgraph_langchain.runtime.plans import AnalysisPlan
+    from langgraph_langchain.runtime.skill_retriever import SkillRetriever
+    from langgraph_langchain.verification import verify_execution_result
+
+    runtime = getattr(session, "analysis_runtime", None)
+    if runtime is None or not runtime.run.plan:
+        yield "\n\nRuntime V2 fallback: no structured plan.\n", []
+        return
+
+    try:
+        plan = AnalysisPlan.model_validate(runtime.run.plan)
+    except Exception as exc:
+        session.logger.warning("runtime_v2_plan_restore_failed error=%s", exc)
+        yield "\n\nRuntime V2 fallback: invalid structured plan.\n", []
+        return
+
+    # A proposed default plan is reviewable and intentionally not copied into
+    # run.steps until an executor takes ownership of it.
+    if not runtime.run.steps:
+        from langgraph_langchain.runtime.models import RuntimePlanStep
+
+        runtime.run.steps = [
+            RuntimePlanStep.model_validate(step.model_dump(mode="json"))
+            for step in plan.steps
+        ]
+
+    tool_map = {getattr(tool, "name", ""): tool for tool in tools}
+    unsupported = sorted({step.method for step in plan.steps if step.method not in tool_map})
+    if unsupported:
+        yield (
+            "\n\nRuntime V2 fallback: unsupported structured tools "
+            f"({', '.join(unsupported)}).\n",
+            [],
+        )
+        return
+
+    session.runtime_v2_completed = False
+
+    def on_task_start(task) -> None:
+        session.current_runtime_step_id = task.plan_step_id or task.task_id
+
+    def on_task_finish(result) -> None:
+        _complete_runtime_step(
+            session,
+            result.step_id or result.task_id,
+            status=result.status,
+            error=(
+                result.error.get("message")
+                if isinstance(result.error, dict) and result.error.get("message")
+                else None
+            ),
+        )
+        session.total_steps = getattr(session, "total_steps", 0) + 1
+        if result.status == "succeeded":
+            if result.tool_name == "load_data":
+                session.complete_stage("schema_understanding")
+            elif result.tool_name == "eda_profile":
+                session.complete_stage("data_quality_check")
+
+    controller = build_runtime_v2_controller(
+        plan=plan,
+        session_id=runtime.session_id,
+        run_id=runtime.run.run_id,
+        tool_resolver=lambda name: tool_map.get(name),
+        argument_defaults_by_method={
+            "load_data": {"file_path": source_path, "sheet_name": ""},
+        },
+        on_task_start=on_task_start,
+        on_task_finish=on_task_finish,
+        verifier=lambda result: verify_execution_result(
+            result,
+            artifacts=runtime.artifacts,
+            workspace_dir=runtime.workspace_dir,
+            context={
+                "run_id": result.run_id,
+                "task_id": result.task_id,
+                "step_id": result.step_id,
+            },
+        ),
+        evidence_factory=lambda result, verifications: EvidenceCollector().collect(
+            execution=result,
+            verification_results=verifications,
+            artifacts=runtime.artifacts,
+        ),
+        skill_retriever=SkillRetriever(_skills_loader),
+    )
+
+    try:
+        async for update in controller.graph.astream({}):
+            result = update.get("result") if isinstance(update, dict) else None
+            if result is not None:
+                if result.status == "succeeded":
+                    preview = _format_preview_text(result.stdout_preview)
+                    if preview:
+                        msg = f"\n> `{result.tool_name} done`\n\n{preview}\n\n"
+                        session.process_log.append(msg)
+                        yield msg, []
+                else:
+                    message = (
+                        result.error.get("message", "")
+                        if isinstance(result.error, dict)
+                        else ""
+                    )
+                    msg = f"\n> `{result.tool_name} failed`\n\n{message}\n\n"
+                    session.process_log.append(msg)
+                    yield msg, []
+
+            if session.new_artifacts:
+                artifacts = list(session.new_artifacts)
+                session.new_artifacts.clear()
+                session.logger.info("runtime_v2_artifacts_flushed count=%d", len(artifacts))
+                yield "", artifacts
+
+            if update.get("action") in {"failed", "blocked", "incomplete", "limit_reached"}:
+                _set_runtime_run_status(
+                    session,
+                    "failed",
+                    error=update.get("reason") or "Runtime V2 plan did not complete",
+                )
+                yield "\n\n**Runtime V2 plan stopped.** Falling back to the legacy agent.\n", []
+                return
+
+        all_succeeded = all(task.status == "succeeded" for task in controller.scheduler.tasks)
+        if not all_succeeded:
+            yield "\n\nRuntime V2 fallback: plan did not finish successfully.\n", []
+            return
+        if not session.report:
+            yield "\n\nRuntime V2 fallback: structured plan completed without a report.\n", []
+            return
+
+        session.runtime_v2_completed = True
+        yield "\n\n**Runtime V2 structured plan completed.**\n", []
+    except Exception as exc:
+        session.logger.warning("runtime_v2_stream_failed error=%s", exc)
+        _set_runtime_run_status(session, "failed", error=str(exc))
+        yield "\n\n**Runtime V2 failed.** Falling back to the legacy agent.\n", []
+
+
 # ── Public async stream ───────────────────────────────────────────────────────
 async def run_analysis_stream(
     instruction: str,
@@ -1595,6 +1748,45 @@ async def run_analysis_stream(
         session_id, source_path, bool(restore_state), step,
     )
     active_runtime_steps: Dict[str, tuple[str, str]] = {}
+    if _RUNTIME_V2_ENABLED:
+        async for chunk, artifacts in _run_runtime_v2_graph_stream(
+            session,
+            tools=tools,
+            source_path=source_path,
+        ):
+            yield chunk, artifacts
+        if getattr(session, "runtime_v2_completed", False):
+            if session.report:
+                report_artifacts = list(session.new_artifacts)
+                session.new_artifacts.clear()
+                try:
+                    report_path = session.workspace_dir / "final_report.md"
+                    report_path.write_text(session.report, encoding="utf-8")
+                    rel = report_path.relative_to(session.workspace_dir.parent)
+                    report_artifacts.append({
+                        "name": report_path.name,
+                        "path": str(report_path),
+                        "relative_path": str(rel),
+                        "url": f"/workspace/files/{rel}",
+                    })
+                except Exception as exc:
+                    session.logger.warning(
+                        "runtime_v2_report_artifact_failed error=%s", exc
+                    )
+                yield session.report, report_artifacts
+            _set_runtime_run_status(session, "completed")
+            trace_context.end_trace()
+            trace_context.save_to_file(session.workspace_dir)
+            session.structured_logger.save_run_metrics(
+                final_status="completed",
+                total_steps=session.total_steps,
+                failure_code=None,
+            )
+            remove_trace_context(session_id)
+            session.cleanup()
+            return
+        log = session.logger
+        log.info("runtime_v2_fallback session=%s", session_id)
     try:
         async for event in agent.astream_events({"messages": [user_msg]}, config=config, version="v2"):
             if session.cancel_event.is_set():

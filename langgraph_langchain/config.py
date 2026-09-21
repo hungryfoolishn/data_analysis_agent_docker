@@ -79,6 +79,14 @@ MAX_PYTHON_REPL_LINES: int = int(os.environ.get("MAX_PYTHON_REPL_LINES", "50"))
 MAX_AGENT_STEPS: int = int(os.environ.get("MAX_AGENT_STEPS", "48"))
 """Upper bound on tool invocations per analysis run."""
 
+# ── Runtime V2 control flow ─────────────────────────────────────────────────
+# Runtime V2 is opt-in while its LangGraph integration and report path are
+# hardened.  The legacy ReAct flow remains the default and is never affected
+# unless this flag is explicitly enabled.
+RUNTIME_V2_ENABLED: bool = (
+    os.environ.get("RUNTIME_V2_ENABLED", "").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
 MAX_CONSECUTIVE_PYTHON_ERRORS: int = int(
     os.environ.get("MAX_CONSECUTIVE_PYTHON_ERRORS", "3")
 )

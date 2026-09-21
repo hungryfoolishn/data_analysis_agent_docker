@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
@@ -45,6 +45,145 @@ RecoveryAction = Literal[
 ]
 
 
+# Runtime V2 task/executor contracts.
+# These types are intentionally broad enough for the first V2 scheduler and
+# executors, while remaining compatible with structured plans already in use.
+TaskType = Literal[
+    "schema",
+    "profile",
+    "metric",
+    "comparison",
+    "trend",
+    "breakdown",
+    "contribution",
+    "anomaly",
+    "correlation",
+    "statistical_test",
+    "root_cause",
+    "visualization",
+    "report",
+]
+
+ExecutorType = Literal[
+    "structured",
+    "react",
+    "python",
+]
+
+TaskStatus = Literal[
+    "pending",
+    "running",
+    "succeeded",
+    "failed",
+    "skipped",
+    "cancelled",
+]
+
+VerificationCheckType = Literal[
+    "numeric_consistency",
+    "time_consistency",
+    "aggregation_consistency",
+    "artifact_existence",
+    "evidence_existence",
+    "custom",
+]
+
+VerificationStatus = Literal[
+    "passed",
+    "failed",
+    "skipped",
+    "not_applicable",
+]
+
+
+class AnalysisTask(BaseModel):
+    """A schedulable unit in Runtime V2.
+
+    This model is the canonical schema-level contract. The existing
+    ``runtime.models.AnalysisTask`` is retained for current run snapshots and
+    will be migrated to this contract in the scheduler/executor commits.
+    """
+
+    task_id: str = Field(
+        default_factory=lambda: f"task_{uuid4().hex}",
+        description="Task unique identifier",
+    )
+    session_id: str = Field(..., min_length=1, description="Owning session ID")
+    question: str = Field(..., min_length=1, description="What this task answers")
+    task_type: TaskType = Field(default="profile", description="Analysis task type")
+    executor_type: ExecutorType = Field(
+        default="python",
+        description="Executor that owns this task",
+    )
+    method: Optional[str] = Field(
+        default=None,
+        description="Optional tool/skill method name; for example load_data or compare_periods",
+    )
+    plan_step_id: Optional[str] = Field(
+        default=None,
+        description="Linked RuntimePlanStep ID when the task comes from a plan",
+    )
+    status: TaskStatus = Field(default="pending", description="Task status")
+    depends_on: List[str] = Field(default_factory=list, description="Upstream task IDs")
+    required_inputs: List[str] = Field(default_factory=list, description="Required input names")
+    expected_outputs: List[str] = Field(default_factory=list, description="Expected output names")
+    input_asset_ids: List[str] = Field(default_factory=list, description="Input dataset asset IDs")
+    constraints: Dict[str, Any] = Field(default_factory=dict, description="Task constraints")
+    external_context: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Read-only context supplied by callers",
+    )
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="Creation timestamp in ISO format",
+    )
+
+
+class VerificationResult(BaseModel):
+    """Structured result of checking an execution, artifact, or evidence item."""
+
+    verification_id: str = Field(
+        default_factory=lambda: f"verify_{uuid4().hex}",
+        description="Verification unique identifier",
+    )
+    run_id: Optional[str] = Field(default=None, description="Owning run ID")
+    step_id: Optional[str] = Field(default=None, description="Verified runtime step ID")
+    task_id: Optional[str] = Field(default=None, description="Verified task ID")
+    execution_id: Optional[str] = Field(default=None, description="Verified execution ID")
+    artifact_id: Optional[str] = Field(default=None, description="Verified artifact ID")
+    evidence_id: Optional[str] = Field(default=None, description="Verified evidence ID")
+    check_type: VerificationCheckType = Field(
+        default="numeric_consistency",
+        description="First-stage verification category",
+    )
+    status: VerificationStatus = Field(default="passed", description="Verification status")
+    passed: bool = Field(..., description="Whether the check passed")
+    expected: Optional[Any] = Field(default=None, description="Expected value or condition")
+    actual: Optional[Any] = Field(default=None, description="Observed value or condition")
+    tolerance: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="Numeric tolerance used by the check",
+    )
+    message: str = Field(default="", description="Human-readable check result")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Additional check details")
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="Creation timestamp in ISO format",
+    )
+
+    @model_validator(mode="after")
+    def _check_status_consistency(self) -> "VerificationResult":
+        if self.status == "passed" and not self.passed:
+            raise ValueError("passed must be true when status is passed")
+        if self.status == "failed" and self.passed:
+            raise ValueError("passed must be false when status is failed")
+        if self.status in {"skipped", "not_applicable"} and self.passed:
+            raise ValueError("passed must be false when status is skipped or not_applicable")
+        return self
+
+
+
 class PlanStep(BaseModel):
     """
     每个 step 都要尽量自包含（因为我们在每一步里都会重新执行一段代码到同一个 workspace），
@@ -86,6 +225,14 @@ class EvidenceItem(BaseModel):
     evidence_id: str = Field(
         default_factory=lambda: f"evidence_{uuid4().hex}",
         description="证据唯一标识",
+    )
+    verification_status: Literal["unverified", "verified", "failed"] = Field(
+        default="unverified",
+        description="Runtime verification state for this evidence",
+    )
+    verification_result_id: Optional[str] = Field(
+        default=None,
+        description="Linked VerificationResult ID",
     )
     evidence_text: str = Field(..., min_length=1, description="支撑结论的证据文本")
     source_fields: List[str] = Field(default_factory=list, description="证据涉及的字段")
@@ -174,6 +321,18 @@ class Finding(BaseModel):
     )
     hypothesis_flag: bool = Field(False, description="是否属于假设性结论")
     category: Optional[str] = Field(default=None, description="结论类别，如 trend/anomaly/comparison/velocity/quality/delivery")
+    finding_type: Optional[TaskType] = Field(
+        default=None,
+        description="Runtime V2 structured conclusion type",
+    )
+    supported_by: List[str] = Field(
+        default_factory=list,
+        description="Evidence IDs that support this finding",
+    )
+    depends_on: List[str] = Field(
+        default_factory=list,
+        description="Upstream finding IDs used to derive this finding",
+    )
     stats: Optional[Dict[str, Any]] = Field(default=None, description="关键统计数据")
     calculation_method: Optional[str] = Field(default=None, description="计算方法")
     # Tracing fields
