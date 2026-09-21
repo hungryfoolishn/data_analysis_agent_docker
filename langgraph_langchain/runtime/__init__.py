@@ -20,6 +20,15 @@ from langgraph_langchain.runtime.skill_retriever import SkillMatch, SkillRetriev
 from langgraph_langchain.runtime.verification_policy import VerificationPolicy
 from langgraph_langchain.runtime.finding_builder import FindingBuilder, FindingProvenanceError
 from langgraph_langchain.runtime.report_validator import ReportValidationResult, validate_report
+from langgraph_langchain.runtime.learning import (
+    LearningMemoryStore,
+    LearningSnapshot,
+    SkillQuality,
+    TaskEvaluation,
+    build_skill_quality,
+    build_failure_cases,
+    build_task_evaluation,
+)
 from langgraph_langchain.runtime.quality import AnalysisQualityResult, QualityIssue, check_analysis_quality
 from langgraph_langchain.runtime.models import (
     AnalysisRun,
@@ -56,6 +65,13 @@ __all__ = [
     "FindingProvenanceError",
     "ReportValidationResult",
     "validate_report",
+    "LearningMemoryStore",
+    "LearningSnapshot",
+    "SkillQuality",
+    "TaskEvaluation",
+    "build_skill_quality",
+    "build_failure_cases",
+    "build_task_evaluation",
     "AnalysisRuntime",
     "AnalysisTask",
     "ExecutionResult",

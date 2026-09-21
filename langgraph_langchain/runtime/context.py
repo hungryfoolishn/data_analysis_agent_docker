@@ -28,6 +28,12 @@ from langgraph_langchain.runtime.scheduler import TaskScheduler
 from langgraph_langchain.runtime.runner import TaskRunner
 from langgraph_langchain.runtime.executor import TaskExecutor
 from langgraph_langchain.runtime.finding_builder import FindingProvenanceError
+from langgraph_langchain.runtime.learning import (
+    LearningMemoryStore,
+    LearningSnapshot,
+    TaskEvaluation,
+    build_task_evaluation,
+)
 from langgraph_langchain.schemas import Finding, EvidenceItem, VerificationResult
 
 _RUNTIME_STATE_FILE = ".analysis_runtime.json"
@@ -89,7 +95,11 @@ class AnalysisRuntime:
         self.verifications: list[VerificationResult] = []
         self.evidence: list[EvidenceItem] = []
         self.failures: list[dict[str, Any]] = []
+        self.evaluations: list[TaskEvaluation] = []
         self.execution_namespace: dict[str, Any] = {}
+        self.learning_memory = LearningMemoryStore(
+            self.workspace_dir / ".analysis_learning.json"
+        )
         self.status: str = "created"
         if force_new_run:
             self._create_retry_run(
@@ -473,6 +483,29 @@ class AnalysisRuntime:
         self._persist()
         return result
 
+    def record_task_evaluation(
+        self,
+        result: ExecutionResult,
+        *,
+        persist: bool = True,
+    ) -> TaskEvaluation:
+        """Evaluate one execution and update durable Runtime learning memory."""
+        evaluation = build_task_evaluation(self, result)
+        for index, item in enumerate(self.evaluations):
+            if item.task_id == evaluation.task_id or item.execution_id == evaluation.execution_id:
+                self.evaluations[index] = evaluation
+                break
+        else:
+            self.evaluations.append(evaluation)
+        self.learning_memory.record_evaluations([evaluation])
+        if persist:
+            self._persist()
+        return evaluation
+
+    def learning_summary(self) -> LearningSnapshot:
+        """Return the durable learning snapshot for this session."""
+        return self.learning_memory.snapshot()
+
     def record_execution_result(self, result: ExecutionResult) -> ExecutionResult:
         """Record one V2 result, plus verification and evidence lineage."""
         if not result.task_id:
@@ -594,6 +627,8 @@ class AnalysisRuntime:
             {"task_id": result.task_id, "status": result.status, "error": result.error},
         )()
         self._sync_runtime_step_from_task(result_like)
+
+        self.record_task_evaluation(result, persist=False)
 
         self.run.updated_at = utc_now()
         self._persist()
@@ -992,6 +1027,9 @@ class AnalysisRuntime:
                 item.model_dump(mode="json") for item in self.evidence
             ],
             "failures": list(self.failures),
+            "evaluations": [
+                item.model_dump(mode="json") for item in self.evaluations
+            ],
         }
 
     def _restore(self, question: str, external_context: Optional[dict]) -> bool:
@@ -1035,6 +1073,10 @@ class AnalysisRuntime:
                 for item in raw.get("evidence", [])
             ]
             self.failures = [dict(item) for item in raw.get("failures", [])]
+            self.evaluations = [
+                TaskEvaluation.model_validate(item)
+                for item in raw.get("evaluations", [])
+            ]
             self.plan = (
                 AnalysisPlan.model_validate(self.run.plan)
                 if self.run.plan

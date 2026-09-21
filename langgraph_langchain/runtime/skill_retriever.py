@@ -90,11 +90,13 @@ class SkillRetriever:
         skills_loader: Optional[SkillsLoader] = None,
         *,
         task_type_tools: Optional[Mapping[str, str]] = None,
+        learning_memory: Any = None,
     ) -> None:
         self._skills_loader = skills_loader
         self._task_type_tools = dict(_TOOL_BY_TASK_TYPE)
         if task_type_tools:
             self._task_type_tools.update(task_type_tools)
+        self._learning_memory = learning_memory
 
     @property
     def skills(self) -> list[SkillMeta]:
@@ -205,6 +207,18 @@ class SkillRetriever:
                 reasons.append(f"task-type hints: {', '.join(task_type_hints)}")
 
             if score > 0:
+                if self._learning_memory is not None:
+                    recommendation = self._learning_memory.recommendation_for_skill(
+                        skill.name
+                    )
+                    if recommendation == "reliable":
+                        score = min(1.0, score + 0.10)
+                        reasons.append("learning memory marks this skill reliable")
+                    elif recommendation == "needs_review":
+                        score = max(0.0, score - 0.30)
+                        reasons.append(
+                            "learning memory marks this skill needs_review"
+                        )
                 scored.append((min(score, 1.0), skill, reasons))
 
         if not scored:

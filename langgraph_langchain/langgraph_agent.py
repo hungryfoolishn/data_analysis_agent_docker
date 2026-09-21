@@ -1582,7 +1582,10 @@ async def _run_runtime_v2_graph_stream(
         ),
         on_task_start=on_task_start,
         on_task_finish=on_task_finish,
-        skill_retriever=SkillRetriever(_skills_loader),
+        skill_retriever=SkillRetriever(
+            _skills_loader,
+            learning_memory=runtime.learning_memory,
+        ),
         evidence_factory=lambda result, verifications: EvidenceCollector().collect(
             execution=result,
             verification_results=verifications,
