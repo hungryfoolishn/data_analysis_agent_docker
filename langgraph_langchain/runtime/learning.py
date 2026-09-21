@@ -12,6 +12,7 @@ import json
 import os
 import tempfile
 from collections import defaultdict
+from numbers import Real
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
@@ -19,6 +20,10 @@ from pydantic import BaseModel, Field
 
 from langgraph_langchain.runtime.models import ExecutionResult, new_id, utc_now
 from langgraph_langchain.schemas import AnalysisTask
+from langgraph_langchain.runtime.evaluation.cross_task import (
+    ConsistencyIssue,
+    CrossTaskConsistencyVerifier,
+)
 
 
 FailureKind = str
@@ -165,6 +170,28 @@ def build_task_evaluation(runtime: Any, result: ExecutionResult) -> "TaskEvaluat
     findings = _related_findings(runtime, result)
     artifact_count = len(result.output_artifact_ids or [])
 
+    metric_observations: list[MetricObservation] = []
+    for evidence in verified_evidence:
+        stats = _value(evidence, "stats", {}) or {}
+        if not isinstance(stats, dict):
+            continue
+        for metric, raw_value in stats.items():
+            if isinstance(raw_value, bool) or not isinstance(raw_value, Real):
+                continue
+            metric_observations.append(
+                MetricObservation(
+                    run_id=result.run_id,
+                    task_id=result.task_id or "",
+                    execution_id=result.execution_id,
+                    metric=str(metric),
+                    value=float(raw_value),
+                    period=_value(evidence, "time_window"),
+                    dimension=_value(evidence, "group_dimension"),
+                    filters={},
+                    source_evidence_id=str(_value(evidence, "evidence_id")),
+                )
+            )
+
     passed, failure_kind, failure_reason = _classification(
         result=result,
         task=task,
@@ -205,6 +232,7 @@ def build_task_evaluation(runtime: Any, result: ExecutionResult) -> "TaskEvaluat
         passed=passed,
         failure_kind=failure_kind,
         failure_reason=failure_reason,
+        metric_observations=metric_observations,
         metadata={
             "error_type": (
                 result.error.get("type")
@@ -258,6 +286,125 @@ _FAILURE_RECOMMENDATIONS = {
 }
 
 
+class FailureTaxonomy(BaseModel):
+    stage: str
+    category: str
+    root_cause: str
+    symptom: str
+
+
+def infer_failure_taxonomy(
+    failure_kind: str,
+    message: str,
+    metadata: dict[str, Any] | None = None,
+) -> FailureTaxonomy:
+    """Map the V8 top-level failure kind to a stable, searchable taxonomy."""
+    text = str(message or "").casefold()
+    error_type = str((metadata or {}).get("error_type") or "").casefold()
+
+    stage_by_kind = {
+        "execution": "execution",
+        "verification": "verification",
+        "evidence": "evidence",
+        "finding": "finding",
+        "report": "report",
+        "cancelled": "workflow",
+    }
+    stage = stage_by_kind.get(failure_kind, "unknown")
+
+    if failure_kind == "verification":
+        if "schema" in text:
+            category = "schema_consistency"
+            root_cause = "schema_mismatch"
+            symptom = "schema_mismatch"
+        elif "time" in text:
+            category = "time_consistency"
+            root_cause = "wrong_time_window"
+            symptom = "time_value_mismatch"
+        elif "group" in text:
+            category = "group_consistency"
+            root_cause = "grouping_mismatch"
+            symptom = "group_value_mismatch"
+        elif "values differ" in text or "value differs" in text or "numeric" in text:
+            category = "numeric_consistency"
+            root_cause = "calculation_mismatch"
+            symptom = "numeric_value_mismatch"
+        else:
+            category = "quality_gate"
+            root_cause = "verification_rule_failed"
+            symptom = "verification_failed"
+    elif failure_kind == "evidence":
+        if "artifact" in text:
+            category = "evidence_binding"
+            root_cause = "artifact_not_verified"
+            symptom = "artifacts_without_verified_evidence"
+        else:
+            category = "evidence_generation"
+            root_cause = "evidence_generation_failed"
+            symptom = "evidence_missing"
+    elif failure_kind == "finding":
+        category = "finding_provenance"
+        root_cause = "missing_verified_evidence"
+        symptom = "finding_not_created"
+    elif failure_kind == "report":
+        if "number" in text or "numeric" in text:
+            category = "report_integrity"
+            root_cause = "unsupported_report_number"
+            symptom = "report_rejected"
+        elif "missing" in text:
+            category = "report_structure"
+            root_cause = "missing_required_content"
+            symptom = "report_rejected"
+        else:
+            category = "report_validation"
+            root_cause = "report_validation_failed"
+            symptom = "report_rejected"
+    elif failure_kind == "cancelled":
+        category = "workflow"
+        root_cause = "user_or_system_cancellation"
+        symptom = "run_cancelled"
+    else:
+        category = "tool_execution"
+        if "timeout" in text or "timed out" in text:
+            root_cause = "timeout"
+            symptom = "execution_timeout"
+        elif "permission" in text:
+            root_cause = "permission_denied"
+            symptom = "execution_permission_error"
+        elif "missing dataset" in text or "file not found" in text:
+            root_cause = "missing_data"
+            symptom = "execution_input_missing"
+        elif "no code" in text:
+            root_cause = "missing_code"
+            symptom = "python_task_not_executable"
+        else:
+            root_cause = "tool_error"
+            symptom = "tool_execution_failed"
+
+    return FailureTaxonomy(
+        stage=stage,
+        category=category,
+        root_cause=root_cause,
+        symptom=symptom,
+    )
+
+
+class MetricObservation(BaseModel):
+    """A numeric fact emitted by one task for cross-task verification."""
+
+    run_id: str
+    task_id: str
+    execution_id: str
+    metric: str
+    value: float
+    tolerance: float = Field(default=0.0, ge=0)
+    period: Optional[str] = None
+    dimension: Optional[str] = None
+    group: Optional[str] = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+    source_evidence_id: Optional[str] = None
+
+
 def build_failure_cases(evaluations: Iterable["TaskEvaluation"]) -> list["FailureCase"]:
     """Aggregate repeated failure signatures into durable failure cases."""
     grouped: dict[str, list[TaskEvaluation]] = defaultdict(list)
@@ -274,6 +421,11 @@ def build_failure_cases(evaluations: Iterable["TaskEvaluation"]) -> list["Failur
         first = ordered[0]
         last = ordered[-1]
         fingerprint = _failure_fingerprint(first)
+        taxonomy = infer_failure_taxonomy(
+            first.failure_kind or "unknown",
+            last.failure_reason or "",
+            last.metadata,
+        )
         cases.append(
             FailureCase(
                 failure_id=f"failure_{fingerprint[:16]}",
@@ -288,6 +440,11 @@ def build_failure_cases(evaluations: Iterable["TaskEvaluation"]) -> list["Failur
                 method=first.method,
                 skill_name=first.skill_name,
                 failure_kind=first.failure_kind,
+                stage=taxonomy.stage,
+                category=taxonomy.category,
+                root_cause=taxonomy.root_cause,
+                symptom=taxonomy.symptom,
+                taxonomy=taxonomy,
                 message=last.failure_reason or "Task failed",
                 recommendation=_FAILURE_RECOMMENDATIONS.get(
                     first.failure_kind,
@@ -433,6 +590,7 @@ class TaskEvaluation(BaseModel):
     passed: bool
     failure_kind: Optional[str] = None
     failure_reason: Optional[str] = None
+    metric_observations: list[MetricObservation] = Field(default_factory=list)
     created_at: str = Field(default_factory=utc_now)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -450,6 +608,11 @@ class FailureCase(BaseModel):
     method: Optional[str] = None
     skill_name: Optional[str] = None
     failure_kind: str
+    stage: str = "unknown"
+    category: str = "unknown"
+    root_cause: str = "unknown"
+    symptom: str = "unknown"
+    taxonomy: FailureTaxonomy | None = None
     message: str
     recommendation: str
     occurrences: int = Field(default=1, ge=1)
@@ -490,6 +653,7 @@ class LearningSnapshot(BaseModel):
     evaluations: list[TaskEvaluation] = Field(default_factory=list)
     failure_cases: list[FailureCase] = Field(default_factory=list)
     skill_quality: list[SkillQuality] = Field(default_factory=list)
+    consistency_issues: list[ConsistencyIssue] = Field(default_factory=list)
 
 
 class LearningMemoryStore:
@@ -555,6 +719,9 @@ class LearningMemoryStore:
         )
         snapshot.failure_cases = build_failure_cases(snapshot.evaluations)
         snapshot.skill_quality = build_skill_quality(snapshot.evaluations)
+        snapshot.consistency_issues = CrossTaskConsistencyVerifier().verify(
+            snapshot.evaluations
+        )
         snapshot.updated_at = utc_now()
         self._snapshot = snapshot
         if save:

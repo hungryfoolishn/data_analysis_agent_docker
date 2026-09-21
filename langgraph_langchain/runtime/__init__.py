@@ -30,6 +30,14 @@ from langgraph_langchain.runtime.evaluation import (
     MetricExpectation,
     EvaluationRun,
     EvaluationScore,
+    ConsistencyIssue,
+    CrossTaskConsistencyVerifier,
+)
+from langgraph_langchain.runtime.report_claims import (
+    ClaimLineage,
+    ReportClaim,
+    extract_report_claims,
+    trace_claim_lineage,
 )
 from langgraph_langchain.runtime.learning import (
     LearningMemoryStore,
@@ -39,6 +47,9 @@ from langgraph_langchain.runtime.learning import (
     build_skill_quality,
     build_failure_cases,
     build_task_evaluation,
+    FailureTaxonomy,
+    MetricObservation,
+    infer_failure_taxonomy,
 )
 from langgraph_langchain.runtime.quality import AnalysisQualityResult, QualityIssue, check_analysis_quality
 from langgraph_langchain.runtime.models import (
@@ -85,6 +96,8 @@ __all__ = [
     "MetricExpectation",
     "EvaluationRun",
     "EvaluationScore",
+    "ConsistencyIssue",
+    "CrossTaskConsistencyVerifier",
     "LearningMemoryStore",
     "LearningSnapshot",
     "SkillQuality",
@@ -92,6 +105,9 @@ __all__ = [
     "build_skill_quality",
     "build_failure_cases",
     "build_task_evaluation",
+    "FailureTaxonomy",
+    "MetricObservation",
+    "infer_failure_taxonomy",
     "AnalysisRuntime",
     "AnalysisTask",
     "ExecutionResult",
@@ -100,6 +116,10 @@ __all__ = [
     "RuntimePlanStep",
     "RunHistoryStore",
     "SessionExecutionRecorder",
+    "ClaimLineage",
+    "ReportClaim",
+    "extract_report_claims",
+    "trace_claim_lineage",
     "build_analysis_package",
     "build_runtime_lineage_graph",
     "expand_finding_lineage",

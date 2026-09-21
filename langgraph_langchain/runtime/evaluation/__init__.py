@@ -2,6 +2,7 @@
 
 from .comparator import compare_metric
 from .golden_loader import GoldenCaseLoader, default_golden_cases_dir
+from .cross_task import ConsistencyIssue, CrossTaskConsistencyVerifier
 from .models import (
     EvaluationRun,
     EvaluationScore,
@@ -14,6 +15,8 @@ from .models import (
 from .runner import GoldenEvaluationRunner
 
 __all__ = [
+    "ConsistencyIssue",
+    "CrossTaskConsistencyVerifier",
     "EvaluationRun",
     "EvaluationScore",
     "GoldenCandidateResult",

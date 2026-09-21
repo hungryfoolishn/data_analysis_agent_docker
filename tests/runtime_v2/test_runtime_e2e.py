@@ -467,6 +467,36 @@ def test_runtime_v2_grouped_sales_e2e(tmp_path: Path):
     assert north_execution.task_id
     assert runtime.scheduler.get_task(north_execution.task_id).status == "succeeded"
 
+    # V8.5: every report claim can be traced through Finding → Evidence → Artifact
+    # → Execution, and the mapping is published as a report artifact.
+    report_claim_artifact = next(
+        artifact
+        for artifact in runtime.artifacts.values()
+        if artifact.name == "report_claims.json"
+    )
+    assert Path(report_claim_artifact.path).is_file()
+    report_claim_payload = json.loads(
+        Path(report_claim_artifact.path).read_text(encoding="utf-8")
+    )
+    assert report_claim_payload["claims"]
+    matched_claim = next(
+        claim
+        for claim in report_claim_payload["claims"]
+        if "North" in claim["text"] and claim["finding_ids"]
+    )
+    assert matched_claim["verified"] is True
+    assert matched_claim["evidence_ids"]
+    lineage = next(
+        item
+        for item in report_claim_payload["lineages"]
+        if item["claim_id"] == matched_claim["claim_id"]
+    )
+    assert lineage["finding_ids"] == matched_claim["finding_ids"]
+    assert lineage["evidence_ids"] == matched_claim["evidence_ids"]
+    assert lineage["artifact_ids"]
+    assert lineage["execution_ids"]
+    assert lineage["complete"] is True
+
 
 
 

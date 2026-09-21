@@ -531,6 +531,39 @@ def _factory(session):
         lineage_path.write_text(json.dumps(lineage_data, ensure_ascii=False, indent=2), encoding="utf-8")
         recorder.register_artifact(lineage_path)
 
+        # Emit claim-level provenance so every report bullet can be traced back
+        # through Finding → Evidence → Artifact → Execution.
+        from langgraph_langchain.runtime.report_claims import (
+            extract_report_claims,
+            trace_claim_lineage,
+        )
+
+        report_claims = extract_report_claims(
+            markdown,
+            session.findings,
+            runtime.evidence if runtime is not None else None,
+        )
+        claim_lineages = [
+            trace_claim_lineage(
+                claim,
+                session.findings,
+                runtime.evidence if runtime is not None else [],
+                runtime.artifacts.values() if runtime is not None else [],
+                runtime.executions if runtime is not None else [],
+            )
+            for claim in report_claims
+        ]
+        report_claims_data = {
+            "claims": [item.model_dump(mode="json") for item in report_claims],
+            "lineages": [item.model_dump(mode="json") for item in claim_lineages],
+        }
+        report_claims_path = session.workspace_dir / "report_claims.json"
+        report_claims_path.write_text(
+            json.dumps(report_claims_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        recorder.register_artifact(report_claims_path)
+
         # Generate trace analysis report if trace context exists
         trace_report_path = None
         if trace_ctx:
@@ -562,6 +595,7 @@ def _factory(session):
                 "findings_count": len(session.findings),
                 "report_length": len(markdown),
                 "lineage_file": lineage_path.name,
+                "report_claims_file": report_claims_path.name,
                 "trace_analysis_file": trace_report_path.name if trace_report_path else None,
             },
         )

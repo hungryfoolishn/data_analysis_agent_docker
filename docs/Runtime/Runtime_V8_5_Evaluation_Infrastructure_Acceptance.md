@@ -176,6 +176,92 @@ skill_hash
 
 ---
 
+## 5.5 Structured Failure Taxonomy
+
+位置：`langgraph_langchain/runtime/learning.py`
+
+`FailureCase` 保留 Runtime V8 的一级字段 `failure_kind`，同时新增：
+
+- `stage`
+- `category`
+- `root_cause`
+- `symptom`
+- `taxonomy`
+
+确定性映射示例：
+
+| failure_kind | stage | category | root_cause | symptom |
+|---|---|---|---|---|
+| `verification` | `verification` | `numeric_consistency` | `calculation_mismatch` | `numeric_value_mismatch` |
+| `evidence` | `evidence` | `evidence_binding` / `evidence_generation` | artifact or generation failure | `artifacts_without_verified_evidence` |
+| `finding` | `finding` | `finding_provenance` | `missing_verified_evidence` | `finding_not_created` |
+| `report` | `report` | `report_integrity` / `report_structure` | unsupported number or missing content | `report_rejected` |
+| `execution` | `execution` | `tool_execution` | timeout / permission / missing data / tool error | execution symptom |
+| `cancelled` | `workflow` | `workflow` | user/system cancellation | `run_cancelled` |
+
+---
+
+## 5.6 Cross-task Verification
+
+位置：`langgraph_langchain/runtime/evaluation/cross_task.py`
+
+`CrossTaskConsistencyVerifier.verify(evaluations)` 会比较：
+
+```text
+metric
++ period
++ dimension
++ group
++ filters
+```
+
+当两个以上 Task 对同一上下文给出超过 tolerance 的不同数值时，生成 `ConsistencyIssue`：
+
+- `task_ids`
+- `execution_ids`
+- `values`
+- `tolerance`
+- `max_delta`
+- deterministic `issue_id`
+- human-readable message
+
+`LearningSnapshot.consistency_issues` 由 `LearningMemoryStore.record_evaluations()` 自动刷新。
+
+---
+
+## 5.7 Claim-level Provenance
+
+位置：`langgraph_langchain/runtime/report_claims.py`
+
+`ReportClaim` 将报告要点映射到：
+
+```text
+ReportClaim
+→ Finding
+→ Evidence
+→ Artifact
+→ Execution
+→ Skill(version/hash)
+```
+
+核心接口：
+
+```python
+extract_report_claims(report_text, findings, evidence)
+trace_claim_lineage(claim, findings, evidence, artifacts, executions)
+```
+
+`ClaimLineage.complete` 只有在 Finding、Evidence、Artifact、Execution 四层都可追溯时为 true。
+
+`finish_report` 现在会生成并注册 `report_claims.json`，包含：
+
+- `claims`
+- `lineages`
+
+---
+
+---
+
 ## 6. P0 Acceptance
 
 | ID | Requirement | Status |
@@ -190,6 +276,10 @@ skill_hash
 | V8.5-P0-008 | Confidence-aware SkillQuality | PASS |
 | V8.5-P0-009 | Learning feedback 影响 SkillRetriever | PASS |
 | V8.5-P0-010 | 不自动改写 Skill | PASS |
+| V8.5-P0-011 | Failure Taxonomy 保持 V8 兼容 | PASS |
+| V8.5-P0-012 | Cross-task contradiction 可发现 | PASS |
+| V8.5-P0-013 | Claim provenance 可追溯至 Execution | PASS |
+| V8.5-P0-014 | finish_report 生成 report_claims.json | PASS |
 
 ---
 
@@ -207,6 +297,23 @@ tests/evaluation/test_runtime_v8_5_golden.py
 4. EvaluationRun 按 task type / executor / skill 聚合。
 5. Bayesian smoothing、recent success rate、confidence。
 6. Skill version / hash 从 request metadata 进入 ExecutionResult。
+
+另外：
+
+```text
+tests/evaluation/test_runtime_v8_5_advanced.py
+```
+
+覆盖：
+
+1. Cross-task contradiction 检测。
+2. 相同值或不同 period 不误报。
+3. Structured Failure Taxonomy。
+4. ReportClaim 与 Finding / Evidence 映射。
+5. ClaimLineage 追溯 Artifact / Execution / Skill。
+6. LearningMemoryStore 持久化 consistency issue。
+
+Runtime E2E 额外验证 `finish_report` 生成并注册 `report_claims.json`。
 
 ---
 
@@ -228,5 +335,5 @@ V8.5 不做：
 ## 9. Result
 
 ```text
-Runtime V8.5 Evaluation Infrastructure = READY
+Runtime V8.5 Evaluation Infrastructure + Trusted Learning Loop = READY
 ```
