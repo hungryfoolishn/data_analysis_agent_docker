@@ -1199,7 +1199,7 @@ class TestCancellation:
         )
 
         sid = "cancel-api-test"
-        SESSIONS[sid] = {"files": [], "artifacts": [], "workspace": "/tmp", "created_at": ""}
+        SESSIONS[sid] = {"files": [], "artifacts": [], "workspace": tempfile.gettempdir(), "created_at": ""}
         ev = asyncio.Event()
         _ACTIVE_CANCELS[sid] = ev
 
@@ -1229,7 +1229,7 @@ class TestCancellation:
         )
 
         sid = "cancel-idle-test"
-        SESSIONS[sid] = {"files": [], "artifacts": [], "workspace": "/tmp", "created_at": ""}
+        SESSIONS[sid] = {"files": [], "artifacts": [], "workspace": tempfile.gettempdir(), "created_at": ""}
         _ACTIVE_CANCELS.pop(sid, None)
 
         result = await cancel_session(sid)

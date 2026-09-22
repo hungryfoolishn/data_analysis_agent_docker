@@ -172,7 +172,7 @@ class TestValidatorIntegrationConfirmation:
     def test_validators_are_imported(self):
         """Verify validators are imported in langgraph_agent.py"""
         agent_file = Path(__file__).parent.parent / "langgraph_langchain" / "langgraph_agent.py"
-        content = agent_file.read_text()
+        content = agent_file.read_text(encoding="utf-8")
 
         # Check imports
         assert "from langgraph_langchain.rd_validators import" in content
@@ -186,17 +186,17 @@ class TestValidatorIntegrationConfirmation:
 
         # Check validate_rd_finding is called in record_finding
         record_finding_file = tools_dir / "tool_record_finding.py"
-        content = record_finding_file.read_text()
+        content = record_finding_file.read_text(encoding="utf-8")
         assert "validate_rd_finding(finding)" in content
 
         # Check validate_rd_metric_definition is called in declare_metric
         declare_metric_file = tools_dir / "tool_declare_metric.py"
-        content = declare_metric_file.read_text()
+        content = declare_metric_file.read_text(encoding="utf-8")
         assert "validate_rd_metric_definition(metric_def)" in content
 
         # Check validate_rd_analysis_completeness is called in finish_report
         finish_report_file = tools_dir / "tool_finish_report.py"
-        content = finish_report_file.read_text()
+        content = finish_report_file.read_text(encoding="utf-8")
         assert "validate_rd_analysis_completeness(session.findings, session.metric_definitions)" in content
 
 

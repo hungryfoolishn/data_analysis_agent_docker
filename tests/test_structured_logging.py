@@ -14,7 +14,7 @@ class TestStructuredLogger:
 
     def test_logger_initialization(self):
         """Test logger initialization."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session", "test_request", "test_run")
 
@@ -25,7 +25,7 @@ class TestStructuredLogger:
 
     def test_basic_logging(self):
         """Test basic logging functionality."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session")
 
@@ -49,7 +49,7 @@ class TestStructuredLogger:
 
     def test_stage_logging(self):
         """Test stage start/complete/fail logging."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session")
 
@@ -88,7 +88,7 @@ class TestStructuredLogger:
 
     def test_tool_call_logging(self):
         """Test tool call logging."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session")
 
@@ -126,7 +126,7 @@ class TestStructuredLogger:
 
     def test_report_rejection_logging(self):
         """Test report rejection logging."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session")
 
@@ -143,7 +143,7 @@ class TestStructuredLogger:
 
     def test_metrics_tracking(self):
         """Test metrics tracking."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session")
 
@@ -159,7 +159,7 @@ class TestStructuredLogger:
 
     def test_run_metrics_generation(self):
         """Test run metrics generation."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session", "req_123", "run_456")
 
@@ -187,7 +187,7 @@ class TestStructuredLogger:
 
     def test_save_run_metrics(self):
         """Test saving run metrics to file."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session")
 
@@ -209,7 +209,7 @@ class TestStructuredLogger:
 
     def test_convenience_methods(self):
         """Test convenience logging methods."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session")
 
@@ -229,7 +229,7 @@ class TestStructuredLogger:
 
     def test_metadata_logging(self):
         """Test logging with custom metadata."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             workspace = Path(tmpdir)
             logger = StructuredLogger(workspace, "test_session")
 

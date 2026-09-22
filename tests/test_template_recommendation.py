@@ -77,7 +77,7 @@ def test_eda_profile_with_template():
     """Test that eda_profile shows template recommendation."""
     print("\n=== Test 2: EDA Profile Template Display ===")
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         # Create a sample sprint data CSV
         csv_path = Path(tmp_dir) / "sprint_data.csv"
         df = pd.DataFrame({
@@ -143,7 +143,7 @@ def test_template_in_namespace():
     """Test that template is stored in session namespace."""
     print("\n=== Test 3: Template Storage in Namespace ===")
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         csv_path = Path(tmp_dir) / "deployment_data.csv"
         df = pd.DataFrame({
             "deployment_id": [1, 2, 3, 4, 5],

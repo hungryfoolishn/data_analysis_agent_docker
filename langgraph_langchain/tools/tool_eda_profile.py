@@ -192,7 +192,8 @@ def _factory(session):
                 n_box = min(8, len(plot_out_cols))
                 fig, ax = plt.subplots(figsize=(max(6, n_box * 1.4), 5))
                 box_data = [df[col].dropna().values for col in plot_out_cols]
-                ax.boxplot(box_data, labels=plot_out_cols)
+                ax.boxplot(box_data)
+                ax.set_xticklabels(plot_out_cols)
                 ax.set_title("Outlier Detection (IQR) - Box Plots")
                 ax.tick_params(axis="x", rotation=30)
                 plt.tight_layout()
@@ -315,7 +316,8 @@ def _factory(session):
                                   for _, grp in df.groupby(cat_col)]
                         labels = [str(k) for k in df[cat_col].dropna().unique()[:10]]
                         fig, ax = plt.subplots(figsize=(max(6, len(labels)), 4))
-                        ax.boxplot(groups, labels=labels)
+                        ax.boxplot(groups)
+                        ax.set_xticklabels(labels)
                         ax.set_title(f"{num_col} by {cat_col}")
                         ax.set_xlabel(cat_col)
                         ax.set_ylabel(num_col)

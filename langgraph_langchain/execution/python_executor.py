@@ -15,6 +15,7 @@ import os
 import pickle
 import queue
 import signal
+import site
 import sys
 import tempfile
 import traceback
@@ -89,9 +90,19 @@ def _inside(path: Path, roots: tuple[Path, ...]) -> bool:
 
 def _install_file_audit(workspace: Path, allowed_directories: list[str]) -> None:
     writable_roots = tuple({workspace, *(Path(item).resolve() for item in allowed_directories)})
-    trusted_read_roots = tuple(
-        root for root in (Path(sys.prefix).resolve(), Path("/usr/share/fonts")) if root.exists()
-    )
+    site_roots = [Path(sys.prefix).resolve(), Path(sys.base_prefix).resolve()]
+    try:
+        site_roots.extend(Path(item).resolve() for item in site.getsitepackages())
+    except Exception:
+        pass
+    try:
+        user_site = site.getusersitepackages()
+        if user_site:
+            site_roots.append(Path(user_site).resolve())
+    except Exception:
+        pass
+    site_roots.append(Path("/usr/share/fonts"))
+    trusted_read_roots = tuple(root for root in site_roots if root.exists())
 
     def audit(event: str, args: tuple[Any, ...]) -> None:
         if event != "open" or not args or isinstance(args[0], int):
