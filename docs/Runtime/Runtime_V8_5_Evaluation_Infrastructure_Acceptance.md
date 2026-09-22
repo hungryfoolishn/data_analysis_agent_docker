@@ -279,6 +279,10 @@ trace_claim_lineage(claim, findings, evidence, artifacts, executions)
 | V8.5-P0-011 | Failure Taxonomy 保持 V8 兼容 | PASS |
 | V8.5-P0-012 | Cross-task contradiction 可发现 | PASS |
 | V8.5-P0-013 | Claim provenance 可追溯至 Execution | PASS |
+| V8.5-P0-014 | Observation 不混淆不同 group/filter | PASS |
+| V8.5-P0-015 | Cross-task comparison 使用 pairwise tolerance | PASS |
+| V8.5-P0-016 | stable Skill ID 与 display name 分离 | PASS |
+| V8.5-P0-017 | CI 运行 targeted + full pytest | PASS |
 | V8.5-P0-014 | finish_report 生成 report_claims.json | PASS |
 
 ---
@@ -297,6 +301,8 @@ tests/evaluation/test_runtime_v8_5_golden.py
 4. EvaluationRun 按 task type / executor / skill 聚合。
 5. Bayesian smoothing、recent success rate、confidence。
 6. Skill version / hash 从 request metadata 进入 ExecutionResult。
+7. Evidence group/filter 继承与 Cross-task pairwise tolerance。
+8. 中文 paraphrase provenance 与 stable Skill ID。
 
 另外：
 
@@ -314,6 +320,38 @@ tests/evaluation/test_runtime_v8_5_advanced.py
 6. LearningMemoryStore 持久化 consistency issue。
 
 Runtime E2E 额外验证 `finish_report` 生成并注册 `report_claims.json`。
+
+---
+
+## 7.1 V8.5.1 Correctness Patch
+
+修复实施检查报告中的 7 项问题：
+
+1. Cross-task `MetricObservation` 继承 Evidence 的 `group` 和 `filters`，East / West 不再被误判为同一上下文。
+2. Cross-task comparison 改为 pairwise tolerance；某个宽松 tolerance 不能掩盖 strict observations 之间的矛盾。
+3. 修复 `extract_report_claims()` 中 `item` fallback 可能引用上一轮循环变量的问题。
+4. `trace_claim_lineage()` 以 `claim.evidence_ids` 为权威入口，再由 Finding evidence 补充。
+5. 增加中文 paraphrase provenance 测试，支持“1.05 万”到 `10500`、部门、下滑、贡献等结构化匹配。
+6. Runtime 区分 `skill_id`、`skill_name`、`skill_version`、`skill_hash`。
+7. 增加 GitHub Actions workflow，并运行 targeted tests 与 full pytest。
+
+对应测试：
+
+```text
+tests/evaluation/test_runtime_v8_5_advanced.py
+tests/evaluation/test_runtime_v8_5_golden.py
+tests/runtime_v2/test_runtime_e2e.py
+```
+
+覆盖：
+
+- Evidence group/filter 继承。
+- East / West 不误报。
+- pairwise tolerance。
+- Structured Failure Taxonomy。
+- 中文改写 ReportClaim。
+- Claim lineage 到 Artifact / Execution / Skill。
+- stable Skill ID 与 display name 分离。
 
 ---
 

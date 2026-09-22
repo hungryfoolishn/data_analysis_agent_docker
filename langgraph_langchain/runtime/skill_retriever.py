@@ -23,6 +23,7 @@ class SkillMatch(BaseModel):
     """A retrieval decision for one Runtime task."""
 
     skill_name: Optional[str] = Field(default=None, description="Matched skill name")
+    skill_id: Optional[str] = Field(default=None, description="Stable matched skill ID")
     skill: Optional[SkillMeta] = Field(default=None, description="Matched skill metadata")
     skill_version: Optional[str] = Field(default=None, description="Matched skill version")
     skill_hash: Optional[str] = Field(default=None, description="SHA-256 hash of the matched SKILL.md")
@@ -100,14 +101,19 @@ class SkillRetriever:
             self._task_type_tools.update(task_type_tools)
         self._learning_memory = learning_memory
 
-    def _identity(self, skill: Optional[SkillMeta]) -> tuple[Optional[str], Optional[str]]:
+    def _identity(
+        self,
+        skill: Optional[SkillMeta],
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
         if skill is None or self._skills_loader is None:
-            return None, None
-        version = getattr(self._skills_loader, "skill_version", None)
-        skill_hash = getattr(self._skills_loader, "skill_hash", None)
+            return None, None, None
+        get_skill_id = getattr(self._skills_loader, "skill_id", None)
+        get_version = getattr(self._skills_loader, "skill_version", None)
+        get_hash = getattr(self._skills_loader, "skill_hash", None)
         return (
-            version(skill.name) if callable(version) else skill.version,
-            skill_hash(skill.name) if callable(skill_hash) else None,
+            get_skill_id(skill.name) if callable(get_skill_id) else skill.skill_id,
+            get_version(skill.name) if callable(get_version) else skill.version,
+            get_hash(skill.name) if callable(get_hash) else None,
         )
 
     @property
@@ -120,6 +126,7 @@ class SkillRetriever:
         tool_name = task.method or self._task_type_tools.get(task.task_type)
         return SkillMatch(
             skill_name=None,
+            skill_id=None,
             skill=None,
             skill_version=None,
             skill_hash=None,
@@ -178,6 +185,7 @@ class SkillRetriever:
 
         scored: list[tuple[float, SkillMeta, list[str]]] = []
         for skill in candidates:
+            match_skill_id, _, _ = self._identity(skill)
             score = 0.0
             reasons: list[str] = []
 
@@ -222,9 +230,18 @@ class SkillRetriever:
 
             if score > 0:
                 if self._learning_memory is not None:
-                    recommendation = self._learning_memory.recommendation_for_skill(
-                        skill.name
-                    )
+                    if match_skill_id:
+                        recommendation = (
+                            self._learning_memory.recommendation_for_skill_id(
+                                match_skill_id
+                            )
+                        )
+                    else:
+                        recommendation = (
+                            self._learning_memory.recommendation_for_skill(
+                                skill.name
+                            )
+                        )
                     if recommendation == "reliable":
                         score = min(1.0, score + 0.10)
                         reasons.append("learning memory marks this skill reliable")
@@ -240,9 +257,10 @@ class SkillRetriever:
 
         scored.sort(key=lambda item: (-item[0], item[1].name))
         best_score, best_skill, reasons = scored[0]
-        version, skill_hash = self._identity(best_skill)
+        skill_id, version, skill_hash = self._identity(best_skill)
         return SkillMatch(
             skill_name=best_skill.name,
+            skill_id=skill_id,
             skill=best_skill,
             skill_version=version,
             skill_hash=skill_hash,

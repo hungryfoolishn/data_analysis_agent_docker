@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from langgraph_langchain.data.assets import ColumnSpec, DataAsset, SchemaSnapshot
 from langgraph_langchain.execution.task_models import build_execution_result
 from langgraph_langchain.runtime.context import AnalysisRuntime
@@ -17,8 +19,10 @@ from langgraph_langchain.runtime.learning import (
     MetricObservation,
     TaskEvaluation,
     build_failure_cases,
+    build_task_evaluation,
     infer_failure_taxonomy,
 )
+from langgraph_langchain.skills_loader import SkillsLoader
 from langgraph_langchain.execution.task_models import TaskExecutionRequest
 from langgraph_langchain.runtime.models import RuntimeArtifact, RuntimePlanStep
 from langgraph_langchain.runtime.plans import AnalysisPlan
@@ -153,6 +157,77 @@ def test_cross_task_verifier_ignores_compatible_and_different_contexts():
     assert CrossTaskConsistencyVerifier().verify([first, same, different_period]) == []
 
 
+def test_cross_task_does_not_confuse_different_group_contexts():
+    evaluations = []
+    for index, (task_id, group, value) in enumerate(
+        [
+            ("task_east", "East", 100),
+            ("task_west", "West", 80),
+        ],
+        start=1,
+    ):
+        evaluations.append(
+            _task_evaluation(
+                task_id=task_id,
+                execution_id=f"exec_{task_id}",
+                observations=[
+                    MetricObservation(
+                        run_id=f"run_{task_id}",
+                        task_id=task_id,
+                        execution_id=f"exec_{task_id}",
+                        metric="revenue",
+                        value=value,
+                        tolerance=0.001,
+                        period="2026-07",
+                        dimension="department",
+                        group=group,
+                        filters={"department": group},
+                    )
+                ],
+            )
+        )
+
+    assert CrossTaskConsistencyVerifier().verify(evaluations) == []
+
+
+def test_cross_task_uses_pairwise_tolerance():
+    observations = [
+        MetricObservation(
+            run_id=f"run_{task_id}",
+            task_id=task_id,
+            execution_id=f"exec_{task_id}",
+            metric="revenue",
+            value=value,
+            tolerance=tolerance,
+            period="2026-07",
+            group=group,
+        )
+        for task_id, value, tolerance, group in [
+            ("task_a", 10, 0.1, "A"),
+            ("task_b", 20, 100.0, "A"),
+            ("task_c", 30, 0.1, "A"),
+        ]
+    ]
+    evaluations = [
+        _task_evaluation(
+            task_id=observation.task_id,
+            execution_id=observation.execution_id,
+            observations=[observation],
+        )
+        for observation in observations
+    ]
+    issues = CrossTaskConsistencyVerifier().verify(evaluations)
+
+    # The permissive tolerance on B must not hide the A/C contradiction.
+    assert {(issue.task_ids[0], issue.task_ids[1]) for issue in issues} == {
+        ("task_a", "task_c")
+    }
+    assert issues[0].task_ids == ["task_a", "task_c"]
+    assert issues[0].tolerance == 0.1
+    assert issues[0].values == [10, 30]
+    assert issues[0].max_delta == 20
+
+
 def test_failure_case_uses_structured_taxonomy():
     evaluation = TaskEvaluation(
         run_id="run_failed",
@@ -234,6 +309,7 @@ def test_report_claims_and_lineage_trace_to_execution():
             metadata={
                 "skill": {
                     "name": "revenue-decline",
+                    "id": "skill_stable_001",
                     "version": "1.0.0",
                     "hash": "sha256:skill",
                 }
@@ -242,6 +318,8 @@ def test_report_claims_and_lineage_trace_to_execution():
         status="succeeded",
         tool_name="analyze_metric",
     )
+    assert execution.skill_name == "revenue-decline"
+    assert execution.skill_id == "skill_stable_001"
     # build_execution_result does not force an execution ID, so set the expected one.
     execution.execution_id = "exec_1"
 

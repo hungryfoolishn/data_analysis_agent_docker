@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from itertools import combinations
 from typing import Any, Iterable, Mapping, Optional
 from uuid import uuid4
 
@@ -50,7 +51,11 @@ class ConsistencyIssue(BaseModel):
 
 
 class CrossTaskConsistencyVerifier:
-    """Detect contradictory values for the same metric context across tasks."""
+    """Detect contradictory values for the same metric context across tasks.
+
+    Comparisons are pairwise.  A permissive tolerance on one observation must
+    not hide a contradiction between two strict observations.
+    """
 
     def verify(self, evaluations: Iterable[Any]) -> list[ConsistencyIssue]:
         grouped: dict[tuple[str, str, str, str, str], list[tuple[Any, Any]]] = defaultdict(list)
@@ -64,56 +69,65 @@ class CrossTaskConsistencyVerifier:
 
         issues: list[ConsistencyIssue] = []
         for key, entries in grouped.items():
-            distinct_tasks = {
-                str(_value(evaluation, "task_id")) for evaluation, _ in entries
-            }
-            if len(distinct_tasks) < 2:
-                continue
+            # Pair observations from different tasks only.  Multiple observations
+            # within one task are execution lineage, not cross-task contradiction.
+            for (left_evaluation, left), (right_evaluation, right) in combinations(
+                entries,
+                2,
+            ):
+                left_task_id = str(_value(left_evaluation, "task_id"))
+                right_task_id = str(_value(right_evaluation, "task_id"))
+                if left_task_id == right_task_id:
+                    continue
 
-            ordered = sorted(entries, key=lambda pair: float(_value(pair[1], "value", 0.0)))
-            values = [float(_value(item, "value", 0.0)) for _, item in ordered]
-            max_delta = values[-1] - values[0] if values else 0.0
-            tolerance = max(
-                [float(_value(item, "tolerance", 0.0) or 0.0) for _, item in ordered]
-                or [0.0]
-            )
-            if max_delta <= tolerance:
-                continue
+                left_value = float(_value(left, "value", 0.0))
+                right_value = float(_value(right, "value", 0.0))
+                left_tolerance = float(_value(left, "tolerance", 0.0) or 0.0)
+                right_tolerance = float(_value(right, "tolerance", 0.0) or 0.0)
+                tolerance = max(left_tolerance, right_tolerance)
+                delta = round(abs(right_value - left_value), 10)
+                if delta <= tolerance:
+                    continue
 
-            first_evaluation, first_observation = ordered[0]
-            metric, period, dimension, group, filters_json = key
-            raw = "|".join([
-                metric,
-                period,
-                dimension,
-                group,
-                filters_json,
-                ",".join(sorted(distinct_tasks)),
-                ",".join(f"{value:.12g}" for value in values),
-            ])
-            issue_id = f"consistency_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]}"
+                metric, period, dimension, group, filters_json = key
+                task_ids = sorted([left_task_id, right_task_id])
+                execution_ids = [
+                    str(_value(left_evaluation, "execution_id")),
+                    str(_value(right_evaluation, "execution_id")),
+                ]
+                raw = "|".join([
+                    metric,
+                    period,
+                    dimension,
+                    group,
+                    filters_json,
+                    ",".join(task_ids),
+                    f"{left_value:.12g}",
+                    f"{right_value:.12g}",
+                ])
 
-            issues.append(
-                ConsistencyIssue(
-                    metric=metric,
-                    period=period or None,
-                    dimension=dimension or None,
-                    group=group or None,
-                    filters=_value(first_observation, "filters", {}) or {},
-                    task_ids=sorted(distinct_tasks),
-                    execution_ids=[
-                        str(_value(evaluation, "execution_id"))
-                        for evaluation, _ in ordered
-                    ],
-                    values=values,
-                    tolerance=tolerance,
-                    max_delta=round(max_delta, 10),
-                    message=(
-                        f"Metric '{metric}' has inconsistent values across tasks: "
-                        f"{values[0]} vs {values[-1]} (delta={max_delta}, tolerance={tolerance})"
-                    ),
-                    issue_id=issue_id,
+                issues.append(
+                    ConsistencyIssue(
+                        metric=metric,
+                        period=period or None,
+                        dimension=dimension or None,
+                        group=group or None,
+                        filters=_value(left, "filters", {}) or {},
+                        task_ids=task_ids,
+                        execution_ids=execution_ids,
+                        values=sorted([left_value, right_value]),
+                        tolerance=tolerance,
+                        max_delta=delta,
+                        message=(
+                            f"Metric '{metric}' has inconsistent values across tasks: "
+                            f"{left_task_id}={left_value} vs {right_task_id}={right_value} "
+                            f"(delta={delta}, tolerance={tolerance})"
+                        ),
+                        issue_id=f"consistency_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]}",
+                    )
                 )
-            )
 
-        return sorted(issues, key=lambda item: (-item.max_delta, item.metric, item.period or ""))
+        return sorted(
+            issues,
+            key=lambda item: (-item.max_delta, item.metric, item.period or "", item.task_ids),
+        )

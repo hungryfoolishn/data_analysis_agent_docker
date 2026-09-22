@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 class SkillMeta(BaseModel):
     """Tier-1 metadata — lightweight, shown in system prompt."""
     name: str
+    skill_id: Optional[str] = None
     description: str
     version: str = "1.0.0"
     tags: List[str] = []
@@ -92,7 +93,9 @@ class SkillsLoader:
         meta_hermes = data.get("metadata", {})
         # Support both nested (hermes style) and flat metadata
         flat = data.get("metadata", {})
+        skill_id = data.get("id") or data.get("skill_id") or flat.get("id") or flat.get("skill_id")
         meta = SkillMeta(
+            skill_id=str(skill_id) if skill_id else None,
             name=data.get("name", path.parent.name),
             description=data.get("description", ""),
             version=data.get("version", "1.0.0"),
@@ -156,6 +159,11 @@ class SkillsLoader:
         return skill.content if skill else None
 
     # ── Tier 3: references ─────────────────────────────────────────────────
+
+    def skill_id(self, name: str) -> Optional[str]:
+        """Return the stable persisted Skill ID, if one is declared."""
+        skill = self._cache.get(name)
+        return skill.meta.skill_id if skill else None
 
     def skill_version(self, name: str) -> Optional[str]:
         """Return declared metadata version for a loaded skill."""

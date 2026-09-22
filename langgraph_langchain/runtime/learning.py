@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import os
 import tempfile
 from collections import defaultdict
@@ -138,6 +139,53 @@ def _classification(
     return True, None, None
 
 
+
+def _filter_mapping(filters: Any) -> dict[str, Any]:
+    """Normalise Evidence's human-readable filter strings into stable pairs."""
+    result: dict[str, Any] = {}
+    if isinstance(filters, Mapping):
+        return dict(filters)
+    for item in (filters or []):
+        if isinstance(item, Mapping):
+            result.update({str(key): value for key, value in item.items()})
+            continue
+        match = re.match(
+            r"^\s*([^=:<>!]+?)\s*(?:==|=|:|is|等于)\s*(.+?)\s*$",
+            str(item),
+        )
+        if match:
+            result[match.group(1).strip()] = match.group(2).strip()
+    return result
+
+
+def _observation_context(
+    evidence: Any,
+    task: Optional[AnalysisTask],
+) -> tuple[dict[str, Any], Optional[str]]:
+    """Inherit filter context and the concrete group value for an observation."""
+    filters = _filter_mapping(_value(evidence, "filters"))
+    dimension = _value(evidence, "group_dimension")
+    group: Optional[str] = None
+
+    if dimension is not None:
+        dimension_key = str(dimension).casefold()
+        for key, value in filters.items():
+            if str(key).casefold() == dimension_key:
+                group = str(value)
+                break
+
+    if group is None and task is not None:
+        arguments = (task.constraints or {}).get("arguments")
+        if isinstance(arguments, Mapping):
+            if dimension is not None and str(dimension) in arguments:
+                group = str(arguments[str(dimension)])
+            elif "group" in arguments:
+                group = str(arguments["group"])
+            elif "group_value" in arguments:
+                group = str(arguments["group_value"])
+
+    return filters, group
+
 def build_task_evaluation(runtime: Any, result: ExecutionResult) -> "TaskEvaluation":
     """Build one deterministic evaluation for a Runtime execution."""
     task: Optional[AnalysisTask] = None
@@ -178,6 +226,10 @@ def build_task_evaluation(runtime: Any, result: ExecutionResult) -> "TaskEvaluat
         for metric, raw_value in stats.items():
             if isinstance(raw_value, bool) or not isinstance(raw_value, Real):
                 continue
+            observation_filters, observation_group = _observation_context(
+                evidence,
+                task,
+            )
             metric_observations.append(
                 MetricObservation(
                     run_id=result.run_id,
@@ -187,7 +239,8 @@ def build_task_evaluation(runtime: Any, result: ExecutionResult) -> "TaskEvaluat
                     value=float(raw_value),
                     period=_value(evidence, "time_window"),
                     dimension=_value(evidence, "group_dimension"),
-                    filters={},
+                    group=observation_group,
+                    filters=observation_filters,
                     source_evidence_id=str(_value(evidence, "evidence_id")),
                 )
             )
@@ -210,7 +263,7 @@ def build_task_evaluation(runtime: Any, result: ExecutionResult) -> "TaskEvaluat
         task_type=str(_value(task, "task_type", "unknown")),
         executor_type=str(_value(task, "executor_type", "unknown")),
         method=_value(task, "method", result.tool_name),
-        skill_id=result.skill_name,
+        skill_id=result.skill_id,
         skill_name=result.skill_name,
         skill_version=result.skill_version,
         skill_hash=result.skill_hash,
@@ -461,11 +514,14 @@ def build_failure_cases(evaluations: Iterable["TaskEvaluation"]) -> list["Failur
 
 def build_skill_quality(evaluations: Iterable["TaskEvaluation"]) -> list["SkillQuality"]:
     """Aggregate outcomes into confidence-aware, versioned skill quality."""
-    grouped: dict[tuple[str, Optional[str], Optional[str], str, str], list[TaskEvaluation]] = defaultdict(list)
+    grouped: dict[
+        tuple[Optional[str], str, Optional[str], Optional[str], str, str],
+        list[TaskEvaluation],
+    ] = defaultdict(list)
     for evaluation in evaluations:
-        skill_name = evaluation.skill_name or "__fallback__"
         key = (
-            skill_name,
+            evaluation.skill_id,
+            evaluation.skill_name or "__fallback__",
             evaluation.skill_version,
             evaluation.skill_hash,
             str(evaluation.task_type),
@@ -487,7 +543,7 @@ def build_skill_quality(evaluations: Iterable["TaskEvaluation"]) -> list["SkillQ
 
     records: list[SkillQuality] = []
     for (
-        (skill_name, skill_version, skill_hash, task_type, executor_type),
+        (skill_id, skill_name, skill_version, skill_hash, task_type, executor_type),
         items,
     ) in grouped.items():
         ordered = sorted(items, key=lambda item: item.created_at)
@@ -527,7 +583,7 @@ def build_skill_quality(evaluations: Iterable["TaskEvaluation"]) -> list["SkillQ
 
         records.append(
             SkillQuality(
-                skill_id=None if skill_name == "__fallback__" else skill_name,
+                skill_id=skill_id,
                 skill_name=None if skill_name == "__fallback__" else skill_name,
                 skill_version=skill_version,
                 skill_hash=skill_hash,
@@ -684,19 +740,24 @@ class LearningMemoryStore:
     def failure_cases(self) -> list[FailureCase]:
         return self.snapshot().failure_cases
 
-    def recommendation_for_skill(self, skill_name: str) -> SkillRecommendation:
-        matching = [
-            item
-            for item in self.skill_quality()
-            if item.skill_name == skill_name
-        ]
-        if not matching:
+    def _recommendation_from_records(self, records: list[SkillQuality]) -> SkillRecommendation:
+        if not records:
             return "neutral"
-        if any(item.recommendation == "needs_review" for item in matching):
+        if any(item.recommendation == "needs_review" for item in records):
             return "needs_review"
-        if all(item.recommendation == "reliable" for item in matching):
+        if all(item.recommendation == "reliable" for item in records):
             return "reliable"
         return "neutral"
+
+    def recommendation_for_skill_id(self, skill_id: str) -> SkillRecommendation:
+        return self._recommendation_from_records(
+            [item for item in self.skill_quality() if item.skill_id == skill_id]
+        )
+
+    def recommendation_for_skill(self, skill_name: str) -> SkillRecommendation:
+        return self._recommendation_from_records(
+            [item for item in self.skill_quality() if item.skill_name == skill_name]
+        )
 
     def record_evaluations(
         self,
