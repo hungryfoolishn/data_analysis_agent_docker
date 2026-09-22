@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from langgraph_langchain.data.assets import canonical_text_sha256, hash_file
 from langgraph_langchain.evaluation import DeterministicEvaluator
 from langgraph_langchain.evaluation.models import (
     EvaluationCase,
@@ -37,6 +38,19 @@ def test_golden_dataset_has_fifty_valid_cases():
     assert len({case.case_id for case in cases}) == len(cases)
     assert loader.validate() == []
     assert sum(case.critical for case in cases) >= 1
+
+
+def test_canonical_dataset_hash_is_newline_insensitive(tmp_path: Path):
+    content = "date,department,revenue\n2026-07,East,100\n"
+    crlf_path = tmp_path / "crlf.csv"
+    lf_path = tmp_path / "lf.csv"
+    crlf_path.write_bytes(content.replace("\n", "\r\n").encode("utf-8"))
+    lf_path.write_bytes(content.encode("utf-8"))
+
+    assert canonical_text_sha256(crlf_path) == canonical_text_sha256(lf_path)
+    # Keep the raw byte hash distinct so existing binary fingerprint semantics
+    # are not silently changed.
+    assert hash_file(crlf_path) != hash_file(lf_path)
 
 
 def test_comparator_rejects_wrong_percent_scale_and_accepts_tolerance():

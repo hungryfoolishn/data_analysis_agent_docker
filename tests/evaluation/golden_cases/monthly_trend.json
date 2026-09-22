@@ -4,7 +4,7 @@
     "name": "趋势分析 1",
     "question": "杭州开发一部 2026 年第一季度逐月收入是多少？",
     "dataset": "../data/sales_performance_2025_2026h1.csv",
-    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "dataset_sha256": "f7ee4d6874c0f5f74228a72e6977d31fddb3e5944b97d171f4aea269e9ca6542",
     "task_type": "trend",
     "executor_type": "structured",
     "skill_name": null,
@@ -70,7 +70,7 @@
     "name": "趋势分析 2",
     "question": "杭州开发二部 2026 年第一季度逐月收入是多少？",
     "dataset": "../data/sales_performance_2025_2026h1.csv",
-    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "dataset_sha256": "f7ee4d6874c0f5f74228a72e6977d31fddb3e5944b97d171f4aea269e9ca6542",
     "task_type": "trend",
     "executor_type": "structured",
     "skill_name": null,
@@ -136,7 +136,7 @@
     "name": "趋势分析 3",
     "question": "数据分析部 2026 年第一季度逐月收入是多少？",
     "dataset": "../data/sales_performance_2025_2026h1.csv",
-    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "dataset_sha256": "f7ee4d6874c0f5f74228a72e6977d31fddb3e5944b97d171f4aea269e9ca6542",
     "task_type": "trend",
     "executor_type": "structured",
     "skill_name": null,
@@ -202,7 +202,7 @@
     "name": "趋势分析 4",
     "question": "平台架构部 2026 年第一季度逐月收入是多少？",
     "dataset": "../data/sales_performance_2025_2026h1.csv",
-    "dataset_sha256": "ed9aa649d31c97272adbc922ec1b0d3d649afe4d1524b7b969f0745eb03b5b43",
+    "dataset_sha256": "f7ee4d6874c0f5f74228a72e6977d31fddb3e5944b97d171f4aea269e9ca6542",
     "task_type": "trend",
     "executor_type": "structured",
     "skill_name": null,
@@ -325,7 +325,8 @@
       "trend",
       "quarterly"
     ],
-    "critical": false
+    "critical": false,
+    "dataset_sha256": "f7ee4d6874c0f5f74228a72e6977d31fddb3e5944b97d171f4aea269e9ca6542"
   },
   {
     "case_id": "trend_analysis_006",
@@ -389,6 +390,7 @@
       "trend",
       "quarterly"
     ],
-    "critical": false
+    "critical": false,
+    "dataset_sha256": "f7ee4d6874c0f5f74228a72e6977d31fddb3e5944b97d171f4aea269e9ca6542"
   }
 ]

@@ -28,6 +28,19 @@ def hash_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+
+def canonical_text_sha256(path: Path) -> str:
+    """Return a newline-insensitive SHA-256 fingerprint for UTF-8 text.
+
+    Golden datasets are evaluated on Windows, Linux, and CI.  Raw byte hashes
+    change when Git normalises CRLF to LF, so versioned text datasets use a
+    canonical newline form.  A UTF-8 BOM is ignored.
+    """
+    text = path.read_text(encoding="utf-8-sig")
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 class ColumnSpec(BaseModel):
     """Observed physical metadata for one column."""
 

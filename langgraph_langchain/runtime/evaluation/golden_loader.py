@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from langgraph_langchain.data.assets import hash_file
+from langgraph_langchain.data.assets import canonical_text_sha256
 
 from .models import GoldenCase
 
@@ -77,7 +77,7 @@ class GoldenCaseLoader:
             if not path.is_file():
                 errors.append(f"Missing dataset for {case.case_id}: {path}")
                 continue
-            digest = hash_file(path)
+            digest = canonical_text_sha256(path)
             if case.dataset_sha256 and case.dataset_sha256 != digest:
                 errors.append(
                     f"Dataset hash mismatch for {case.case_id}: expected {case.dataset_sha256}, got {digest}"
@@ -85,5 +85,5 @@ class GoldenCaseLoader:
         return errors
 
     @staticmethod
-    def sha256_file(path: str | Path) -> str:
-        return hash_file(Path(path))
+    def canonical_sha256_file(path: str | Path) -> str:
+        return canonical_text_sha256(Path(path))
