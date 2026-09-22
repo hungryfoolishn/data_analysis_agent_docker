@@ -201,7 +201,12 @@ class GoldenEvaluationRunner:
             average_score=round(sum(scores) / len(scores), 4) if scores else 0.0,
             by_task_type=averages(lambda item: item.task_type),
             by_executor=averages(lambda item: item.executor_type),
+            # Keep by_skill for display-name compatibility, but stable identity
+            # metrics are keyed by skill_id / version / hash.
             by_skill=averages(lambda item: item.skill_name or "__fallback__"),
+            by_skill_id=averages(lambda item: item.skill_id or "__fallback__"),
+            by_skill_version=averages(lambda item: item.skill_version or "unknown"),
+            by_skill_hash=averages(lambda item: item.skill_hash or "unknown"),
             failures=[item for item in items if not item.passed],
             evaluations=items,
         )

@@ -283,6 +283,8 @@ trace_claim_lineage(claim, findings, evidence, artifacts, executions)
 | V8.5-P0-015 | Cross-task comparison 使用 pairwise tolerance | PASS |
 | V8.5-P0-016 | stable Skill ID 与 display name 分离 | PASS |
 | V8.5-P0-017 | CI 运行 targeted + full pytest | PASS |
+| V8.5-P0-018 | CI PYTHONPATH 覆盖所有 pytest 阶段 | PASS |
+| V8.5-P0-019 | Golden aggregation 使用稳定 Skill ID | PASS |
 | V8.5-P0-014 | finish_report 生成 report_claims.json | PASS |
 
 ---
@@ -352,6 +354,14 @@ tests/runtime_v2/test_runtime_e2e.py
 - 中文改写 ReportClaim。
 - Claim lineage 到 Artifact / Execution / Skill。
 - stable Skill ID 与 display name 分离。
+
+---
+
+## 7.2 V8.5.2 CI Gate Patch
+
+- GitHub Actions 在 job 级别注入 `PYTHONPATH: ${{ github.workspace }}`，targeted pytest 与 full pytest 使用同一导入环境。
+- `EvaluationRun` 新增 `by_skill_id`、`by_skill_version`、`by_skill_hash`，Skill 改名不再拆散稳定身份统计。
+- 本地验证命令已显式使用 `PYTHONPATH=.`。
 
 ---
 

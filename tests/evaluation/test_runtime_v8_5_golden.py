@@ -142,6 +142,7 @@ def test_golden_run_aggregates_by_task_executor_and_skill():
             sql_text="SELECT 1",
             report_text=" ".join(case.report_must_contain),
             skill_name="skill-a" if index == 0 else "skill-b",
+            skill_id="skill-id-a" if index == 0 else "skill-id-b",
             skill_version="1.0.0",
             skill_hash="sha256:test",
         )
@@ -154,6 +155,9 @@ def test_golden_run_aggregates_by_task_executor_and_skill():
     assert run.by_task_type
     assert run.by_executor
     assert set(run.by_skill) == {"skill-a", "skill-b"}
+    assert set(run.by_skill_id) == {"skill-id-a", "skill-id-b"}
+    assert set(run.by_skill_version) == {"1.0.0"}
+    assert set(run.by_skill_hash) == {"sha256:test"}
     assert len(run.failures) == 1
     assert run.failures[0].case_id == cases[2].case_id
 
