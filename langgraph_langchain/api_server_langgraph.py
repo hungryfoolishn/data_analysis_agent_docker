@@ -37,6 +37,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Load project .env before any settings module evaluates environment variables.
+load_dotenv(PROJECT_ROOT / ".env", override=True)
+
 from langgraph_langchain.langgraph_agent import run_analysis_stream
 from langgraph_langchain.schemas import AnalysisStage
 from langgraph_langchain.recovery import get_recovery_executor
@@ -68,8 +71,6 @@ from langgraph_langchain.config import (
     API_AUTH_TOKEN,
     CORS_ALLOWED_ORIGINS,
 )
-
-load_dotenv()
 
 WORKSPACE_DIR.mkdir(exist_ok=True)
 
