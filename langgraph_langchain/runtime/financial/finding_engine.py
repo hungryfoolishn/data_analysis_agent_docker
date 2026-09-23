@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .models import (
+    FinancialAnomalySignal,
     FinancialComparison,
     FinancialEvidence,
     FinancialFinding,
@@ -22,6 +23,7 @@ class FinancialFindingEngine:
         evidence: list[FinancialEvidence],
         comparisons: list[FinancialComparison],
         risks: list[FinancialRiskSignal],
+        anomalies: list[FinancialAnomalySignal],
     ) -> list[FinancialFinding]:
         evidence_by_calculation = {
             item.calculation_id: item for item in evidence
@@ -92,32 +94,30 @@ class FinancialFindingEngine:
                 metadata={"severity": risk.severity},
             ))
 
-        if task_type == "ANOMALY_ANALYSIS":
-            for observation in observations:
-                if not observation.metric_id.endswith("_growth"):
-                    continue
-                if abs(float(observation.value)) < 10:
-                    continue
-                evidence_item = evidence_by_calculation.get(
-                    observation.calculation.calculation_id
-                )
-                if evidence_item is None:
-                    continue
-                direction = "上升" if observation.value > 0 else "下降"
-                findings.append(FinancialFinding(
-                    finding_type="anomaly",
-                    statement=(
-                        f"{observation.company_name} {observation.period} "
-                        f"{observation.metric_name}出现{direction} "
-                        f"{abs(observation.value):.2f}%，超过 10% 异常阈值。"
-                    ),
-                    company_names=[observation.company_name],
-                    periods=[observation.period],
-                    metric_id=observation.metric_id,
-                    metric_name=observation.metric_name,
-                    evidence_ids=[evidence_item.evidence_id],
-                    calculation_ids=[observation.calculation.calculation_id],
-                    metadata={"threshold": 10.0},
-                ))
+        for anomaly in anomalies:
+            evidence_ids = [
+                item.evidence_id
+                for item in evidence
+                if item.company_name == anomaly.company_name
+                and item.period == anomaly.period
+                and item.metric_id == anomaly.metric_id
+            ]
+            findings.append(FinancialFinding(
+                finding_type="anomaly",
+                statement=anomaly.message,
+                company_names=[anomaly.company_name],
+                periods=[anomaly.period],
+                metric_id=anomaly.metric_id,
+                metric_name=anomaly.metric_name,
+                evidence_ids=evidence_ids,
+                anomaly_ids=[anomaly.anomaly_id],
+                metadata={
+                    "historical_mean": anomaly.historical_mean,
+                    "historical_std": anomaly.historical_std,
+                    "z_score": anomaly.z_score,
+                    "threshold": anomaly.threshold,
+                    "method": anomaly.method,
+                },
+            ))
 
         return findings

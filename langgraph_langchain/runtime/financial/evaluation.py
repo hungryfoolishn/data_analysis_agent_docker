@@ -21,7 +21,7 @@ class FinancialEvaluationAdapter:
 
     SKILL_ID = "runtime_financial_workflow"
     SKILL_NAME = "financial-analysis-workflow"
-    SKILL_VERSION = "9.1.0"
+    SKILL_VERSION = "9.2.0"
 
     def __init__(self, workflow: FinancialAnalysisWorkflow) -> None:
         self.workflow = workflow
@@ -92,7 +92,7 @@ class FinancialEvaluationAdapter:
         )
         return GoldenCandidateResult(
             case_id=case.case_id,
-            run_id="financial_golden_v9_1",
+            run_id="financial_golden_v9_2",
             status="succeeded" if succeeded else "failed",
             verification_passed=succeeded,
             metric_answers=metric_answers,
@@ -114,7 +114,14 @@ class FinancialEvaluationAdapter:
                 "observation_count": len(result.observations),
                 "calculation_count": len(result.calculations),
                 "verification_count": len(result.verifications),
+                "unavailable_calculation_count": sum(
+                    item.status == "unavailable" for item in result.calculations
+                ),
+                "invalid_calculation_count": sum(
+                    item.status == "invalid" for item in result.calculations
+                ),
                 "evidence_count": len(result.evidence),
+                "data_source_count": len(result.data_sources),
                 "verified_evidence_count": verified_evidence_count,
                 "comparison_count": len(result.comparisons),
                 "finding_count": len(result.findings),
@@ -126,7 +133,7 @@ class FinancialEvaluationAdapter:
         self,
         cases: Iterable[GoldenCase],
         *,
-        run_id: str = "financial_golden_v9_1",
+        run_id: str = "financial_golden_v9_2",
     ) -> EvaluationRun:
         items = list(cases)
         candidates = {case.case_id: self.run_case(case) for case in items}

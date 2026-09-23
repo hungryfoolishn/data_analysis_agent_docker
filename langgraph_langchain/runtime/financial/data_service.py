@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 from pathlib import Path
 
-from .models import BalanceSheetStatement, CashFlowStatement, Company, IncomeStatement
+from .models import (
+    BalanceSheetStatement,
+    CashFlowStatement,
+    Company,
+    FinancialDataSource,
+    IncomeStatement,
+)
 
 
 class FinancialDataService:
-    """Provide normalized financial statements to deterministic workflows."""
+    """Provide normalized statements and their source entities to workflows."""
 
     def __init__(
         self,
@@ -36,6 +44,7 @@ class FinancialDataService:
         self._cash_by_key = {
             (item.company_id, item.period): item for item in cash_flows
         }
+        self._sources_by_id = self._build_sources()
 
     @classmethod
     def from_csv_directory(cls, directory: str | Path) -> "FinancialDataService":
@@ -55,6 +64,32 @@ class FinancialDataService:
             balance_sheets=balance,
             cash_flows=cash,
         )
+
+    def _build_sources(self) -> dict[str, FinancialDataSource]:
+        rows: list[tuple[str, str, IncomeStatement | BalanceSheetStatement | CashFlowStatement]] = []
+        rows.extend(("income_statement", item.source_id or "", item) for item in self.income_statements)
+        rows.extend(("balance_sheet", item.source_id or "", item) for item in self.balance_sheets)
+        rows.extend(("cash_flow", item.source_id or "", item) for item in self.cash_flows)
+
+        sources: dict[str, FinancialDataSource] = {}
+        for source_kind, source_id, statement in rows:
+            if not source_id or source_id in sources:
+                continue
+            payload = json.dumps(
+                statement.model_dump(mode="json"),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            sources[source_id] = FinancialDataSource(
+                source_id=source_id,
+                source_type="annual_report",
+                company_id=statement.company_id,
+                report_period=statement.period,
+                document_name=f"{source_kind}.csv#{source_id}",
+                source_hash=f"sha256:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}",
+            )
+        return sources
 
     def list_companies(self) -> list[Company]:
         return sorted(self.companies, key=lambda item: item.company_name)
@@ -94,7 +129,6 @@ class FinancialDataService:
         )
 
     def previous_balance(self, company_id: str, period: str) -> BalanceSheetStatement | None:
-        """Return the prior-period balance sheet for average-balance metrics."""
         previous_period = self.previous_period(company_id, period)
         if previous_period is None:
             return None
@@ -107,3 +141,16 @@ class FinancialDataService:
         except ValueError as exc:
             raise KeyError(f"Unknown period {period} for {company_id}") from exc
         return periods[index - 1] if index > 0 else None
+
+    def list_sources(self) -> list[FinancialDataSource]:
+        return sorted(self._sources_by_id.values(), key=lambda item: item.source_id)
+
+    def get_source(self, source_id: str) -> FinancialDataSource:
+        return self._sources_by_id[source_id]
+
+    def get_sources(self, source_ids: list[str]) -> list[FinancialDataSource]:
+        return [
+            self._sources_by_id[source_id]
+            for source_id in dict.fromkeys(source_ids)
+            if source_id in self._sources_by_id
+        ]

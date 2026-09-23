@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from .anomaly_engine import FinancialAnomalyEngine
 from .classifier import FinancialTaskClassifier, FinancialTaskType
 from .data_service import FinancialDataService
 from .finding_engine import FinancialFindingEngine
-from .metrics import calculate_metric, financial_metric_registry
+from .metrics import compute_metric, financial_metric_registry
 from .models import (
     BalanceSheetStatement,
-    Company,
+    CashFlowStatement,
     FinancialAnalysisResult,
     FinancialCalculation,
     FinancialComparison,
@@ -22,8 +23,8 @@ from .models import (
     FinancialRiskSignal,
     FinancialVerification,
     IncomeStatement,
-    CashFlowStatement,
 )
+from .verification_engine import FinancialVerificationEngine
 
 
 _LOWER_IS_BETTER = {
@@ -38,7 +39,7 @@ _LOWER_IS_BETTER = {
 
 
 class FinancialAnalysisWorkflow:
-    """Route financial questions through deterministic metric workflows."""
+    """Route financial questions through verifiable metric workflows."""
 
     _TASK_METRICS = {
         FinancialTaskType.COMPANY_OVERVIEW: [
@@ -78,6 +79,10 @@ class FinancialAnalysisWorkflow:
             "free_cash_flow",
         ],
     }
+    _COMPARISON_ENABLED_TASKS = {
+        FinancialTaskType.PEER_COMPARISON,
+        FinancialTaskType.COMPREHENSIVE_ANALYSIS,
+    }
 
     def __init__(self, data_service: FinancialDataService) -> None:
         self.data_service = data_service
@@ -86,7 +91,9 @@ class FinancialAnalysisWorkflow:
             "langgraph_langchain.runtime.financial.risk_detector",
             fromlist=["FinancialRiskDetector"],
         ).FinancialRiskDetector()
+        self.verification_engine = FinancialVerificationEngine()
         self.finding_engine = FinancialFindingEngine()
+        self.anomaly_engine = FinancialAnomalyEngine()
 
     def run(self, query: FinancialQuery | str) -> FinancialAnalysisResult:
         query = self._normalize_query(query)
@@ -96,6 +103,7 @@ class FinancialAnalysisWorkflow:
         calculations: list[FinancialCalculation] = []
         verifications: list[FinancialVerification] = []
         evidence: list[FinancialEvidence] = []
+        source_ids: list[str] = []
 
         company_names = query.company_names or [
             item.company_name for item in self.data_service.list_companies()
@@ -127,7 +135,7 @@ class FinancialAnalysisWorkflow:
                 )
                 for metric_id in metrics:
                     definition = financial_metric_registry.get(metric_id)
-                    value, inputs = calculate_metric(
+                    computation = compute_metric(
                         metric_id,
                         income=income,
                         balance=balance,
@@ -135,7 +143,7 @@ class FinancialAnalysisWorkflow:
                         previous_income=previous_income,
                         previous_balance=previous_balance,
                     )
-                    source_ids = self._source_ids_for_metric(
+                    metric_source_ids = self._source_ids_for_metric(
                         definition,
                         income=income,
                         balance=balance,
@@ -150,33 +158,29 @@ class FinancialAnalysisWorkflow:
                         company_name=company.company_name,
                         period=period,
                         formula=definition.formula,
-                        inputs={key: round(float(item), 6) for key, item in inputs.items()},
-                        result=round(value, 6),
+                        inputs=computation.inputs,
+                        result=computation.value,
                         unit=definition.unit,
-                        source_ids=source_ids,
+                        status=computation.status,
+                        status_reason=computation.reason,
+                        missing_fields=computation.missing_fields,
+                        source_ids=metric_source_ids,
                         source_fields=source_fields,
                     )
-                    recalculated_value, _ = calculate_metric(
-                        metric_id,
+                    verification = self.verification_engine.verify(
+                        calculation=calculation,
+                        metric_id=metric_id,
                         income=income,
                         balance=balance,
                         cash_flow=cash_flow,
                         previous_income=previous_income,
                         previous_balance=previous_balance,
                     )
-                    verification = FinancialVerification(
-                        metric_id=metric_id,
-                        company_id=company.company_id,
-                        company_name=company.company_name,
-                        period=period,
-                        expected_value=round(value, 6),
-                        actual_value=round(recalculated_value, 6),
-                        calculation_id=calculation.calculation_id,
-                        message=(
-                            "指标结果通过确定性重算校验，"
-                            "并绑定标准化报表 source_id。"
-                        ),
-                    )
+                    calculations.append(calculation)
+                    verifications.append(verification)
+
+                    if not verification.passed or computation.value is None:
+                        continue
                     evidence_item = FinancialEvidence(
                         metric_id=metric_id,
                         metric_name=definition.name,
@@ -184,20 +188,18 @@ class FinancialAnalysisWorkflow:
                         company_name=company.company_name,
                         stock_code=company.stock_code,
                         period=period,
-                        value=value,
+                        value=computation.value,
                         unit=definition.unit,
                         formula=definition.formula,
                         fact=(
                             f"{company.company_name} {period} "
-                            f"{definition.name}为{value:,.4f}{definition.unit}"
+                            f"{definition.name}为{computation.value:,.4f}{definition.unit}"
                         ),
-                        source_ids=source_ids,
+                        source_ids=metric_source_ids,
                         source_fields=source_fields,
                         calculation_id=calculation.calculation_id,
                         verification_result_id=verification.verification_id,
-                        verification_status=(
-                            "verified" if verification.passed else "failed"
-                        ),
+                        verification_status="verified",
                     )
                     observation = FinancialObservation(
                         company_id=company.company_id,
@@ -206,31 +208,38 @@ class FinancialAnalysisWorkflow:
                         period=period,
                         metric_id=metric_id,
                         metric_name=definition.name,
-                        value=value,
+                        value=computation.value,
                         unit=definition.unit,
                         formula=definition.formula,
                         fact=evidence_item.fact,
                         calculation=calculation,
-                        source_ids=source_ids,
+                        source_ids=metric_source_ids,
                         source_fields=source_fields,
                         source_period=period,
                         balance_policy=definition.balance_policy,
+                        status="calculated",
                     )
-                    calculations.append(calculation)
-                    verifications.append(verification)
                     evidence.append(evidence_item)
                     observations.append(observation)
+                    source_ids.extend(metric_source_ids)
 
         risk_signals: list[FinancialRiskSignal] = self.risk_detector.detect(observations)
-        comparisons: list[FinancialComparison] = self._build_comparisons(
-            observations
+        comparisons: list[FinancialComparison] = (
+            self._build_comparisons(observations)
+            if task_type in self._COMPARISON_ENABLED_TASKS
+            else []
         )
+        anomalies = self.anomaly_engine.detect(observations)
         findings: list[FinancialFinding] = self.finding_engine.build(
             task_type=task_type,
             observations=observations,
             evidence=evidence,
             comparisons=comparisons,
             risks=risk_signals,
+            anomalies=anomalies,
+        )
+        data_sources = self.data_service.get_sources(
+            list(dict.fromkeys(source_ids))
         )
         result = FinancialAnalysisResult(
             query=query,
@@ -243,7 +252,16 @@ class FinancialAnalysisWorkflow:
             comparisons=comparisons,
             findings=findings,
             risk_signals=risk_signals,
-            summary=self._summary(observations, comparisons, risk_signals, findings),
+            anomalies=anomalies,
+            data_sources=data_sources,
+            summary=self._summary(
+                observations=observations,
+                calculations=calculations,
+                comparisons=comparisons,
+                risks=risk_signals,
+                findings=findings,
+                anomalies=anomalies,
+            ),
         )
         result.report_markdown = self._report(result)
         return result
@@ -348,13 +366,17 @@ class FinancialAnalysisWorkflow:
 
     @staticmethod
     def _summary(
+        *,
         observations: list[FinancialObservation],
+        calculations: list[FinancialCalculation],
         comparisons: list[FinancialComparison],
         risks: list[FinancialRiskSignal],
         findings: list[FinancialFinding],
+        anomalies: list,
     ) -> str:
+        unavailable = sum(item.status != "calculated" for item in calculations)
         if not observations:
-            return "未生成金融分析结果。"
+            return "未能生成可验证的金融分析结果：所需报表数据缺失或无效。"
 
         latest_period = max(item.period for item in observations)
         latest = [
@@ -374,8 +396,11 @@ class FinancialAnalysisWorkflow:
         summary += (
             f" 生成 {len(findings)} 个 Evidence-backed Finding、"
             f" {len(comparisons)} 个 Comparison、"
+            f" {len(anomalies)} 个异常信号、"
             f" {len(risks)} 个规则型风险信号。"
         )
+        if unavailable:
+            summary += f" {unavailable} 个指标因数据缺失或无效标记为不可计算。"
         return summary
 
     @staticmethod
@@ -393,6 +418,18 @@ class FinancialAnalysisWorkflow:
                 f"{item.value:,.4f}{item.unit}"
             )
 
+        unavailable = [
+            item for item in result.calculations if item.status != "calculated"
+        ]
+        if unavailable:
+            lines.extend(["", "## 数据可用性"])
+            for item in unavailable:
+                missing = ", ".join(item.missing_fields) or "未提供"
+                lines.append(
+                    f"- {item.company_name} / {item.period} / {item.metric_id}: "
+                    f"{item.status}（{item.status_reason}）；missing={missing}"
+                )
+
         if result.comparisons:
             lines.extend(["", "## 同业比较"])
             for item in result.comparisons:
@@ -401,11 +438,14 @@ class FinancialAnalysisWorkflow:
         lines.extend(["", "## 计算过程"])
         for item in result.calculations[:50]:
             inputs = ", ".join(
-                f"{key}={value:,.4f}" for key, value in item.inputs.items()
+                f"{key}={'NULL' if value is None else f'{value:,.4f}'}"
+                for key, value in item.inputs.items()
             )
             lines.append(
                 f"- {item.company_name} / {item.period} / {item.metric_id}: "
-                f"{item.formula}; {inputs}; result={item.result:,.4f}{item.unit}"
+                f"{item.formula}; {inputs}; "
+                f"result={'NULL' if item.result is None else f'{item.result:,.4f}'}{item.unit}; "
+                f"status={item.status}"
             )
 
         if result.findings:
@@ -422,13 +462,20 @@ class FinancialAnalysisWorkflow:
                     f"({item.display_value})"
                 )
 
-        if result.evidence:
+        if result.data_sources:
             lines.extend(["", "## 证据"])
+            sources_by_id = {item.source_id: item for item in result.data_sources}
             for item in result.evidence[:50]:
-                source_ids = ", ".join(item.source_ids)
+                source_details = []
+                for source_id in item.source_ids:
+                    source = sources_by_id.get(source_id)
+                    if source:
+                        source_details.append(
+                            f"{source.source_id}({source.document_name}, {source.source_hash})"
+                        )
                 lines.append(
                     f"- {item.company_name} / {item.period} / {item.metric_name}: "
-                    f"{item.fact}; source_ids={source_ids}; "
+                    f"{item.fact}; sources={'; '.join(source_details) or 'NULL'}; "
                     f"verification={item.verification_status}"
                 )
 
@@ -436,6 +483,7 @@ class FinancialAnalysisWorkflow:
             "",
             "## 说明",
             "- 以上内容区分 Fact、Calculation、Verification、Evidence、Finding 和 Interpretation。",
+            "- 缺失数据标记为 UNAVAILABLE，分母为零或非有限值标记为 INVALID，不会用 0 代替。",
             "- 所有数值均来自标准化金融数据，计算过程和 source_id 可追溯。",
             "- 本结果不构成投资建议。",
         ])

@@ -29,13 +29,13 @@ class IncomeStatement(BaseModel):
     company_id: str
     period: str
     currency: str = "CNY"
-    revenue: float = 0.0
-    cost_of_revenue: float = 0.0
-    gross_profit: float = 0.0
-    operating_profit: float = 0.0
-    net_profit: float = 0.0
-    net_profit_attributable: float = 0.0
-    eps: float = 0.0
+    revenue: Optional[float] = None
+    cost_of_revenue: Optional[float] = None
+    gross_profit: Optional[float] = None
+    operating_profit: Optional[float] = None
+    net_profit: Optional[float] = None
+    net_profit_attributable: Optional[float] = None
+    eps: Optional[float] = None
     source_id: Optional[str] = None
 
 
@@ -43,17 +43,17 @@ class BalanceSheetStatement(BaseModel):
     company_id: str
     period: str
     currency: str = "CNY"
-    total_assets: float = 0.0
-    total_liabilities: float = 0.0
-    total_equity: float = 0.0
-    cash: float = 0.0
-    accounts_receivable: float = 0.0
-    inventory: float = 0.0
-    fixed_assets: float = 0.0
-    short_term_debt: float = 0.0
-    long_term_debt: float = 0.0
-    current_assets: float = 0.0
-    current_liabilities: float = 0.0
+    total_assets: Optional[float] = None
+    total_liabilities: Optional[float] = None
+    total_equity: Optional[float] = None
+    cash: Optional[float] = None
+    accounts_receivable: Optional[float] = None
+    inventory: Optional[float] = None
+    fixed_assets: Optional[float] = None
+    short_term_debt: Optional[float] = None
+    long_term_debt: Optional[float] = None
+    current_assets: Optional[float] = None
+    current_liabilities: Optional[float] = None
     source_id: Optional[str] = None
 
 
@@ -61,11 +61,11 @@ class CashFlowStatement(BaseModel):
     company_id: str
     period: str
     currency: str = "CNY"
-    operating_cash_flow: float = 0.0
-    investing_cash_flow: float = 0.0
-    financing_cash_flow: float = 0.0
-    capital_expenditure: float = 0.0
-    free_cash_flow: float = 0.0
+    operating_cash_flow: Optional[float] = None
+    investing_cash_flow: Optional[float] = None
+    financing_cash_flow: Optional[float] = None
+    capital_expenditure: Optional[float] = None
+    free_cash_flow: Optional[float] = None
     source_id: Optional[str] = None
 
 
@@ -73,7 +73,7 @@ class FinancialIndicator(BaseModel):
     company_id: str
     period: str
     metric_id: str
-    value: float
+    value: Optional[float] = None
     unit: str
     formula: str
     source_id: Optional[str] = None
@@ -97,9 +97,12 @@ class FinancialCalculation(BaseModel):
     company_name: str = ""
     period: str = ""
     formula: str
-    inputs: dict[str, float] = Field(default_factory=dict)
-    result: float
+    inputs: dict[str, Optional[float]] = Field(default_factory=dict)
+    result: Optional[float] = None
     unit: str
+    status: str = "calculated"
+    status_reason: Optional[str] = None
+    missing_fields: list[str] = Field(default_factory=list)
     source_ids: list[str] = Field(default_factory=list)
     source_fields: list[str] = Field(default_factory=list)
 
@@ -129,6 +132,9 @@ class FinancialObservation(BaseModel):
     source_fields: list[str] = Field(default_factory=list)
     source_period: str
     balance_policy: str = "ending_balance"
+    status: str = "calculated"
+    status_reason: Optional[str] = None
+    missing_fields: list[str] = Field(default_factory=list)
 
 
 class FinancialVerification(BaseModel):
@@ -139,11 +145,12 @@ class FinancialVerification(BaseModel):
     period: str
     status: str = "passed"
     passed: bool = True
-    method: str = "deterministic_metric_recalculation"
-    expected_value: float
-    actual_value: float
+    method: str = "independent_formula_verification"
+    expected_value: Optional[float] = None
+    actual_value: Optional[float] = None
     message: str = ""
     calculation_id: str
+    missing_fields: list[str] = Field(default_factory=list)
 
 
 class FinancialEvidence(BaseModel):
@@ -199,6 +206,7 @@ class FinancialFinding(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     calculation_ids: list[str] = Field(default_factory=list)
     risk_signal_ids: list[str] = Field(default_factory=list)
+    anomaly_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -214,6 +222,21 @@ class FinancialRiskSignal(BaseModel):
     display_value: str = ""
 
 
+class FinancialAnomalySignal(BaseModel):
+    anomaly_id: str = Field(default_factory=lambda: _financial_id("anomaly"))
+    company_name: str
+    period: str
+    metric_id: str
+    metric_name: str
+    value: float
+    historical_mean: float
+    historical_std: float
+    z_score: float
+    threshold: float = 2.0
+    method: str = "historical_mean_std_baseline"
+    message: str
+
+
 class FinancialAnalysisResult(BaseModel):
     query: FinancialQuery
     task_type: str
@@ -225,6 +248,8 @@ class FinancialAnalysisResult(BaseModel):
     comparisons: list[FinancialComparison] = Field(default_factory=list)
     findings: list[FinancialFinding] = Field(default_factory=list)
     risk_signals: list[FinancialRiskSignal] = Field(default_factory=list)
+    anomalies: list[FinancialAnomalySignal] = Field(default_factory=list)
+    data_sources: list[FinancialDataSource] = Field(default_factory=list)
     summary: str = ""
     report_markdown: str = ""
     generated_at: str = Field(default_factory=utc_now)
