@@ -93,6 +93,13 @@ class FinancialDataService:
             previous_income,
         )
 
+    def previous_balance(self, company_id: str, period: str) -> BalanceSheetStatement | None:
+        """Return the prior-period balance sheet for average-balance metrics."""
+        previous_period = self.previous_period(company_id, period)
+        if previous_period is None:
+            return None
+        return self._balance_by_key.get((company_id, previous_period))
+
     def previous_period(self, company_id: str, period: str) -> str | None:
         periods = self.periods_for(company_id)
         try:

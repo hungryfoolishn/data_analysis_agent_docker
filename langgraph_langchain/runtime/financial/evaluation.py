@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Iterable
 
 from langgraph_langchain.runtime.evaluation import (
@@ -11,17 +12,16 @@ from langgraph_langchain.runtime.evaluation import (
     MetricAnswer,
 )
 from langgraph_langchain.runtime.evaluation.models import EvaluationRun
-
-from .metrics import financial_metric_registry
-from .workflow import FinancialAnalysisWorkflow
+from langgraph_langchain.runtime.financial.metrics import financial_metric_registry
+from langgraph_langchain.runtime.financial.workflow import FinancialAnalysisWorkflow
 
 
 class FinancialEvaluationAdapter:
-    """Convert deterministic financial workflow output to golden candidates."""
+    """Convert verified financial workflow output into golden candidates."""
 
     SKILL_ID = "runtime_financial_workflow"
     SKILL_NAME = "financial-analysis-workflow"
-    SKILL_VERSION = "9.0.0"
+    SKILL_VERSION = "9.1.0"
 
     def __init__(self, workflow: FinancialAnalysisWorkflow) -> None:
         self.workflow = workflow
@@ -29,13 +29,13 @@ class FinancialEvaluationAdapter:
 
     @staticmethod
     def _compute_skill_hash() -> str:
-        import hashlib
-
         digest = hashlib.sha256()
         for definition in financial_metric_registry.list_metrics():
             digest.update(definition.metric_id.encode("utf-8"))
             digest.update(b"\0")
             digest.update(definition.formula.encode("utf-8"))
+            digest.update(b"\n")
+            digest.update(definition.balance_policy.encode("utf-8"))
             digest.update(b"\n")
         return f"sha256:{digest.hexdigest()}"
 
@@ -52,18 +52,53 @@ class FinancialEvaluationAdapter:
             )
             for item in result.observations
         ]
-        calculation_count = len(result.calculations)
-        observation_count = len(result.observations)
-        succeeded = observation_count > 0 and calculation_count >= observation_count
+        metric_answers.extend(
+            MetricAnswer(
+                metric=f"peer_difference:{item.metric_id}",
+                value=float(item.difference),
+                period=item.period,
+                dimension="peer",
+                group=f"{item.leader_name}|{item.laggard_name}",
+                filters={
+                    "leader": item.leader_name,
+                    "laggard": item.laggard_name,
+                },
+            )
+            for item in result.comparisons
+        )
+        metric_answers.extend(
+            MetricAnswer(
+                metric=f"peer_relative_difference:{item.metric_id}",
+                value=float(item.relative_difference),
+                period=item.period,
+                dimension="peer",
+                group=f"{item.leader_name}|{item.laggard_name}",
+                filters={
+                    "leader": item.leader_name,
+                    "laggard": item.laggard_name,
+                },
+            )
+            for item in result.comparisons
+        )
+
+        verified_evidence_count = sum(
+            item.verification_status == "verified" for item in result.evidence
+        )
+        succeeded = (
+            bool(result.observations)
+            and bool(result.evidence)
+            and bool(result.findings)
+            and verified_evidence_count == len(result.evidence)
+        )
         return GoldenCandidateResult(
             case_id=case.case_id,
-            run_id="financial_golden_v9",
+            run_id="financial_golden_v9_1",
             status="succeeded" if succeeded else "failed",
             verification_passed=succeeded,
             metric_answers=metric_answers,
-            evidence_count=calculation_count,
-            verified_evidence_count=calculation_count if succeeded else 0,
-            finding_count=1 if result.observations else 0,
+            evidence_count=len(result.evidence),
+            verified_evidence_count=verified_evidence_count,
+            finding_count=len(result.findings),
             sql_text="",
             report_text=result.report_markdown,
             duration_ms=0.0,
@@ -76,8 +111,13 @@ class FinancialEvaluationAdapter:
                 "company_count": len({
                     item.company_name for item in result.observations
                 }),
-                "observation_count": observation_count,
-                "calculation_count": calculation_count,
+                "observation_count": len(result.observations),
+                "calculation_count": len(result.calculations),
+                "verification_count": len(result.verifications),
+                "evidence_count": len(result.evidence),
+                "verified_evidence_count": verified_evidence_count,
+                "comparison_count": len(result.comparisons),
+                "finding_count": len(result.findings),
                 "risk_signal_count": len(result.risk_signals),
             },
         )
@@ -86,7 +126,7 @@ class FinancialEvaluationAdapter:
         self,
         cases: Iterable[GoldenCase],
         *,
-        run_id: str = "financial_golden_v9",
+        run_id: str = "financial_golden_v9_1",
     ) -> EvaluationRun:
         items = list(cases)
         candidates = {case.case_id: self.run_case(case) for case in items}

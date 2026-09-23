@@ -44,6 +44,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -102,6 +104,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -160,6 +164,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -218,6 +224,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本04",
         "2025",
@@ -276,6 +284,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本01",
         "2025",
@@ -334,6 +344,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -392,6 +404,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -450,6 +464,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -508,6 +524,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本04",
         "2025",
@@ -566,6 +584,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本01",
         "2025",
@@ -624,6 +644,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本02",
         "2025",
@@ -682,6 +704,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本03",
         "2025",
@@ -740,6 +764,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本04",
         "2025",
@@ -798,6 +824,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -856,6 +884,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -914,6 +944,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -972,6 +1004,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本04",
         "2025",
@@ -1030,6 +1064,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本01",
         "2025",
@@ -1088,6 +1124,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -1146,6 +1184,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -1204,6 +1244,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -1262,6 +1304,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本04",
         "2025",
@@ -1320,6 +1364,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本01",
         "2025",
@@ -1383,7 +1429,7 @@
         },
         {
           "metric": "roe",
-          "value": 28.013397,
+          "value": 30.32643,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -1402,6 +1448,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -1467,7 +1515,7 @@
         },
         {
           "metric": "roe",
-          "value": 28.747529,
+          "value": 29.719668,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -1486,6 +1534,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -1551,7 +1601,7 @@
         },
         {
           "metric": "roe",
-          "value": 29.511831,
+          "value": 31.050362,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -1570,6 +1620,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -1635,7 +1687,7 @@
         },
         {
           "metric": "roe",
-          "value": 29.776478,
+          "value": 29.323029,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -1654,6 +1706,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本04",
         "2025",
@@ -1719,7 +1773,7 @@
         },
         {
           "metric": "roe",
-          "value": 17.198701,
+          "value": 18.618778,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -1738,6 +1792,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本01",
         "2025",
@@ -1810,6 +1866,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -1881,6 +1939,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -1952,6 +2012,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -2023,6 +2085,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本04",
         "2025",
@@ -2094,6 +2158,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本01",
         "2025",
@@ -2165,6 +2231,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -2236,6 +2304,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -2307,6 +2377,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -2378,6 +2450,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本04",
         "2025",
@@ -2406,7 +2480,7 @@
       "expected_metrics": [
         {
           "metric": "receivable_turnover",
-          "value": 20.0,
+          "value": 21.651376,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2418,7 +2492,7 @@
         },
         {
           "metric": "inventory_turnover",
-          "value": 4.0,
+          "value": 4.330275,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2430,7 +2504,7 @@
         },
         {
           "metric": "asset_turnover",
-          "value": 0.454545,
+          "value": 0.492077,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2449,6 +2523,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -2477,7 +2553,7 @@
       "expected_metrics": [
         {
           "metric": "receivable_turnover",
-          "value": 17.241379,
+          "value": 17.824421,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2489,7 +2565,7 @@
         },
         {
           "metric": "inventory_turnover",
-          "value": 2.980769,
+          "value": 3.081568,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2501,7 +2577,7 @@
         },
         {
           "metric": "asset_turnover",
-          "value": 0.454545,
+          "value": 0.469917,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2520,6 +2596,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -2548,7 +2626,7 @@
       "expected_metrics": [
         {
           "metric": "receivable_turnover",
-          "value": 15.151515,
+          "value": 15.941405,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2560,7 +2638,7 @@
         },
         {
           "metric": "inventory_turnover",
-          "value": 2.34375,
+          "value": 2.465936,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2572,7 +2650,7 @@
         },
         {
           "metric": "asset_turnover",
-          "value": 0.454545,
+          "value": 0.478242,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -2591,6 +2669,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -2688,6 +2768,84 @@
             "company": "白酒样本02"
           },
           "unit": "%"
+        },
+        {
+          "metric": "peer_difference:revenue",
+          "value": 175597838.08,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本01|白酒样本02",
+          "filters": {
+            "leader": "白酒样本01",
+            "laggard": "白酒样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "peer_relative_difference:revenue",
+          "value": 0.06358,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本01|白酒样本02",
+          "filters": {
+            "leader": "白酒样本01",
+            "laggard": "白酒样本02"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本01|白酒样本02",
+          "filters": {
+            "leader": "白酒样本01",
+            "laggard": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:revenue_growth",
+          "value": 1.571429,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本01|白酒样本02",
+          "filters": {
+            "leader": "白酒样本01",
+            "laggard": "白酒样本02"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:net_margin",
+          "value": 0.2788,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本02|白酒样本01",
+          "filters": {
+            "leader": "白酒样本02",
+            "laggard": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:net_margin",
+          "value": 0.005952,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本02|白酒样本01",
+          "filters": {
+            "leader": "白酒样本02",
+            "laggard": "白酒样本01"
+          },
+          "unit": "ratio"
         }
       ],
       "required_evidence": true,
@@ -2698,13 +2856,18 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "白酒样本02",
         "2025",
         "营业收入",
         "营业收入增长率",
-        "净利率"
+        "净利率",
+        "同业比较",
+        "差异",
+        "相对差异"
       ],
       "report_must_not_contain": [],
       "tags": [
@@ -2796,6 +2959,84 @@
             "company": "白酒样本04"
           },
           "unit": "%"
+        },
+        {
+          "metric": "peer_difference:revenue",
+          "value": 374051450.26,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本04|白酒样本03",
+          "filters": {
+            "leader": "白酒样本04",
+            "laggard": "白酒样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "peer_relative_difference:revenue",
+          "value": 0.129415,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本04|白酒样本03",
+          "filters": {
+            "leader": "白酒样本04",
+            "laggard": "白酒样本03"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:revenue_growth",
+          "value": 14.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本03|白酒样本04",
+          "filters": {
+            "leader": "白酒样本03",
+            "laggard": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:revenue_growth",
+          "value": 4.666667,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本03|白酒样本04",
+          "filters": {
+            "leader": "白酒样本03",
+            "laggard": "白酒样本04"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:net_margin",
+          "value": 0.5576,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本03|白酒样本04",
+          "filters": {
+            "leader": "白酒样本03",
+            "laggard": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:net_margin",
+          "value": 0.011905,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "白酒样本03|白酒样本04",
+          "filters": {
+            "leader": "白酒样本03",
+            "laggard": "白酒样本04"
+          },
+          "unit": "ratio"
         }
       ],
       "required_evidence": true,
@@ -2806,13 +3047,18 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "白酒样本04",
         "2025",
         "营业收入",
         "营业收入增长率",
-        "净利率"
+        "净利率",
+        "同业比较",
+        "差异",
+        "相对差异"
       ],
       "report_must_not_contain": [],
       "tags": [
@@ -2904,6 +3150,84 @@
             "company": "家电样本02"
           },
           "unit": "%"
+        },
+        {
+          "metric": "peer_difference:revenue",
+          "value": 275356005.12,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本01|家电样本02",
+          "filters": {
+            "leader": "家电样本01",
+            "laggard": "家电样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "peer_relative_difference:revenue",
+          "value": 0.079022,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本01|家电样本02",
+          "filters": {
+            "leader": "家电样本01",
+            "laggard": "家电样本02"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本01|家电样本02",
+          "filters": {
+            "leader": "家电样本01",
+            "laggard": "家电样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:revenue_growth",
+          "value": 1.571429,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本01|家电样本02",
+          "filters": {
+            "leader": "家电样本01",
+            "laggard": "家电样本02"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:net_margin",
+          "value": 0.2788,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本02|家电样本01",
+          "filters": {
+            "leader": "家电样本02",
+            "laggard": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:net_margin",
+          "value": 0.017544,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本02|家电样本01",
+          "filters": {
+            "leader": "家电样本02",
+            "laggard": "家电样本01"
+          },
+          "unit": "ratio"
         }
       ],
       "required_evidence": true,
@@ -2914,13 +3238,18 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本01",
         "家电样本02",
         "2025",
         "营业收入",
         "营业收入增长率",
-        "净利率"
+        "净利率",
+        "同业比较",
+        "差异",
+        "相对差异"
       ],
       "report_must_not_contain": [],
       "tags": [
@@ -3012,6 +3341,84 @@
             "company": "家电样本04"
           },
           "unit": "%"
+        },
+        {
+          "metric": "peer_difference:revenue",
+          "value": 419539811.66,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本04|家电样本03",
+          "filters": {
+            "leader": "家电样本04",
+            "laggard": "家电样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "peer_relative_difference:revenue",
+          "value": 0.116531,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本04|家电样本03",
+          "filters": {
+            "leader": "家电样本04",
+            "laggard": "家电样本03"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:revenue_growth",
+          "value": 14.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本03|家电样本04",
+          "filters": {
+            "leader": "家电样本03",
+            "laggard": "家电样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:revenue_growth",
+          "value": 4.666667,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本03|家电样本04",
+          "filters": {
+            "leader": "家电样本03",
+            "laggard": "家电样本04"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:net_margin",
+          "value": 0.2788,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本04|家电样本03",
+          "filters": {
+            "leader": "家电样本04",
+            "laggard": "家电样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:net_margin",
+          "value": 0.017857,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "家电样本04|家电样本03",
+          "filters": {
+            "leader": "家电样本04",
+            "laggard": "家电样本03"
+          },
+          "unit": "ratio"
         }
       ],
       "required_evidence": true,
@@ -3022,13 +3429,18 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本03",
         "家电样本04",
         "2025",
         "营业收入",
         "营业收入增长率",
-        "净利率"
+        "净利率",
+        "同业比较",
+        "差异",
+        "相对差异"
       ],
       "report_must_not_contain": [],
       "tags": [
@@ -3120,6 +3532,84 @@
             "company": "银行样本02"
           },
           "unit": "%"
+        },
+        {
+          "metric": "peer_difference:revenue",
+          "value": 375114172.159999,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本01|银行样本02",
+          "filters": {
+            "leader": "银行样本01",
+            "laggard": "银行样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "peer_relative_difference:revenue",
+          "value": 0.089158,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本01|银行样本02",
+          "filters": {
+            "leader": "银行样本01",
+            "laggard": "银行样本02"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本01|银行样本02",
+          "filters": {
+            "leader": "银行样本01",
+            "laggard": "银行样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:revenue_growth",
+          "value": 1.571429,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本01|银行样本02",
+          "filters": {
+            "leader": "银行样本01",
+            "laggard": "银行样本02"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:net_margin",
+          "value": 0.5576,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本01|银行样本02",
+          "filters": {
+            "leader": "银行样本01",
+            "laggard": "银行样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:net_margin",
+          "value": 0.02381,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本01|银行样本02",
+          "filters": {
+            "leader": "银行样本01",
+            "laggard": "银行样本02"
+          },
+          "unit": "ratio"
         }
       ],
       "required_evidence": true,
@@ -3130,13 +3620,18 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "银行样本01",
         "银行样本02",
         "2025",
         "营业收入",
         "营业收入增长率",
-        "净利率"
+        "净利率",
+        "同业比较",
+        "差异",
+        "相对差异"
       ],
       "report_must_not_contain": [],
       "tags": [
@@ -3228,6 +3723,84 @@
             "company": "银行样本04"
           },
           "unit": "%"
+        },
+        {
+          "metric": "peer_difference:revenue",
+          "value": 465028173.07,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本04|银行样本03",
+          "filters": {
+            "leader": "银行样本04",
+            "laggard": "银行样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "peer_relative_difference:revenue",
+          "value": 0.107891,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本04|银行样本03",
+          "filters": {
+            "leader": "银行样本04",
+            "laggard": "银行样本03"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:revenue_growth",
+          "value": 14.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本03|银行样本04",
+          "filters": {
+            "leader": "银行样本03",
+            "laggard": "银行样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:revenue_growth",
+          "value": 4.666667,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本03|银行样本04",
+          "filters": {
+            "leader": "银行样本03",
+            "laggard": "银行样本04"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:net_margin",
+          "value": 0.2788,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本04|银行样本03",
+          "filters": {
+            "leader": "银行样本04",
+            "laggard": "银行样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:net_margin",
+          "value": 0.011765,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "银行样本04|银行样本03",
+          "filters": {
+            "leader": "银行样本04",
+            "laggard": "银行样本03"
+          },
+          "unit": "ratio"
         }
       ],
       "required_evidence": true,
@@ -3238,13 +3811,18 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "银行样本03",
         "银行样本04",
         "2025",
         "营业收入",
         "营业收入增长率",
-        "净利率"
+        "净利率",
+        "同业比较",
+        "差异",
+        "相对差异"
       ],
       "report_must_not_contain": [],
       "tags": [
@@ -3336,6 +3914,84 @@
             "company": "新能源样本02"
           },
           "unit": "%"
+        },
+        {
+          "metric": "peer_difference:revenue",
+          "value": 474872339.2,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "新能源样本01|新能源样本02",
+          "filters": {
+            "leader": "新能源样本01",
+            "laggard": "新能源样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "peer_relative_difference:revenue",
+          "value": 0.096323,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "新能源样本01|新能源样本02",
+          "filters": {
+            "leader": "新能源样本01",
+            "laggard": "新能源样本02"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "新能源样本01|新能源样本02",
+          "filters": {
+            "leader": "新能源样本01",
+            "laggard": "新能源样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:revenue_growth",
+          "value": 1.571429,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "新能源样本01|新能源样本02",
+          "filters": {
+            "leader": "新能源样本01",
+            "laggard": "新能源样本02"
+          },
+          "unit": "ratio"
+        },
+        {
+          "metric": "peer_difference:net_margin",
+          "value": 0.2788,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "新能源样本02|新能源样本01",
+          "filters": {
+            "leader": "新能源样本02",
+            "laggard": "新能源样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "peer_relative_difference:net_margin",
+          "value": 0.020833,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "peer",
+          "group": "新能源样本02|新能源样本01",
+          "filters": {
+            "leader": "新能源样本02",
+            "laggard": "新能源样本01"
+          },
+          "unit": "ratio"
         }
       ],
       "required_evidence": true,
@@ -3346,13 +4002,18 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "新能源样本01",
         "新能源样本02",
         "2025",
         "营业收入",
         "营业收入增长率",
-        "净利率"
+        "净利率",
+        "同业比较",
+        "差异",
+        "相对差异"
       ],
       "report_must_not_contain": [],
       "tags": [
@@ -3406,6 +4067,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2022",
@@ -3464,6 +4127,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2022",
@@ -3527,7 +4192,7 @@
         },
         {
           "metric": "roe",
-          "value": 28.013397,
+          "value": 30.32643,
           "tolerance": 0.0005,
           "period": "2025",
           "dimension": "company",
@@ -3570,6 +4235,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -3656,6 +4323,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本01",
         "2025",
@@ -3740,6 +4409,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本02",
         "2025",
@@ -3824,6 +4495,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本03",
         "2025",
@@ -3908,6 +4581,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "白酒样本04",
         "2025",
@@ -3992,6 +4667,8 @@
       "report_must_contain": [
         "核心指标",
         "计算过程",
+        "核心发现",
+        "证据",
         "不构成投资建议",
         "家电样本01",
         "2025",

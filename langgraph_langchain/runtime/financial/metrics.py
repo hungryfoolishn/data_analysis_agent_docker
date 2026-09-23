@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from dataclasses import dataclass
+from typing import Optional
 
 from .models import BalanceSheetStatement, CashFlowStatement, IncomeStatement
 
@@ -24,6 +24,7 @@ class FinancialMetricDefinition:
     growth_of: Optional[str] = None
     tolerance: float = 0.001
     description: str = ""
+    balance_policy: str = "ending_balance"
 
 
 class FinancialMetricRegistry:
@@ -117,33 +118,73 @@ _register_growth("operating_profit_growth", "营业利润增长率", "operating_
 _register_growth("eps_growth", "EPS 增长率", "eps")
 
 
-def _register_ratio(metric_id: str, name: str, category: str, numerator: str, denominator: str, unit: str, source_fields: tuple[str, ...]):
+def _register_ratio(
+    metric_id: str,
+    name: str,
+    category: str,
+    numerator: str,
+    denominator: str,
+    unit: str,
+    source_fields: tuple[str, ...],
+    *,
+    balance_policy: str = "ending_balance",
+    description: str = "",
+):
+    formula = f"{numerator} / {denominator}"
+    if balance_policy == "average_balance":
+        formula = f"{numerator} / average({denominator}_current, {denominator}_previous)"
     _registry.register(FinancialMetricDefinition(
         metric_id=metric_id,
         name=name,
         category=category,
-        formula=f"{numerator} / {denominator}",
+        formula=formula,
         unit=unit,
         source_fields=source_fields,
         calculation_type="ratio",
         numerator=numerator,
         denominator=denominator,
         tolerance=0.001,
-        description=f"{name}。",
+        description=description or f"{name}。",
+        balance_policy=balance_policy,
     ))
 
 
 _register_ratio("gross_margin", "毛利率", "profitability", "gross_profit", "revenue", "%", ("income_statement.gross_profit", "income_statement.revenue"))
 _register_ratio("operating_margin", "营业利润率", "profitability", "operating_profit", "revenue", "%", ("income_statement.operating_profit", "income_statement.revenue"))
 _register_ratio("net_margin", "净利率", "profitability", "net_profit", "revenue", "%", ("income_statement.net_profit", "income_statement.revenue"))
-_register_ratio("roe", "净资产收益率", "profitability", "net_profit", "total_equity", "%", ("income_statement.net_profit", "balance_sheet.total_equity"))
-_register_ratio("roa", "总资产收益率", "profitability", "net_profit", "total_assets", "%", ("income_statement.net_profit", "balance_sheet.total_assets"))
+_register_ratio(
+    "roe", "净资产收益率", "profitability", "net_profit", "total_equity", "%",
+    ("income_statement.net_profit", "balance_sheet.total_equity"),
+    balance_policy="average_balance",
+    description="净资产收益率，使用当期与上期平均股东权益。",
+)
+_register_ratio(
+    "roa", "总资产收益率", "profitability", "net_profit", "total_assets", "%",
+    ("income_statement.net_profit", "balance_sheet.total_assets"),
+    balance_policy="average_balance",
+    description="总资产收益率，使用当期与上期平均总资产。",
+)
 _register_ratio("debt_to_asset", "资产负债率", "solvency", "total_liabilities", "total_assets", "%", ("balance_sheet.total_liabilities", "balance_sheet.total_assets"))
 _register_ratio("current_ratio", "流动比率", "solvency", "current_assets", "current_liabilities", "x", ("balance_sheet.current_assets", "balance_sheet.current_liabilities"))
 _register_ratio("quick_ratio", "速动比率", "solvency", "cash + accounts_receivable", "current_liabilities", "x", ("balance_sheet.cash", "balance_sheet.accounts_receivable", "balance_sheet.current_liabilities"))
-_register_ratio("receivable_turnover", "应收账款周转率", "operating", "revenue", "accounts_receivable", "x", ("income_statement.revenue", "balance_sheet.accounts_receivable"))
-_register_ratio("inventory_turnover", "存货周转率", "operating", "cost_of_revenue", "inventory", "x", ("income_statement.cost_of_revenue", "balance_sheet.inventory"))
-_register_ratio("asset_turnover", "总资产周转率", "operating", "revenue", "total_assets", "x", ("income_statement.revenue", "balance_sheet.total_assets"))
+_register_ratio(
+    "receivable_turnover", "应收账款周转率", "operating", "revenue", "accounts_receivable", "x",
+    ("income_statement.revenue", "balance_sheet.accounts_receivable"),
+    balance_policy="average_balance",
+    description="应收账款周转率，使用当期与上期平均应收账款。",
+)
+_register_ratio(
+    "inventory_turnover", "存货周转率", "operating", "cost_of_revenue", "inventory", "x",
+    ("income_statement.cost_of_revenue", "balance_sheet.inventory"),
+    balance_policy="average_balance",
+    description="存货周转率，使用当期与上期平均存货。",
+)
+_register_ratio(
+    "asset_turnover", "总资产周转率", "operating", "revenue", "total_assets", "x",
+    ("income_statement.revenue", "balance_sheet.total_assets"),
+    balance_policy="average_balance",
+    description="总资产周转率，使用当期与上期平均总资产。",
+)
 _register_ratio("ocf_to_net_income", "经营现金流 / 净利润", "cashflow", "operating_cash_flow", "net_profit", "x", ("cash_flow.operating_cash_flow", "income_statement.net_profit"))
 
 _registry.register(FinancialMetricDefinition(
@@ -201,6 +242,7 @@ def calculate_metric(
     balance: BalanceSheetStatement,
     cash_flow: CashFlowStatement,
     previous_income: IncomeStatement | None = None,
+    previous_balance: BalanceSheetStatement | None = None,
 ) -> tuple[float, dict[str, float]]:
     definition = financial_metric_registry.get(metric_id)
     if definition.calculation_type == "reported":
@@ -217,6 +259,23 @@ def calculate_metric(
         inputs = {
             "operating_cash_flow": cash_flow.operating_cash_flow,
             "capital_expenditure": cash_flow.capital_expenditure,
+        }
+    elif definition.balance_policy == "average_balance":
+        numerator = _ratio_value(definition.numerator or "", income, balance, cash_flow)
+        denominator_field = definition.denominator or ""
+        current_denominator = _statement_value(denominator_field, income, balance, cash_flow)
+        previous_denominator = (
+            _statement_value(denominator_field, income, previous_balance, cash_flow)
+            if previous_balance is not None
+            else current_denominator
+        )
+        average_denominator = (current_denominator + previous_denominator) / 2
+        value = _ratio(numerator, average_denominator)
+        inputs = {
+            "numerator": numerator,
+            "current_denominator": current_denominator,
+            "previous_denominator": previous_denominator,
+            "average_denominator": average_denominator,
         }
     else:
         numerator = _ratio_value(definition.numerator or "", income, balance, cash_flow)

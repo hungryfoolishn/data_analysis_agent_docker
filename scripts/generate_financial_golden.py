@@ -186,12 +186,14 @@ def metric_value(
         period,
         previous_period,
     )
+    previous_balance = service.previous_balance(company.company_id, period)
     value, _ = calculate_metric(
         metric_id,
         income=income,
         balance=balance,
         cash_flow=cash_flow,
         previous_income=previous_income,
+        previous_balance=previous_balance,
     )
     return round(float(value), 6)
 
@@ -215,12 +217,86 @@ def expectation(
     }
 
 
+LOWER_IS_BETTER = {
+    "cost_of_revenue",
+    "total_liabilities",
+    "short_term_debt",
+    "long_term_debt",
+    "current_liabilities",
+    "debt_to_asset",
+    "capital_expenditure",
+}
+
+
+def comparison_expectations(
+    service: FinancialDataService,
+    companies: list[Company],
+    period: str,
+    metric_id: str,
+) -> list[dict]:
+    values = {
+        company.company_name: metric_value(service, company, period, metric_id)
+        for company in companies
+    }
+    higher_is_better = metric_id not in LOWER_IS_BETTER
+    ordered = sorted(
+        values.items(),
+        key=lambda item: item[1],
+        reverse=higher_is_better,
+    )
+    leader_name, leader_value = ordered[0]
+    laggard_name, laggard_value = ordered[-1]
+    difference = leader_value - laggard_value
+    relative_difference = (
+        difference / abs(laggard_value) if laggard_value else 0.0
+    )
+    definition = financial_metric_registry.get(metric_id)
+    group = f"{leader_name}|{laggard_name}"
+    return [
+        {
+            "metric": f"peer_difference:{metric_id}",
+            "value": round(difference, 6),
+            "tolerance": 0.0005,
+            "period": period,
+            "dimension": "peer",
+            "group": group,
+            "filters": {
+                "leader": leader_name,
+                "laggard": laggard_name,
+            },
+            "unit": definition.unit,
+        },
+        {
+            "metric": f"peer_relative_difference:{metric_id}",
+            "value": round(relative_difference, 6),
+            "tolerance": 0.0005,
+            "period": period,
+            "dimension": "peer",
+            "group": group,
+            "filters": {
+                "leader": leader_name,
+                "laggard": laggard_name,
+            },
+            "unit": "ratio",
+        },
+    ]
+
+
 def report_tokens(case_companies: list[Company], metric_ids: list[str], period: str) -> list[str]:
-    tokens = ["核心指标", "计算过程", "不构成投资建议"]
+    tokens = ["核心指标", "计算过程", "核心发现", "证据", "不构成投资建议"]
     tokens.extend(company.company_name for company in case_companies)
     tokens.append(period)
     tokens.extend(financial_metric_registry.get(metric_id).name for metric_id in metric_ids)
     return list(dict.fromkeys(tokens))
+
+
+def peer_report_tokens(case_companies: list[Company], metric_ids: list[str], period: str) -> list[str]:
+    return list(dict.fromkeys([
+        *report_tokens(case_companies, metric_ids, period),
+        "同业比较",
+        "差异",
+        "相对差异",
+    ]))
 
 
 def make_case(
@@ -250,13 +326,23 @@ def make_case(
             expectation(service, company, period, metric_id)
             for company in companies
             for metric_id in metric_ids
-        ],
+        ] + (
+            [
+                item
+                for metric_id in metric_ids
+                for item in comparison_expectations(service, companies, period, metric_id)
+            ] if category == "peer" else []
+        ),
         "required_evidence": True,
         "minimum_verified_evidence": 1,
         "required_sql": False,
         "required_finding": True,
         "required_report": True,
-        "report_must_contain": report_tokens(companies, metric_ids, period),
+        "report_must_contain": (
+            peer_report_tokens(companies, metric_ids, period)
+            if category == "peer"
+            else report_tokens(companies, metric_ids, period)
+        ),
         "report_must_not_contain": [],
         "tags": ["financial", "runtime-v9", category, *tags],
         "critical": critical,

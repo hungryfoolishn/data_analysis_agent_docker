@@ -93,12 +93,15 @@ class FinancialDataSource(BaseModel):
 class FinancialCalculation(BaseModel):
     calculation_id: str = Field(default_factory=lambda: _financial_id("calc"))
     metric_id: str
+    company_id: str = ""
     company_name: str = ""
     period: str = ""
     formula: str
     inputs: dict[str, float] = Field(default_factory=dict)
     result: float
     unit: str
+    source_ids: list[str] = Field(default_factory=list)
+    source_fields: list[str] = Field(default_factory=list)
 
 
 class FinancialQuery(BaseModel):
@@ -111,6 +114,7 @@ class FinancialQuery(BaseModel):
 
 
 class FinancialObservation(BaseModel):
+    company_id: str
     company_name: str
     stock_code: str
     period: str
@@ -121,6 +125,81 @@ class FinancialObservation(BaseModel):
     formula: str
     fact: str
     calculation: FinancialCalculation
+    source_ids: list[str] = Field(default_factory=list)
+    source_fields: list[str] = Field(default_factory=list)
+    source_period: str
+    balance_policy: str = "ending_balance"
+
+
+class FinancialVerification(BaseModel):
+    verification_id: str = Field(default_factory=lambda: _financial_id("verify"))
+    metric_id: str
+    company_id: str
+    company_name: str
+    period: str
+    status: str = "passed"
+    passed: bool = True
+    method: str = "deterministic_metric_recalculation"
+    expected_value: float
+    actual_value: float
+    message: str = ""
+    calculation_id: str
+
+
+class FinancialEvidence(BaseModel):
+    evidence_id: str = Field(default_factory=lambda: _financial_id("fevidence"))
+    metric_id: str
+    metric_name: str
+    company_id: str
+    company_name: str
+    stock_code: str
+    period: str
+    value: float
+    unit: str
+    formula: str
+    fact: str
+    source_ids: list[str] = Field(default_factory=list)
+    source_fields: list[str] = Field(default_factory=list)
+    calculation_id: str
+    verification_result_id: str
+    verification_status: str = "verified"
+
+
+class FinancialComparisonEntity(BaseModel):
+    company_name: str
+    value: float
+    rank: int
+
+
+class FinancialComparison(BaseModel):
+    comparison_id: str = Field(default_factory=lambda: _financial_id("comparison"))
+    metric_id: str
+    metric_name: str
+    period: str
+    unit: str
+    higher_is_better: bool = True
+    entities: list[FinancialComparisonEntity] = Field(default_factory=list)
+    leader_name: str
+    leader_value: float
+    laggard_name: str
+    laggard_value: float
+    difference: float
+    relative_difference: float
+    statement: str
+
+
+class FinancialFinding(BaseModel):
+    finding_id: str = Field(default_factory=lambda: _financial_id("finding"))
+    finding_type: str
+    statement: str
+    company_names: list[str] = Field(default_factory=list)
+    periods: list[str] = Field(default_factory=list)
+    metric_id: Optional[str] = None
+    metric_name: Optional[str] = None
+    evidence_ids: list[str] = Field(default_factory=list)
+    calculation_ids: list[str] = Field(default_factory=list)
+    risk_signal_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class FinancialRiskSignal(BaseModel):
@@ -131,6 +210,8 @@ class FinancialRiskSignal(BaseModel):
     message: str
     metric_id: str
     value: float
+    unit: str = "x"
+    display_value: str = ""
 
 
 class FinancialAnalysisResult(BaseModel):
@@ -139,6 +220,10 @@ class FinancialAnalysisResult(BaseModel):
     metrics: list[str] = Field(default_factory=list)
     observations: list[FinancialObservation] = Field(default_factory=list)
     calculations: list[FinancialCalculation] = Field(default_factory=list)
+    verifications: list[FinancialVerification] = Field(default_factory=list)
+    evidence: list[FinancialEvidence] = Field(default_factory=list)
+    comparisons: list[FinancialComparison] = Field(default_factory=list)
+    findings: list[FinancialFinding] = Field(default_factory=list)
     risk_signals: list[FinancialRiskSignal] = Field(default_factory=list)
     summary: str = ""
     report_markdown: str = ""

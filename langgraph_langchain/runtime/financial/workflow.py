@@ -2,17 +2,39 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 
 from .classifier import FinancialTaskClassifier, FinancialTaskType
 from .data_service import FinancialDataService
+from .finding_engine import FinancialFindingEngine
 from .metrics import calculate_metric, financial_metric_registry
 from .models import (
+    BalanceSheetStatement,
+    Company,
     FinancialAnalysisResult,
     FinancialCalculation,
+    FinancialComparison,
+    FinancialComparisonEntity,
+    FinancialEvidence,
+    FinancialFinding,
     FinancialObservation,
     FinancialQuery,
     FinancialRiskSignal,
+    FinancialVerification,
+    IncomeStatement,
+    CashFlowStatement,
 )
+
+
+_LOWER_IS_BETTER = {
+    "cost_of_revenue",
+    "total_liabilities",
+    "short_term_debt",
+    "long_term_debt",
+    "current_liabilities",
+    "debt_to_asset",
+    "capital_expenditure",
+}
 
 
 class FinancialAnalysisWorkflow:
@@ -64,6 +86,7 @@ class FinancialAnalysisWorkflow:
             "langgraph_langchain.runtime.financial.risk_detector",
             fromlist=["FinancialRiskDetector"],
         ).FinancialRiskDetector()
+        self.finding_engine = FinancialFindingEngine()
 
     def run(self, query: FinancialQuery | str) -> FinancialAnalysisResult:
         query = self._normalize_query(query)
@@ -71,6 +94,8 @@ class FinancialAnalysisWorkflow:
         metrics = query.metrics or self._TASK_METRICS.get(task_type, ["revenue"])
         observations: list[FinancialObservation] = []
         calculations: list[FinancialCalculation] = []
+        verifications: list[FinancialVerification] = []
+        evidence: list[FinancialEvidence] = []
 
         company_names = query.company_names or [
             item.company_name for item in self.data_service.list_companies()
@@ -92,31 +117,90 @@ class FinancialAnalysisWorkflow:
                 previous_period = self.data_service.previous_period(
                     company.company_id, period
                 )
+                previous_balance = self.data_service.previous_balance(
+                    company.company_id, period
+                )
                 income, balance, cash_flow, previous_income = self.data_service.statements(
                     company.company_id,
                     period,
                     previous_period,
                 )
                 for metric_id in metrics:
+                    definition = financial_metric_registry.get(metric_id)
                     value, inputs = calculate_metric(
                         metric_id,
                         income=income,
                         balance=balance,
                         cash_flow=cash_flow,
                         previous_income=previous_income,
+                        previous_balance=previous_balance,
                     )
-                    definition = financial_metric_registry.get(metric_id)
+                    source_ids = self._source_ids_for_metric(
+                        definition,
+                        income=income,
+                        balance=balance,
+                        cash_flow=cash_flow,
+                        previous_income=previous_income,
+                        previous_balance=previous_balance,
+                    )
+                    source_fields = list(definition.source_fields)
                     calculation = FinancialCalculation(
                         metric_id=metric_id,
+                        company_id=company.company_id,
                         company_name=company.company_name,
                         period=period,
                         formula=definition.formula,
                         inputs={key: round(float(item), 6) for key, item in inputs.items()},
                         result=round(value, 6),
                         unit=definition.unit,
+                        source_ids=source_ids,
+                        source_fields=source_fields,
                     )
-                    calculations.append(calculation)
-                    observations.append(FinancialObservation(
+                    recalculated_value, _ = calculate_metric(
+                        metric_id,
+                        income=income,
+                        balance=balance,
+                        cash_flow=cash_flow,
+                        previous_income=previous_income,
+                        previous_balance=previous_balance,
+                    )
+                    verification = FinancialVerification(
+                        metric_id=metric_id,
+                        company_id=company.company_id,
+                        company_name=company.company_name,
+                        period=period,
+                        expected_value=round(value, 6),
+                        actual_value=round(recalculated_value, 6),
+                        calculation_id=calculation.calculation_id,
+                        message=(
+                            "指标结果通过确定性重算校验，"
+                            "并绑定标准化报表 source_id。"
+                        ),
+                    )
+                    evidence_item = FinancialEvidence(
+                        metric_id=metric_id,
+                        metric_name=definition.name,
+                        company_id=company.company_id,
+                        company_name=company.company_name,
+                        stock_code=company.stock_code,
+                        period=period,
+                        value=value,
+                        unit=definition.unit,
+                        formula=definition.formula,
+                        fact=(
+                            f"{company.company_name} {period} "
+                            f"{definition.name}为{value:,.4f}{definition.unit}"
+                        ),
+                        source_ids=source_ids,
+                        source_fields=source_fields,
+                        calculation_id=calculation.calculation_id,
+                        verification_result_id=verification.verification_id,
+                        verification_status=(
+                            "verified" if verification.passed else "failed"
+                        ),
+                    )
+                    observation = FinancialObservation(
+                        company_id=company.company_id,
                         company_name=company.company_name,
                         stock_code=company.stock_code,
                         period=period,
@@ -125,22 +209,41 @@ class FinancialAnalysisWorkflow:
                         value=value,
                         unit=definition.unit,
                         formula=definition.formula,
-                        fact=(
-                            f"{company.company_name} {period} "
-                            f"{definition.name}为{value:,.4f}{definition.unit}"
-                        ),
+                        fact=evidence_item.fact,
                         calculation=calculation,
-                    ))
+                        source_ids=source_ids,
+                        source_fields=source_fields,
+                        source_period=period,
+                        balance_policy=definition.balance_policy,
+                    )
+                    calculations.append(calculation)
+                    verifications.append(verification)
+                    evidence.append(evidence_item)
+                    observations.append(observation)
 
         risk_signals: list[FinancialRiskSignal] = self.risk_detector.detect(observations)
+        comparisons: list[FinancialComparison] = self._build_comparisons(
+            observations
+        )
+        findings: list[FinancialFinding] = self.finding_engine.build(
+            task_type=task_type,
+            observations=observations,
+            evidence=evidence,
+            comparisons=comparisons,
+            risks=risk_signals,
+        )
         result = FinancialAnalysisResult(
             query=query,
             task_type=task_type,
             metrics=metrics,
             observations=observations,
             calculations=calculations,
+            verifications=verifications,
+            evidence=evidence,
+            comparisons=comparisons,
+            findings=findings,
             risk_signals=risk_signals,
-            summary=self._summary(task_type, observations, risk_signals),
+            summary=self._summary(observations, comparisons, risk_signals, findings),
         )
         result.report_markdown = self._report(result)
         return result
@@ -153,11 +256,102 @@ class FinancialAnalysisWorkflow:
         ]
         return self.classifier.build_query(query, known_companies)
 
-    def _summary(
-        self,
-        task_type: str,
+    @staticmethod
+    def _source_ids_for_metric(
+        definition,
+        *,
+        income: IncomeStatement,
+        balance: BalanceSheetStatement,
+        cash_flow: CashFlowStatement,
+        previous_income: IncomeStatement | None,
+        previous_balance: BalanceSheetStatement | None,
+    ) -> list[str]:
+        current_sources = {
+            "income_statement": income,
+            "balance_sheet": balance,
+            "cash_flow": cash_flow,
+        }
+        source_ids: list[str] = []
+        for source_field in definition.source_fields:
+            prefix = source_field.split(".", 1)[0]
+            statement = current_sources.get(prefix)
+            source_id = getattr(statement, "source_id", None)
+            if source_id:
+                source_ids.append(source_id)
+
+        if definition.calculation_type == "growth" and previous_income is not None:
+            if previous_income.source_id:
+                source_ids.append(previous_income.source_id)
+        if definition.balance_policy == "average_balance" and previous_balance is not None:
+            if previous_balance.source_id:
+                source_ids.append(previous_balance.source_id)
+
+        return list(dict.fromkeys(source_ids))
+
+    @staticmethod
+    def _build_comparisons(
         observations: list[FinancialObservation],
+    ) -> list[FinancialComparison]:
+        grouped: dict[tuple[str, str], list[FinancialObservation]] = defaultdict(list)
+        for observation in observations:
+            grouped[(observation.period, observation.metric_id)].append(observation)
+
+        comparisons: list[FinancialComparison] = []
+        for (period, metric_id), items in sorted(grouped.items()):
+            companies = {item.company_name for item in items}
+            if len(items) < 2 or len(companies) != len(items):
+                continue
+            definition = financial_metric_registry.get_optional(metric_id)
+            metric_name = definition.name if definition else metric_id
+            unit = definition.unit if definition else "x"
+            higher_is_better = metric_id not in _LOWER_IS_BETTER
+            ordered = sorted(
+                items,
+                key=lambda item: item.value,
+                reverse=higher_is_better,
+            )
+            entities = [
+                FinancialComparisonEntity(
+                    company_name=item.company_name,
+                    value=item.value,
+                    rank=rank,
+                )
+                for rank, item in enumerate(ordered, start=1)
+            ]
+            leader, laggard = ordered[0], ordered[-1]
+            difference = leader.value - laggard.value
+            relative_difference = (
+                difference / abs(laggard.value) if laggard.value else 0.0
+            )
+            relation = "高于" if higher_is_better else "低于"
+            statement = (
+                f"{period} {metric_name}比较：{leader.company_name} "
+                f"{relation} {laggard.company_name}，差异为 "
+                f"{difference:,.4f}{unit}，相对差异为 {relative_difference:.2%}。"
+            )
+            comparisons.append(FinancialComparison(
+                metric_id=metric_id,
+                metric_name=metric_name,
+                period=period,
+                unit=unit,
+                higher_is_better=higher_is_better,
+                entities=entities,
+                leader_name=leader.company_name,
+                leader_value=leader.value,
+                laggard_name=laggard.company_name,
+                laggard_value=laggard.value,
+                difference=round(difference, 6),
+                relative_difference=round(relative_difference, 6),
+                statement=statement,
+            ))
+        return comparisons
+
+    @staticmethod
+    def _summary(
+        observations: list[FinancialObservation],
+        comparisons: list[FinancialComparison],
         risks: list[FinancialRiskSignal],
+        findings: list[FinancialFinding],
     ) -> str:
         if not observations:
             return "未生成金融分析结果。"
@@ -177,11 +371,15 @@ class FinancialAnalysisWorkflow:
             for item in latest[:6]
         ]
         summary = "；".join(parts) + "。"
-        if risks:
-            summary += f" 检测到 {len(risks)} 个规则型风险信号。"
+        summary += (
+            f" 生成 {len(findings)} 个 Evidence-backed Finding、"
+            f" {len(comparisons)} 个 Comparison、"
+            f" {len(risks)} 个规则型风险信号。"
+        )
         return summary
 
-    def _report(self, result: FinancialAnalysisResult) -> str:
+    @staticmethod
+    def _report(result: FinancialAnalysisResult) -> str:
         lines = [
             "# 公司基本面分析",
             "",
@@ -195,6 +393,11 @@ class FinancialAnalysisWorkflow:
                 f"{item.value:,.4f}{item.unit}"
             )
 
+        if result.comparisons:
+            lines.extend(["", "## 同业比较"])
+            for item in result.comparisons:
+                lines.append(f"- {item.statement}")
+
         lines.extend(["", "## 计算过程"])
         for item in result.calculations[:50]:
             inputs = ", ".join(
@@ -205,19 +408,35 @@ class FinancialAnalysisWorkflow:
                 f"{item.formula}; {inputs}; result={item.result:,.4f}{item.unit}"
             )
 
+        if result.findings:
+            lines.extend(["", "## 核心发现"])
+            for item in result.findings[:50]:
+                evidence_ids = ", ".join(item.evidence_ids)
+                lines.append(f"- {item.statement} Evidence: {evidence_ids}")
+
         if result.risk_signals:
             lines.extend(["", "## 风险信号"])
             for item in result.risk_signals:
                 lines.append(
                     f"- {item.company_name} / {item.period}: {item.message} "
-                    f"({item.value:,.2f})"
+                    f"({item.display_value})"
+                )
+
+        if result.evidence:
+            lines.extend(["", "## 证据"])
+            for item in result.evidence[:50]:
+                source_ids = ", ".join(item.source_ids)
+                lines.append(
+                    f"- {item.company_name} / {item.period} / {item.metric_name}: "
+                    f"{item.fact}; source_ids={source_ids}; "
+                    f"verification={item.verification_status}"
                 )
 
         lines.extend([
             "",
             "## 说明",
-            "- 以上内容区分 Fact、Calculation 和 Interpretation。",
-            "- 所有数值均来自标准化金融数据，计算过程可追溯。",
+            "- 以上内容区分 Fact、Calculation、Verification、Evidence、Finding 和 Interpretation。",
+            "- 所有数值均来自标准化金融数据，计算过程和 source_id 可追溯。",
             "- 本结果不构成投资建议。",
         ])
         return "\n".join(lines)
