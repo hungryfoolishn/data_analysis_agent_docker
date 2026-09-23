@@ -1420,7 +1420,9 @@ def _bind_runtime_execution_step(
         artifact = (getattr(runtime, "artifacts", {}) or {}).get(artifact_id)
         if artifact is not None and not artifact.step_id:
             artifact.step_id = step_id
-    runtime._persist()
+    persist = getattr(runtime, "_persist", None) or getattr(runtime, "persist", None)
+    if callable(persist):
+        persist()
 
 
 def _set_runtime_run_status(

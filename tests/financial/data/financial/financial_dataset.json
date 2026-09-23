@@ -1,0 +1,21 @@
+{
+  "dataset": "runtime_v9_financial_golden",
+  "version": "1.0.0",
+  "kind": "synthetic_regression_fixture",
+  "source_note": "确定生成的离线回归数据，不是真实上市公司财务数据。",
+  "files": [
+    "companies.csv",
+    "income_statement.csv",
+    "balance_sheet.csv",
+    "cash_flow.csv"
+  ],
+  "company_count": 20,
+  "periods": [
+    "2021",
+    "2022",
+    "2023",
+    "2024",
+    "2025"
+  ],
+  "industry_count": 5
+}

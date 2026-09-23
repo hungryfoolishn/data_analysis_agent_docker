@@ -135,42 +135,58 @@ class StabilityMetrics:
         return self.metrics["sessions"].get(session_id)
 
     def get_aggregated_metrics(self) -> Dict[str, Any]:
-        """Get aggregated metrics across all sessions."""
-        agg = self.metrics["aggregated"]
+        """Get aggregated metrics derived from the normalized session store.
 
-        # Calculate derived metrics
-        total = agg["total_sessions"]
-        if total > 0:
-            success_rate = agg["successful_sessions"] / total
-            failure_rate = agg["failed_sessions"] / total
-            cancellation_rate = agg["cancelled_sessions"] / total
-            avg_steps = agg["total_steps"] / total
-            avg_duration = agg["total_duration_seconds"] / total
-        else:
-            success_rate = failure_rate = cancellation_rate = 0
-            avg_steps = avg_duration = 0
+        Legacy files may contain double-counted aggregate counters after a
+        process restart or session replay.  The session records are the source
+        of truth, so derived metrics are always rebuilt from them.
+        """
+        sessions = list(self.metrics["sessions"].values())
+        total = len(sessions)
+        successful_sessions = sum(item.get("status") == "success" for item in sessions)
+        failed_sessions = sum(item.get("status") == "failed" for item in sessions)
+        cancelled_sessions = sum(item.get("status") == "cancelled" for item in sessions)
 
-        recovery_attempts = agg["recovery_attempts"]
-        if recovery_attempts > 0:
-            recovery_success_rate = agg["successful_recoveries"] / recovery_attempts
-        else:
-            recovery_success_rate = 0
+        success_rate = successful_sessions / total if total else 0
+        failure_rate = failed_sessions / total if total else 0
+        cancellation_rate = cancelled_sessions / total if total else 0
+        avg_steps = sum(int(item.get("steps") or 0) for item in sessions) / total if total else 0
+        avg_duration = (
+            sum(float(item.get("duration_seconds") or 0) for item in sessions) / total
+            if total
+            else 0
+        )
+
+        failure_counts_by_code: dict[str, int] = {}
+        for item in sessions:
+            if item.get("status") == "failed" and item.get("failure_code"):
+                code = str(item["failure_code"])
+                failure_counts_by_code[code] = failure_counts_by_code.get(code, 0) + 1
+
+        recovery_attempts = sum(int(item.get("recovery_attempts") or 0) for item in sessions)
+        successful_recoveries = sum(
+            1
+            for item in sessions
+            if item.get("status") == "success"
+            and int(item.get("recovery_attempts") or 0) > 0
+        )
+        recovery_success_rate = successful_recoveries / recovery_attempts if recovery_attempts else 0
 
         return {
             "total_sessions": total,
-            "successful_sessions": agg["successful_sessions"],
-            "failed_sessions": agg["failed_sessions"],
-            "cancelled_sessions": agg["cancelled_sessions"],
+            "successful_sessions": successful_sessions,
+            "failed_sessions": failed_sessions,
+            "cancelled_sessions": cancelled_sessions,
             "success_rate": round(success_rate, 3),
             "failure_rate": round(failure_rate, 3),
             "cancellation_rate": round(cancellation_rate, 3),
             "avg_steps_per_session": round(avg_steps, 1),
             "avg_duration_seconds": round(avg_duration, 1),
-            "failure_counts_by_code": agg["failure_counts_by_code"],
+            "failure_counts_by_code": failure_counts_by_code,
             "recovery_attempts": recovery_attempts,
-            "successful_recoveries": agg["successful_recoveries"],
+            "successful_recoveries": successful_recoveries,
             "recovery_success_rate": round(recovery_success_rate, 3),
-            "last_updated": self.metrics["last_updated"],
+            "last_updated": self.metrics.get("last_updated"),
         }
 
     def get_recent_sessions(self, limit: int = 10) -> List[Dict[str, Any]]:

@@ -9,21 +9,26 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import requests
 import json
+
 import pytest
+from fastapi.testclient import TestClient
+
+from langgraph_langchain.api_server_langgraph import app
 
 
 @pytest.fixture(scope="module")
-def data():
+def client():
+    """Use an in-process API client so tests do not depend on a live server."""
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture(scope="module")
+def data(client):
     """Fixture to fetch dashboard data once for all tests."""
-    try:
-        response = requests.get("http://localhost:8888/metrics/dashboard", timeout=5)
-        if response.status_code == 200:
-            return response.json()
-    except requests.exceptions.ConnectionError:
-        pass
-    return None
+    response = client.get("/metrics/dashboard")
+    return response.json() if response.status_code == 200 else None
 
 
 def test_dashboard_endpoint(data):
@@ -112,7 +117,7 @@ def test_metrics_values(data):
     print("✅ 计数值为非负数")
 
 
-def test_individual_metrics_endpoints():
+def test_individual_metrics_endpoints(client):
     """测试各个独立的指标端点"""
     print("\n测试 4: 独立指标端点")
 
@@ -124,36 +129,23 @@ def test_individual_metrics_endpoints():
     ]
 
     for endpoint in endpoints:
-        try:
-            response = requests.get(f"http://localhost:8888{endpoint}", timeout=5)
-            assert response.status_code == 200, f"{endpoint} 返回状态码 {response.status_code}"
-            data = response.json()
-            assert data is not None, f"{endpoint} 返回空数据"
-            print(f"✅ {endpoint} 正常")
-        except requests.exceptions.ConnectionError:
-            print(f"⚠️  API 服务器未运行，跳过 {endpoint}")
-            break
-        except Exception as e:
-            print(f"❌ {endpoint} 失败: {e}")
+        response = client.get(endpoint)
+        assert response.status_code == 200, f"{endpoint} 返回状态码 {response.status_code}"
+        payload = response.json()
+        assert payload is not None, f"{endpoint} 返回空数据"
+        print(f"✅ {endpoint} 正常")
 
 
-def test_dashboard_display_format():
+def test_dashboard_display_format(client):
     """测试仪表板显示格式"""
     print("\n测试 5: 仪表板显示格式")
 
-    try:
-        response = requests.get("http://localhost:8888/metrics/dashboard", timeout=5)
-        data = response.json()
-
-        # 打印示例数据（用于前端开发参考）
-        print("\n📊 仪表板数据示例:")
-        print(json.dumps(data, indent=2, ensure_ascii=False))
-
-        print("\n✅ 数据格式适合前端展示")
-    except requests.exceptions.ConnectionError:
-        print("⚠️  API 服务器未运行，跳过测试")
-    except Exception as e:
-        print(f"❌ 测试失败: {e}")
+    response = client.get("/metrics/dashboard")
+    assert response.status_code == 200
+    data = response.json()
+    print("\n📊 仪表板数据示例:")
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+    print("\n✅ 数据格式适合前端展示")
 
 
 def main():

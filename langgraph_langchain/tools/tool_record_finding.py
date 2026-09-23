@@ -95,10 +95,15 @@ def _resolve_evidence_lineage(
     runtime = getattr(session, "analysis_runtime", None)
     aliases = _available_artifact_aliases(session)
     artifacts = []
+    unresolved_artifacts = []
     seen_artifacts = set()
     for reference in source_artifacts:
         artifact = _resolve_artifact_reference(str(reference), aliases)
         artifact_id = artifact.get("artifact_id") if artifact else None
+        if artifact is None:
+            if str(reference) not in unresolved_artifacts:
+                unresolved_artifacts.append(str(reference))
+            continue
         if artifact_id and artifact_id not in seen_artifacts:
             seen_artifacts.add(artifact_id)
             artifacts.append(artifact)
@@ -155,6 +160,7 @@ def _resolve_evidence_lineage(
         "aliases": aliases,
         "artifact_ids": [item["artifact_id"] for item in artifacts],
         "resolved_artifact_names": [item.get("name") or item.get("artifact_id") for item in artifacts],
+        "unresolved_artifacts": unresolved_artifacts,
         "execution_ids": execution_ids,
         "step_ids": step_ids,
         "asset_ids": asset_ids,
@@ -260,6 +266,21 @@ def _factory(session):
             source_artifacts=source_artifacts or [],
             source_execution_ids=source_execution_ids or [],
         )
+        unresolved_artifacts = lineage.get("unresolved_artifacts") or []
+        if unresolved_artifacts:
+            message = (
+                "Unknown artifact references: "
+                + ", ".join(sorted(unresolved_artifacts))
+                + ". Ensure artifact is created before referencing it."
+            )
+            recorder.fail(message, error_type="ArtifactValidationError")
+            if trace_ctx:
+                trace_ctx.end_current_span(
+                    status="failed",
+                    error_message=message,
+                )
+            return f"[ERROR] {message}"
+
         try:
             evidence_item = EvidenceItem(
                 evidence_text=evidence_text,

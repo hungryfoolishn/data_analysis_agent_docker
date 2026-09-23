@@ -1,0 +1,4013 @@
+{
+  "version": "1.0.0",
+  "cases": [
+    {
+      "case_id": "financial_basic_001",
+      "name": "basic: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年公司概况如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "COMPANY_OVERVIEW",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2937441024.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit",
+          "value": 1375850376.59,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "营业收入",
+        "净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "basic",
+        "overview"
+      ],
+      "critical": true
+    },
+    {
+      "case_id": "financial_basic_002",
+      "name": "basic: 白酒样本02 2025",
+      "question": "白酒样本02 2025 年公司概况如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "COMPANY_OVERVIEW",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2761843185.92,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit",
+          "value": 1301303177.6,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "CNY"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "营业收入",
+        "净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "basic",
+        "overview"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_basic_003",
+      "name": "basic: 白酒样本03 2025",
+      "question": "白酒样本03 2025 年公司概况如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "COMPANY_OVERVIEW",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2890335571.2,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit",
+          "value": 1369903447.33,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "CNY"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "营业收入",
+        "净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "basic",
+        "overview"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_basic_004",
+      "name": "basic: 白酒样本04 2025",
+      "question": "白酒样本04 2025 年公司概况如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "COMPANY_OVERVIEW",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 3264387021.46,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit",
+          "value": 1528986650.66,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "CNY"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本04",
+        "2025",
+        "营业收入",
+        "净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "basic",
+        "overview"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_basic_005",
+      "name": "basic: 家电样本01 2025",
+      "question": "家电样本01 2025 年公司概况如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "COMPANY_OVERVIEW",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 3759924510.72,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit",
+          "value": 597512163.55,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "CNY"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本01",
+        "2025",
+        "营业收入",
+        "净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "basic",
+        "overview"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_trend_001",
+      "name": "trend: 白酒样本01 2025",
+      "question": "2021 年至 2025 年 白酒样本01 的经营趋势变化如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "FINANCIAL_TREND",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "trend",
+        "trend"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_trend_002",
+      "name": "trend: 白酒样本02 2025",
+      "question": "2021 年至 2025 年 白酒样本02 的经营趋势变化如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "FINANCIAL_TREND",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "trend",
+        "trend"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_trend_003",
+      "name": "trend: 白酒样本03 2025",
+      "question": "2021 年至 2025 年 白酒样本03 的经营趋势变化如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "FINANCIAL_TREND",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "trend",
+        "trend"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_trend_004",
+      "name": "trend: 白酒样本04 2025",
+      "question": "2021 年至 2025 年 白酒样本04 的经营趋势变化如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "FINANCIAL_TREND",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本04",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "trend",
+        "trend"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_trend_005",
+      "name": "trend: 家电样本01 2025",
+      "question": "2021 年至 2025 年 家电样本01 的经营趋势变化如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "FINANCIAL_TREND",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本01",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "trend",
+        "trend"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_trend_006",
+      "name": "trend: 家电样本02 2025",
+      "question": "2021 年至 2025 年 家电样本02 的经营趋势变化如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "FINANCIAL_TREND",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本02",
+          "filters": {
+            "company": "家电样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本02",
+          "filters": {
+            "company": "家电样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本02",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "trend",
+        "trend"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_trend_007",
+      "name": "trend: 家电样本03 2025",
+      "question": "2021 年至 2025 年 家电样本03 的经营趋势变化如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "FINANCIAL_TREND",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本03",
+          "filters": {
+            "company": "家电样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本03",
+          "filters": {
+            "company": "家电样本03"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本03",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "trend",
+        "trend"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_trend_008",
+      "name": "trend: 家电样本04 2025",
+      "question": "2021 年至 2025 年 家电样本04 的经营趋势变化如何？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "FINANCIAL_TREND",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本04",
+          "filters": {
+            "company": "家电样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本04",
+          "filters": {
+            "company": "家电样本04"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本04",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "trend",
+        "trend"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_revenue_001",
+      "name": "revenue: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年营业收入分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "REVENUE_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2937441024.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "营业收入",
+        "营业收入增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "revenue",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_revenue_002",
+      "name": "revenue: 白酒样本02 2025",
+      "question": "白酒样本02 2025 年营业收入分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "REVENUE_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2761843185.92,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "营业收入",
+        "营业收入增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "revenue",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_revenue_003",
+      "name": "revenue: 白酒样本03 2025",
+      "question": "白酒样本03 2025 年营业收入分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "REVENUE_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2890335571.2,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "营业收入",
+        "营业收入增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "revenue",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_revenue_004",
+      "name": "revenue: 白酒样本04 2025",
+      "question": "白酒样本04 2025 年营业收入分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "REVENUE_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 3264387021.46,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本04",
+        "2025",
+        "营业收入",
+        "营业收入增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "revenue",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_revenue_005",
+      "name": "revenue: 家电样本01 2025",
+      "question": "家电样本01 2025 年营业收入分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "REVENUE_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 3759924510.72,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本01",
+        "2025",
+        "营业收入",
+        "营业收入增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "revenue",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profit_001",
+      "name": "profit: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年净利润分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFIT_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "net_profit",
+          "value": 1375850376.59,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "净利润",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profit",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profit_002",
+      "name": "profit: 白酒样本02 2025",
+      "question": "白酒样本02 2025 年净利润分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFIT_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "net_profit",
+          "value": 1301303177.6,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "净利润",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profit",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profit_003",
+      "name": "profit: 白酒样本03 2025",
+      "question": "白酒样本03 2025 年净利润分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFIT_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "net_profit",
+          "value": 1369903447.33,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "净利润",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profit",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profit_004",
+      "name": "profit: 白酒样本04 2025",
+      "question": "白酒样本04 2025 年净利润分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFIT_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "net_profit",
+          "value": 1528986650.66,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本04",
+        "2025",
+        "净利润",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profit",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profit_005",
+      "name": "profit: 家电样本01 2025",
+      "question": "家电样本01 2025 年净利润分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFIT_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "net_profit",
+          "value": 597512163.55,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本01",
+        "2025",
+        "净利润",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profit",
+        "income"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profitability_001",
+      "name": "profitability: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年盈利能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFITABILITY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "gross_margin",
+          "value": 84.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "operating_margin",
+          "value": 57.12,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 46.8384,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "roe",
+          "value": 28.013397,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "毛利率",
+        "营业利润率",
+        "净利率",
+        "净资产收益率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profitability",
+        "profitability"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profitability_002",
+      "name": "profitability: 白酒样本02 2025",
+      "question": "白酒样本02 2025 年盈利能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFITABILITY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "gross_margin",
+          "value": 84.5,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "operating_margin",
+          "value": 57.46,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 47.1172,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "roe",
+          "value": 28.747529,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "毛利率",
+        "营业利润率",
+        "净利率",
+        "净资产收益率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profitability",
+        "profitability"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profitability_003",
+      "name": "profitability: 白酒样本03 2025",
+      "question": "白酒样本03 2025 年盈利能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFITABILITY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "gross_margin",
+          "value": 85.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "operating_margin",
+          "value": 57.8,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 47.396,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "roe",
+          "value": 29.511831,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "毛利率",
+        "营业利润率",
+        "净利率",
+        "净资产收益率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profitability",
+        "profitability"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profitability_004",
+      "name": "profitability: 白酒样本04 2025",
+      "question": "白酒样本04 2025 年盈利能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFITABILITY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "gross_margin",
+          "value": 84.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "operating_margin",
+          "value": 57.12,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 46.8384,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "roe",
+          "value": 29.776478,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本04",
+        "2025",
+        "毛利率",
+        "营业利润率",
+        "净利率",
+        "净资产收益率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profitability",
+        "profitability"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_profitability_005",
+      "name": "profitability: 家电样本01 2025",
+      "question": "家电样本01 2025 年盈利能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PROFITABILITY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "gross_margin",
+          "value": 28.5,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "operating_margin",
+          "value": 19.38,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 15.8916,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "roe",
+          "value": 17.198701,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本01",
+        "2025",
+        "毛利率",
+        "营业利润率",
+        "净利率",
+        "净资产收益率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "profitability",
+        "profitability"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_cashflow_001",
+      "name": "cashflow: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年现金流分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "CASHFLOW_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "operating_cash_flow",
+          "value": 577857158.17,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "free_cash_flow",
+          "value": 55034015.07,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 0.42,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "经营现金流",
+        "自由现金流",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "cashflow",
+        "cashflow"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_cashflow_002",
+      "name": "cashflow: 白酒样本02 2025",
+      "question": "白酒样本02 2025 年现金流分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "CASHFLOW_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "operating_cash_flow",
+          "value": 1496498654.24,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "free_cash_flow",
+          "value": 1002003446.75,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 1.15,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "经营现金流",
+        "自由现金流",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "cashflow",
+        "cashflow"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_cashflow_003",
+      "name": "cashflow: 白酒样本03 2025",
+      "question": "白酒样本03 2025 年现金流分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "CASHFLOW_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "operating_cash_flow",
+          "value": 1575388964.42,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "free_cash_flow",
+          "value": 1054825654.44,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 1.15,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "经营现金流",
+        "自由现金流",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "cashflow",
+        "cashflow"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_cashflow_004",
+      "name": "cashflow: 白酒样本04 2025",
+      "question": "白酒样本04 2025 年现金流分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "CASHFLOW_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "operating_cash_flow",
+          "value": 1758334648.26,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "free_cash_flow",
+          "value": 1177319721.01,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 1.15,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本04",
+        "2025",
+        "经营现金流",
+        "自由现金流",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "cashflow",
+        "cashflow"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_cashflow_005",
+      "name": "cashflow: 家电样本01 2025",
+      "question": "家电样本01 2025 年现金流分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "CASHFLOW_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "operating_cash_flow",
+          "value": 687138988.08,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "free_cash_flow",
+          "value": 460084365.93,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 1.15,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本01",
+        "2025",
+        "经营现金流",
+        "自由现金流",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "cashflow",
+        "cashflow"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_solvency_001",
+      "name": "solvency: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年偿债能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "SOLVENCY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "debt_to_asset",
+          "value": 24.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "current_ratio",
+          "value": 4.347826,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "quick_ratio",
+          "value": 2.03195,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "资产负债率",
+        "流动比率",
+        "速动比率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "solvency",
+        "balance_sheet"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_solvency_002",
+      "name": "solvency: 白酒样本02 2025",
+      "question": "白酒样本02 2025 年偿债能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "SOLVENCY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "debt_to_asset",
+          "value": 25.5,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "current_ratio",
+          "value": 4.092072,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "quick_ratio",
+          "value": 1.943424,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "资产负债率",
+        "流动比率",
+        "速动比率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "solvency",
+        "balance_sheet"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_solvency_003",
+      "name": "solvency: 白酒样本03 2025",
+      "question": "白酒样本03 2025 年偿债能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "SOLVENCY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "debt_to_asset",
+          "value": 27.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "current_ratio",
+          "value": 3.864734,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "quick_ratio",
+          "value": 1.864734,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "资产负债率",
+        "流动比率",
+        "速动比率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "solvency",
+        "balance_sheet"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_solvency_004",
+      "name": "solvency: 白酒样本04 2025",
+      "question": "白酒样本04 2025 年偿债能力分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "SOLVENCY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "debt_to_asset",
+          "value": 28.5,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "current_ratio",
+          "value": 3.661327,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "quick_ratio",
+          "value": 1.711116,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本04",
+        "2025",
+        "资产负债率",
+        "流动比率",
+        "速动比率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "solvency",
+        "balance_sheet"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_operating_001",
+      "name": "operating: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年营运效率分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "OPERATING_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "receivable_turnover",
+          "value": 20.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "inventory_turnover",
+          "value": 4.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "asset_turnover",
+          "value": 0.454545,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "应收账款周转率",
+        "存货周转率",
+        "总资产周转率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "operating",
+        "operating"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_operating_002",
+      "name": "operating: 白酒样本02 2025",
+      "question": "白酒样本02 2025 年营运效率分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "OPERATING_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "receivable_turnover",
+          "value": 17.241379,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "inventory_turnover",
+          "value": 2.980769,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "asset_turnover",
+          "value": 0.454545,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "应收账款周转率",
+        "存货周转率",
+        "总资产周转率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "operating",
+        "operating"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_operating_003",
+      "name": "operating: 白酒样本03 2025",
+      "question": "白酒样本03 2025 年营运效率分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "OPERATING_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "receivable_turnover",
+          "value": 15.151515,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "inventory_turnover",
+          "value": 2.34375,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "x"
+        },
+        {
+          "metric": "asset_turnover",
+          "value": 0.454545,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "应收账款周转率",
+        "存货周转率",
+        "总资产周转率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "operating",
+        "operating"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_peer_001",
+      "name": "peer: 白酒样本01 2025",
+      "question": "比较白酒样本01和白酒样本02 2025 年的收入增长和净利率",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PEER_COMPARISON",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2937441024.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 46.8384,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "revenue",
+          "value": 2761843185.92,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 47.1172,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "白酒样本02",
+        "2025",
+        "营业收入",
+        "营业收入增长率",
+        "净利率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "peer",
+        "peer"
+      ],
+      "critical": true
+    },
+    {
+      "case_id": "financial_peer_002",
+      "name": "peer: 白酒样本03 2025",
+      "question": "比较白酒样本03和白酒样本04 2025 年的收入增长和净利率",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PEER_COMPARISON",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2890335571.2,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 47.396,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "revenue",
+          "value": 3264387021.46,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 46.8384,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "白酒样本04",
+        "2025",
+        "营业收入",
+        "营业收入增长率",
+        "净利率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "peer",
+        "peer"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_peer_003",
+      "name": "peer: 家电样本01 2025",
+      "question": "比较家电样本01和家电样本02 2025 年的收入增长和净利率",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PEER_COMPARISON",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 3759924510.72,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 15.8916,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "revenue",
+          "value": 3484568505.6,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本02",
+          "filters": {
+            "company": "家电样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本02",
+          "filters": {
+            "company": "家电样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 16.1704,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本02",
+          "filters": {
+            "company": "家电样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本01",
+        "家电样本02",
+        "2025",
+        "营业收入",
+        "营业收入增长率",
+        "净利率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "peer",
+        "peer"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_peer_004",
+      "name": "peer: 家电样本03 2025",
+      "question": "比较家电样本03和家电样本04 2025 年的收入增长和净利率",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PEER_COMPARISON",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 3600242553.6,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本03",
+          "filters": {
+            "company": "家电样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本03",
+          "filters": {
+            "company": "家电样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 15.6128,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本03",
+          "filters": {
+            "company": "家电样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "revenue",
+          "value": 4019782365.26,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本04",
+          "filters": {
+            "company": "家电样本04"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本04",
+          "filters": {
+            "company": "家电样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 15.8916,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本04",
+          "filters": {
+            "company": "家电样本04"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本03",
+        "家电样本04",
+        "2025",
+        "营业收入",
+        "营业收入增长率",
+        "净利率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "peer",
+        "peer"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_peer_005",
+      "name": "peer: 银行样本01 2025",
+      "question": "比较银行样本01和银行样本02 2025 年的收入增长和净利率",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PEER_COMPARISON",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 4582407997.44,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本01",
+          "filters": {
+            "company": "银行样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本01",
+          "filters": {
+            "company": "银行样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 23.9768,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本01",
+          "filters": {
+            "company": "银行样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "revenue",
+          "value": 4207293825.28,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本02",
+          "filters": {
+            "company": "银行样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本02",
+          "filters": {
+            "company": "银行样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 23.4192,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本02",
+          "filters": {
+            "company": "银行样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "银行样本01",
+        "银行样本02",
+        "2025",
+        "营业收入",
+        "营业收入增长率",
+        "净利率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "peer",
+        "peer"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_peer_006",
+      "name": "peer: 银行样本03 2025",
+      "question": "比较银行样本03和银行样本04 2025 年的收入增长和净利率",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PEER_COMPARISON",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 4310149536.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本03",
+          "filters": {
+            "company": "银行样本03"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本03",
+          "filters": {
+            "company": "银行样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 23.698,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本03",
+          "filters": {
+            "company": "银行样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "revenue",
+          "value": 4775177709.07,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本04",
+          "filters": {
+            "company": "银行样本04"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本04",
+          "filters": {
+            "company": "银行样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 23.9768,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "银行样本04",
+          "filters": {
+            "company": "银行样本04"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "银行样本03",
+        "银行样本04",
+        "2025",
+        "营业收入",
+        "营业收入增长率",
+        "净利率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "peer",
+        "peer"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_peer_007",
+      "name": "peer: 新能源样本01 2025",
+      "question": "比较新能源样本01和新能源样本02 2025 年的收入增长和净利率",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "PEER_COMPARISON",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 5404891484.16,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "新能源样本01",
+          "filters": {
+            "company": "新能源样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "新能源样本01",
+          "filters": {
+            "company": "新能源样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 13.3824,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "新能源样本01",
+          "filters": {
+            "company": "新能源样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "revenue",
+          "value": 4930019144.96,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "新能源样本02",
+          "filters": {
+            "company": "新能源样本02"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "revenue_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "新能源样本02",
+          "filters": {
+            "company": "新能源样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_margin",
+          "value": 13.6612,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "新能源样本02",
+          "filters": {
+            "company": "新能源样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "新能源样本01",
+        "新能源样本02",
+        "2025",
+        "营业收入",
+        "营业收入增长率",
+        "净利率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "peer",
+        "peer"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_anomaly_001",
+      "name": "anomaly: 白酒样本01 2022",
+      "question": "2021 年至 2025 年 白酒样本01 有哪些异常波动？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "ANOMALY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": -2.0,
+          "tolerance": 0.0005,
+          "period": "2022",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": -2.0,
+          "tolerance": 0.0005,
+          "period": "2022",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2022",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "anomaly",
+        "anomaly"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_anomaly_002",
+      "name": "anomaly: 白酒样本02 2022",
+      "question": "2021 年至 2025 年 白酒样本02 有哪些异常波动？",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "ANOMALY_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 4.0,
+          "tolerance": 0.0005,
+          "period": "2022",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 4.0,
+          "tolerance": 0.0005,
+          "period": "2022",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2022",
+        "营业收入增长率",
+        "净利润增长率"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "anomaly",
+        "anomaly"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_comprehensive_001",
+      "name": "comprehensive: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年综合基本面分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "COMPREHENSIVE_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue",
+          "value": 2937441024.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "net_profit",
+          "value": 1375850376.59,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        },
+        {
+          "metric": "gross_margin",
+          "value": 84.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "roe",
+          "value": 28.013397,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "debt_to_asset",
+          "value": 24.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "operating_cash_flow",
+          "value": 577857158.17,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "CNY"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "营业收入",
+        "净利润",
+        "毛利率",
+        "净资产收益率",
+        "资产负债率",
+        "经营现金流"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "comprehensive",
+        "comprehensive"
+      ],
+      "critical": true
+    },
+    {
+      "case_id": "financial_risk_001",
+      "name": "risk: 白酒样本01 2025",
+      "question": "白酒样本01 2025 年风险分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "RISK_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "debt_to_asset",
+          "value": 24.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 0.42,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本01",
+          "filters": {
+            "company": "白酒样本01"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本01",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率",
+        "资产负债率",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "risk",
+        "risk"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_risk_002",
+      "name": "risk: 白酒样本02 2025",
+      "question": "白酒样本02 2025 年风险分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "RISK_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 7.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "debt_to_asset",
+          "value": 25.5,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 1.15,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本02",
+          "filters": {
+            "company": "白酒样本02"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本02",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率",
+        "资产负债率",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "risk",
+        "risk"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_risk_003",
+      "name": "risk: 白酒样本03 2025",
+      "question": "白酒样本03 2025 年风险分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "RISK_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 11.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "debt_to_asset",
+          "value": 27.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 1.15,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本03",
+          "filters": {
+            "company": "白酒样本03"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本03",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率",
+        "资产负债率",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "risk",
+        "risk"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_risk_004",
+      "name": "risk: 白酒样本04 2025",
+      "question": "白酒样本04 2025 年风险分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "RISK_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": -3.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "debt_to_asset",
+          "value": 28.5,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 1.15,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "白酒样本04",
+          "filters": {
+            "company": "白酒样本04"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "白酒样本04",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率",
+        "资产负债率",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "risk",
+        "risk"
+      ],
+      "critical": false
+    },
+    {
+      "case_id": "financial_risk_005",
+      "name": "risk: 家电样本01 2025",
+      "question": "家电样本01 2025 年风险分析",
+      "dataset": "../data/financial/financial_dataset.json",
+      "dataset_sha256": "9cd6fd7887ddc7d95b2f8842defd22aa24c1222dcd17aeb79be1e37f04c3100c",
+      "task_type": "RISK_ANALYSIS",
+      "executor_type": "structured",
+      "skill_name": "financial-analysis-workflow",
+      "expected_metrics": [
+        {
+          "metric": "revenue_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "net_profit_growth",
+          "value": 18.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "debt_to_asset",
+          "value": 58.0,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "%"
+        },
+        {
+          "metric": "ocf_to_net_income",
+          "value": 1.15,
+          "tolerance": 0.0005,
+          "period": "2025",
+          "dimension": "company",
+          "group": "家电样本01",
+          "filters": {
+            "company": "家电样本01"
+          },
+          "unit": "x"
+        }
+      ],
+      "required_evidence": true,
+      "minimum_verified_evidence": 1,
+      "required_sql": false,
+      "required_finding": true,
+      "required_report": true,
+      "report_must_contain": [
+        "核心指标",
+        "计算过程",
+        "不构成投资建议",
+        "家电样本01",
+        "2025",
+        "营业收入增长率",
+        "净利润增长率",
+        "资产负债率",
+        "经营现金流 / 净利润"
+      ],
+      "report_must_not_contain": [],
+      "tags": [
+        "financial",
+        "runtime-v9",
+        "risk",
+        "risk"
+      ],
+      "critical": false
+    }
+  ]
+}
