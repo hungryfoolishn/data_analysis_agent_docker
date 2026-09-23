@@ -37,7 +37,11 @@ class ToolStageValidator:
             "reason": "Python code can be used throughout analysis"
         },
         "compare_groups": {
-            "allowed_stages": [AnalysisStage.BASIC_EDA, AnalysisStage.DEEP_DIVE],
+            "allowed_stages": [
+                AnalysisStage.BASIC_EDA,
+                AnalysisStage.DEEP_DIVE,
+                AnalysisStage.CONCLUSION_SYNTHESIS
+            ],
             "reason": "Grouped comparison requires a loaded and profiled dataset"
         },
         "analyze_time_trend": {

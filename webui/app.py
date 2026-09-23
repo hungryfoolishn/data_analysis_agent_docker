@@ -50,6 +50,8 @@ if 'session_id' not in st.session_state:
     st.session_state.session_id = f"session_{int(time.time())}_{uuid.uuid4().hex[:8]}"
 if 'is_analyzing' not in st.session_state:
     st.session_state.is_analyzing = False
+if 'start_requested' not in st.session_state:
+    st.session_state.start_requested = False
 if 'generated_files' not in st.session_state:
     st.session_state.generated_files = []
 if 'analysis_result' not in st.session_state:
@@ -1007,11 +1009,21 @@ def main():
             )
 
         # 操作按钮：开始分析、恢复分析、停止分析
+        analysis_running = st.session_state.is_analyzing or st.session_state.start_requested
         col_start, col_resume, col_stop = st.columns(3)
         with col_start:
-            start_btn = st.button("▶️ 开始分析", type="primary", use_container_width=True)
+            start_btn = st.button(
+                "⏳ 分析中..." if analysis_running else "▶️ 开始分析",
+                type="primary",
+                use_container_width=True,
+                disabled=analysis_running,
+            )
         with col_resume:
-            resume_btn = st.button("🔄 恢复分析", use_container_width=True)
+            resume_btn = st.button(
+                "🔄 恢复分析",
+                use_container_width=True,
+                disabled=analysis_running,
+            )
         with col_stop:
             stop_btn = st.button("⏹️ 停止分析", use_container_width=True)
 
@@ -1053,6 +1065,9 @@ def main():
 
     with col_right:
         st.markdown("### 分析工作台")
+        analysis_status_placeholder = st.empty()
+        if analysis_running:
+            analysis_status_placeholder.info("⏳ 分析进行中，请等待结果...")
         summary_placeholder = st.empty()
         tab_process, tab_report, tab_outputs = st.tabs(["分析过程", "最终报告", "产物与执行"])
 
@@ -1129,18 +1144,38 @@ def main():
             if not current_instruction or not current_instruction.strip():
                 result_placeholder.error("请输入分析指令。")
             else:
-                for chunk in start_analysis_stream(current_instruction):
-                    result_placeholder.markdown(
-                        format_result_html(chunk), unsafe_allow_html=True
-                    )
-                    render_workbench_views(
-                        summary_placeholder,
-                        steps_placeholder,
-                        findings_placeholder,
-                        artifacts_placeholder,
-                        executions_placeholder,
-                        assets_placeholder,
-                    )
+                st.session_state.start_requested = True
+                st.rerun()
+
+        elif st.session_state.start_requested:
+            current_instruction = st.session_state.get('instruction_input', '') or st.session_state.get('instruction', '')
+            if not current_instruction or not current_instruction.strip():
+                st.session_state.start_requested = False
+                result_placeholder.error("请输入分析指令。")
+            else:
+                analysis_status_placeholder.info("⏳ 分析已启动，正在读取数据和执行分析...")
+                result_placeholder.markdown("⏳ **分析已启动，正在等待后端返回结果...**")
+                try:
+                    for chunk in start_analysis_stream(current_instruction):
+                        result_placeholder.markdown(
+                            format_result_html(chunk), unsafe_allow_html=True
+                        )
+                        render_workbench_views(
+                            summary_placeholder,
+                            steps_placeholder,
+                            findings_placeholder,
+                            artifacts_placeholder,
+                            executions_placeholder,
+                            assets_placeholder,
+                        )
+                finally:
+                    st.session_state.start_requested = False
+                    if st.session_state.analysis_result.startswith("❌"):
+                        analysis_status_placeholder.error("❌ 分析失败")
+                    elif st.session_state.analysis_result.startswith("⏹️"):
+                        analysis_status_placeholder.warning("⏹️ 分析已停止")
+                    else:
+                        analysis_status_placeholder.success("✅ 分析完成")
 
         elif st.session_state.analysis_result:
             result_placeholder.markdown(

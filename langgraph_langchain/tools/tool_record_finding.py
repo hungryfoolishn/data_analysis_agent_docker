@@ -40,7 +40,48 @@ def _available_artifact_aliases(session) -> dict:
             value = artifact.get(key)
             if value:
                 aliases[str(value)] = artifact
+
+    # LLMs often cite the chart section title rather than the generated file.
+    # Add normalized title aliases so "Outliers" can resolve to
+    # eda_outliers.png and "Distributions" to eda_distributions.png.
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        name = str(artifact.get("name") or "")
+        normalized_name = name.casefold().replace("-", " ").replace("_", " ")
+        for key in ("artifact_id", "name", "path", "relative_path", "url"):
+            value = artifact.get(key)
+            if not value:
+                continue
+            reference = str(value)
+            base = reference.casefold().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+            base = base.rsplit(".", 1)[0].replace("-", " ").replace("_", " ")
+            if base and base in normalized_name:
+                aliases.setdefault(base.strip(), artifact)
+            for token in base.split():
+                if len(token) >= 4 and token in normalized_name:
+                    aliases.setdefault(token, artifact)
     return aliases
+
+
+def _resolve_artifact_reference(reference: str, aliases: dict) -> dict | None:
+    """Resolve an artifact reference exactly, normalized, or by title token."""
+    artifact = aliases.get(str(reference))
+    if artifact is not None:
+        return artifact
+
+    normalized = str(reference).casefold().replace("-", " ").replace("_", " ")
+    candidates = []
+    for alias, artifact in aliases.items():
+        name = str(artifact.get("name") or "")
+        normalized_name = name.casefold().replace("-", " ").replace("_", " ")
+        if normalized == normalized_name:
+            candidates.append((2, artifact))
+        elif normalized in normalized_name:
+            candidates.append((1, artifact))
+        elif normalized in alias.casefold():
+            candidates.append((1, artifact))
+    return max(candidates, key=lambda item: item[0])[1] if candidates else None
 
 
 def _resolve_evidence_lineage(
@@ -56,7 +97,7 @@ def _resolve_evidence_lineage(
     artifacts = []
     seen_artifacts = set()
     for reference in source_artifacts:
-        artifact = aliases.get(str(reference))
+        artifact = _resolve_artifact_reference(str(reference), aliases)
         artifact_id = artifact.get("artifact_id") if artifact else None
         if artifact_id and artifact_id not in seen_artifacts:
             seen_artifacts.add(artifact_id)
@@ -113,6 +154,7 @@ def _resolve_evidence_lineage(
     return {
         "aliases": aliases,
         "artifact_ids": [item["artifact_id"] for item in artifacts],
+        "resolved_artifact_names": [item.get("name") or item.get("artifact_id") for item in artifacts],
         "execution_ids": execution_ids,
         "step_ids": step_ids,
         "asset_ids": asset_ids,
@@ -222,7 +264,7 @@ def _factory(session):
             evidence_item = EvidenceItem(
                 evidence_text=evidence_text,
                 source_fields=source_fields or [],
-                source_artifacts=source_artifacts or [],
+                source_artifacts=lineage["resolved_artifact_names"],
                 source_artifact_ids=lineage["artifact_ids"],
                 source_execution_ids=lineage["execution_ids"],
                 source_step_ids=lineage["step_ids"],
