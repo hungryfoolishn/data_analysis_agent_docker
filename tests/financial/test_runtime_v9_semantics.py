@@ -234,3 +234,128 @@ def test_adapter_reports_v9_2_semantics():
     assert candidate.metadata["data_source_count"] == len(result.data_sources)
     assert candidate.metadata["unavailable_calculation_count"] == 0
     assert candidate.metadata["invalid_calculation_count"] == 0
+
+def test_nan_is_invalid():
+    service = build_service()
+    company = service.resolve_company("白酒样本01")
+    income, balance, cash_flow, _ = service.statements(company.company_id, "2025")
+    computation = compute_metric(
+        "revenue",
+        income=income.model_copy(update={"revenue": float("nan")}),
+        balance=balance,
+        cash_flow=cash_flow,
+    )
+
+    assert computation.status == INVALID
+    assert computation.value is None
+    assert computation.reason == "reported_value_not_finite"
+
+
+def test_positive_infinity_is_invalid():
+    service = build_service()
+    company = service.resolve_company("白酒样本01")
+    income, balance, cash_flow, _ = service.statements(company.company_id, "2025")
+    computation = compute_metric(
+        "revenue",
+        income=income.model_copy(update={"revenue": float("inf")}),
+        balance=balance,
+        cash_flow=cash_flow,
+    )
+
+    assert computation.status == INVALID
+    assert computation.value is None
+    assert computation.reason == "reported_value_not_finite"
+
+
+def test_negative_infinity_is_invalid():
+    service = build_service()
+    company = service.resolve_company("白酒样本01")
+    income, balance, cash_flow, _ = service.statements(company.company_id, "2025")
+    computation = compute_metric(
+        "revenue",
+        income=income.model_copy(update={"revenue": float("-inf")}),
+        balance=balance,
+        cash_flow=cash_flow,
+    )
+
+    assert computation.status == INVALID
+    assert computation.value is None
+    assert computation.reason == "reported_value_not_finite"
+
+
+def test_non_finite_ratio_is_invalid():
+    service = build_service()
+    company = service.resolve_company("白酒样本01")
+    income, balance, cash_flow, _ = service.statements(company.company_id, "2025")
+    computation = compute_metric(
+        "debt_to_asset",
+        income=income,
+        balance=balance.model_copy(update={"total_liabilities": float("nan")}),
+        cash_flow=cash_flow,
+    )
+
+    assert computation.status == INVALID
+    assert computation.value is None
+    assert computation.reason == "ratio_value_not_finite"
+
+
+def test_non_finite_growth_is_invalid():
+    service = build_service()
+    company = service.resolve_company("白酒样本01")
+    income, balance, cash_flow, previous_income = service.statements(
+        company.company_id,
+        "2025",
+        service.previous_period(company.company_id, "2025"),
+    )
+    previous_balance = service.previous_balance(company.company_id, "2025")
+    computation = compute_metric(
+        "revenue_growth",
+        income=income,
+        balance=balance,
+        cash_flow=cash_flow,
+        previous_income=previous_income.model_copy(update={"revenue": float("inf")}),
+        previous_balance=previous_balance,
+    )
+
+    assert computation.status == INVALID
+    assert computation.value is None
+    assert computation.reason == "growth_value_not_finite"
+
+
+def test_verification_engine_marks_non_finite_actual_result_invalid():
+    service = build_service()
+    company = service.resolve_company("白酒样本01")
+    period = "2025"
+    previous_period = service.previous_period(company.company_id, period)
+    previous_balance = service.previous_balance(company.company_id, period)
+    income, balance, cash_flow, previous_income = service.statements(
+        company.company_id,
+        period,
+        previous_period,
+    )
+    calculation = FinancialCalculation(
+        metric_id="revenue",
+        company_id=company.company_id,
+        company_name=company.company_name,
+        period=period,
+        formula="reported:income.revenue",
+        inputs={},
+        result=100.0,
+        unit="CNY",
+        status=CALCULATED,
+    )
+
+    verification = FinancialVerificationEngine().verify(
+        calculation=calculation,
+        metric_id="revenue",
+        income=income.model_copy(update={"revenue": float("nan")}),
+        balance=balance,
+        cash_flow=cash_flow,
+        previous_income=previous_income,
+        previous_balance=previous_balance,
+    )
+
+    assert verification.status == INVALID
+    assert verification.passed is False
+    assert verification.actual_value is None
+    assert verification.message == "独立公式验证结果是非有限值，判定为 INVALID。"

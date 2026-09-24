@@ -286,6 +286,8 @@ def compute_metric(
         if value is None:
             missing_fields.append(field)
             return _unavailable(metric_id, inputs, missing_fields, "reported_value_missing")
+        if not math.isfinite(value):
+            return _invalid(metric_id, inputs, "reported_value_not_finite")
         return MetricComputation(
             metric_id=metric_id,
             status=CALCULATED,
@@ -317,10 +319,15 @@ def compute_metric(
             )
         if previous == 0:
             return _invalid(metric_id, inputs, "growth_previous_period_zero")
+        if not math.isfinite(current) or not math.isfinite(previous):
+            return _invalid(metric_id, inputs, "growth_value_not_finite")
+        value = (current - previous) / abs(previous) * 100
+        if not math.isfinite(value):
+            return _invalid(metric_id, inputs, "growth_value_not_finite")
         return MetricComputation(
             metric_id=metric_id,
             status=CALCULATED,
-            value=round((current - previous) / abs(previous) * 100, 6),
+            value=round(value, 6),
             inputs={key: round(value, 6) for key, value in inputs.items()},
         )
 
@@ -337,10 +344,15 @@ def compute_metric(
         }
         if operating_cash_flow is None or capital_expenditure is None:
             return _unavailable(metric_id, inputs, missing_fields, "free_cash_flow_value_missing")
+        if not math.isfinite(operating_cash_flow) or not math.isfinite(capital_expenditure):
+            return _invalid(metric_id, inputs, "free_cash_flow_value_not_finite")
+        value = operating_cash_flow - capital_expenditure
+        if not math.isfinite(value):
+            return _invalid(metric_id, inputs, "free_cash_flow_value_not_finite")
         return MetricComputation(
             metric_id=metric_id,
             status=CALCULATED,
-            value=round(operating_cash_flow - capital_expenditure, 6),
+            value=round(value, 6),
             inputs={key: round(value, 6) for key, value in inputs.items()},
         )
 
@@ -376,12 +388,22 @@ def compute_metric(
             )
         average_denominator = (current_denominator + previous_denominator) / 2
         inputs["average_denominator"] = average_denominator
+        if any(
+            value is not None and not math.isfinite(value)
+            for value in (numerator, current_denominator, previous_denominator)
+        ):
+            return _invalid(metric_id, inputs, "average_balance_value_not_finite")
         if average_denominator == 0:
             return _invalid(metric_id, inputs, "average_denominator_zero")
+        value = numerator / average_denominator
+        if definition.unit == "%":
+            value *= 100
+        if not math.isfinite(value):
+            return _invalid(metric_id, inputs, "average_balance_value_not_finite")
         return MetricComputation(
             metric_id=metric_id,
             status=CALCULATED,
-            value=round(numerator / average_denominator * 100, 6) if definition.unit == "%" else round(numerator / average_denominator, 6),
+            value=round(value, 6),
             inputs={key: round(value, 6) for key, value in inputs.items()},
         )
 
@@ -396,9 +418,16 @@ def compute_metric(
         return _unavailable(metric_id, inputs, missing_fields, "ratio_value_missing")
     if denominator == 0:
         return _invalid(metric_id, inputs, "denominator_zero")
+    if any(
+        value is not None and not math.isfinite(value)
+        for value in (numerator, denominator)
+    ):
+        return _invalid(metric_id, inputs, "ratio_value_not_finite")
     value = numerator / denominator
     if definition.unit == "%":
         value *= 100
+    if not math.isfinite(value):
+        return _invalid(metric_id, inputs, "ratio_value_not_finite")
     return MetricComputation(
         metric_id=metric_id,
         status=CALCULATED,

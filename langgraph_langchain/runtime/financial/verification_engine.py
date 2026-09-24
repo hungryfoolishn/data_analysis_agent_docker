@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 from .models import (
@@ -51,6 +52,17 @@ class FinancialVerificationEngine:
                 missing_fields=list(calculation.missing_fields),
             )
 
+        if not math.isfinite(calculation.result):
+            return FinancialVerification(
+                **common,
+                status="invalid",
+                passed=False,
+                expected_value=calculation.result,
+                actual_value=None,
+                message="待验证的指标结果是非有限值，判定为 INVALID。",
+                missing_fields=list(calculation.missing_fields),
+            )
+
         try:
             actual_value, missing_fields = self._calculate(
                 metric_id,
@@ -84,6 +96,17 @@ class FinancialVerificationEngine:
                     if unavailable
                     else "分母为零或结果无效，无法验证。"
                 ),
+                missing_fields=missing_fields,
+            )
+
+        if not math.isfinite(actual_value):
+            return FinancialVerification(
+                **common,
+                status="invalid",
+                passed=False,
+                expected_value=calculation.result,
+                actual_value=None,
+                message="独立公式验证结果是非有限值，判定为 INVALID。",
                 missing_fields=missing_fields,
             )
 
