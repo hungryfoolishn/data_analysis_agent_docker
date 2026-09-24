@@ -1,0 +1,2304 @@
+{
+  "cases": [
+    {
+      "case_id": "real_600519_2021_revenue",
+      "company_id": "600519",
+      "expected": 109464278563.89,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 109464278563.89
+      },
+      "metric_id": "revenue",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2021_net_profit",
+      "company_id": "600519",
+      "expected": 55720529956.46,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 55720529956.46
+      },
+      "metric_id": "net_profit",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2021_operating_cash_flow",
+      "company_id": "600519",
+      "expected": 64028676147.37,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 64028676147.37
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2021_free_cash_flow",
+      "company_id": "600519",
+      "expected": 60619891615.36,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 3408784532.01,
+        "operating_cash_flow": 64028676147.37
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2021_net_margin",
+      "company_id": "600519",
+      "expected": 50.902934,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 109464278563.89,
+        "numerator": 55720529956.46
+      },
+      "metric_id": "net_margin",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2021_debt_to_asset",
+      "company_id": "600519",
+      "expected": 22.812674,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 255168195159.9,
+        "numerator": 58210688454.56
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2021_ocf_to_net_income",
+      "company_id": "600519",
+      "expected": 1.149104,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 55720529956.46,
+        "numerator": 64028676147.37
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_600519_2022_revenue",
+      "company_id": "600519",
+      "expected": 127553959355.97,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 127553959355.97
+      },
+      "metric_id": "revenue",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2022_net_profit",
+      "company_id": "600519",
+      "expected": 65376039957.88,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 65376039957.88
+      },
+      "metric_id": "net_profit",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2022_operating_cash_flow",
+      "company_id": "600519",
+      "expected": 36698595830.03,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 36698595830.03
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2022_free_cash_flow",
+      "company_id": "600519",
+      "expected": 31392049413.489998,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 5306546416.54,
+        "operating_cash_flow": 36698595830.03
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2022_net_margin",
+      "company_id": "600519",
+      "expected": 51.253634,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 127553959355.97,
+        "numerator": 65376039957.88
+      },
+      "metric_id": "net_margin",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2022_debt_to_asset",
+      "company_id": "600519",
+      "expected": 19.474493,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 254500826096.02,
+        "numerator": 49562744832.16
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2022_ocf_to_net_income",
+      "company_id": "600519",
+      "expected": 0.561346,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 65376039957.88,
+        "numerator": 36698595830.03
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_600519_2022_revenue_growth",
+      "company_id": "600519",
+      "expected": 16.525647,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 127553959355.97,
+        "previous": 109464278563.89
+      },
+      "metric_id": "revenue_growth",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2022_net_profit_growth",
+      "company_id": "600519",
+      "expected": 17.32846,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 65376039957.88,
+        "previous": 55720529956.46
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2022_roa",
+      "company_id": "600519",
+      "expected": 25.654312,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 254834510627.96,
+        "current_denominator": 254500826096.02,
+        "numerator": 65376039957.88,
+        "previous_denominator": 255168195159.9
+      },
+      "metric_id": "roa",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2022_roe",
+      "company_id": "600519",
+      "expected": 32.533843,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 200947793984.59998,
+        "current_denominator": 204938081263.86,
+        "numerator": 65376039957.88,
+        "previous_denominator": 196957506705.34
+      },
+      "metric_id": "roe",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2023_revenue",
+      "company_id": "600519",
+      "expected": 150560330316.45,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 150560330316.45
+      },
+      "metric_id": "revenue",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2023_net_profit",
+      "company_id": "600519",
+      "expected": 77521476277.8,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 77521476277.8
+      },
+      "metric_id": "net_profit",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2023_operating_cash_flow",
+      "company_id": "600519",
+      "expected": 66593247721.09,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 66593247721.09
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2023_free_cash_flow",
+      "company_id": "600519",
+      "expected": 63973491832.299995,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 2619755888.79,
+        "operating_cash_flow": 66593247721.09
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2023_net_margin",
+      "company_id": "600519",
+      "expected": 51.488647,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 150560330316.45,
+        "numerator": 77521476277.8
+      },
+      "metric_id": "net_margin",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2023_debt_to_asset",
+      "company_id": "600519",
+      "expected": 17.984324,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 272699660092.25,
+        "numerator": 49043190797.43
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2023_ocf_to_net_income",
+      "company_id": "600519",
+      "expected": 0.85903,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 77521476277.8,
+        "numerator": 66593247721.09
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_600519_2023_revenue_growth",
+      "company_id": "600519",
+      "expected": 18.036579,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 150560330316.45,
+        "previous": 127553959355.97
+      },
+      "metric_id": "revenue_growth",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2023_net_profit_growth",
+      "company_id": "600519",
+      "expected": 18.57781,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 77521476277.8,
+        "previous": 65376039957.88
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2023_roa",
+      "company_id": "600519",
+      "expected": 29.408727,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 263600243094.135,
+        "current_denominator": 272699660092.25,
+        "numerator": 77521476277.8,
+        "previous_denominator": 254500826096.02
+      },
+      "metric_id": "roa",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2023_roe",
+      "company_id": "600519",
+      "expected": 36.174737,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 214297275279.34,
+        "current_denominator": 223656469294.82,
+        "numerator": 77521476277.8,
+        "previous_denominator": 204938081263.86
+      },
+      "metric_id": "roe",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2024_revenue",
+      "company_id": "600519",
+      "expected": 174144069958.25,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 174144069958.25
+      },
+      "metric_id": "revenue",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2024_net_profit",
+      "company_id": "600519",
+      "expected": 89334728025.9,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 89334728025.9
+      },
+      "metric_id": "net_profit",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2024_operating_cash_flow",
+      "company_id": "600519",
+      "expected": 92463692168.43,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 92463692168.43
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2024_free_cash_flow",
+      "company_id": "600519",
+      "expected": 87784980114.87,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 4678712053.56,
+        "operating_cash_flow": 92463692168.43
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2024_net_margin",
+      "company_id": "600519",
+      "expected": 51.299322,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 174144069958.25,
+        "numerator": 89334728025.9
+      },
+      "metric_id": "net_margin",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2024_debt_to_asset",
+      "company_id": "600519",
+      "expected": 19.044756,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 298944579918.7,
+        "numerator": 56933264798.1
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2024_ocf_to_net_income",
+      "company_id": "600519",
+      "expected": 1.035025,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 89334728025.9,
+        "numerator": 92463692168.43
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_600519_2024_revenue_growth",
+      "company_id": "600519",
+      "expected": 15.66398,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 174144069958.25,
+        "previous": 150560330316.45
+      },
+      "metric_id": "revenue_growth",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2024_net_profit_growth",
+      "company_id": "600519",
+      "expected": 15.238683,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 89334728025.9,
+        "previous": 77521476277.8
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2024_roa",
+      "company_id": "600519",
+      "expected": 31.255358,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 285822120005.475,
+        "current_denominator": 298944579918.7,
+        "numerator": 89334728025.9,
+        "previous_denominator": 272699660092.25
+      },
+      "metric_id": "roa",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2024_roe",
+      "company_id": "600519",
+      "expected": 38.368438,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 232833892207.71002,
+        "current_denominator": 242011315120.6,
+        "numerator": 89334728025.9,
+        "previous_denominator": 223656469294.82
+      },
+      "metric_id": "roe",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2025_revenue",
+      "company_id": "600519",
+      "expected": 172054171890.91,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 172054171890.91
+      },
+      "metric_id": "revenue",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2025_net_profit",
+      "company_id": "600519",
+      "expected": 85310324833.67,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 85310324833.67
+      },
+      "metric_id": "net_profit",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2025_operating_cash_flow",
+      "company_id": "600519",
+      "expected": 61522204989.35,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 61522204989.35
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2025_free_cash_flow",
+      "company_id": "600519",
+      "expected": 58394610072.94,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 3127594916.41,
+        "operating_cash_flow": 61522204989.35
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_600519_2025_net_margin",
+      "company_id": "600519",
+      "expected": 49.58341,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 172054171890.91,
+        "numerator": 85310324833.67
+      },
+      "metric_id": "net_margin",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2025_debt_to_asset",
+      "company_id": "600519",
+      "expected": 16.415362,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 303834844021.44,
+        "numerator": 49875590112.37
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2025_ocf_to_net_income",
+      "company_id": "600519",
+      "expected": 0.721158,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 85310324833.67,
+        "numerator": 61522204989.35
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_600519_2025_revenue_growth",
+      "company_id": "600519",
+      "expected": -1.200097,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 172054171890.91,
+        "previous": 174144069958.25
+      },
+      "metric_id": "revenue_growth",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2025_net_profit_growth",
+      "company_id": "600519",
+      "expected": -4.504859,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 85310324833.67,
+        "previous": 89334728025.9
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2025_roa",
+      "company_id": "600519",
+      "expected": 28.305653,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 301389711970.07,
+        "current_denominator": 303834844021.44,
+        "numerator": 85310324833.67,
+        "previous_denominator": 298944579918.7
+      },
+      "metric_id": "roa",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_600519_2025_roe",
+      "company_id": "600519",
+      "expected": 34.401366,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 247985284514.83502,
+        "current_denominator": 253959253909.07,
+        "numerator": 85310324833.67,
+        "previous_denominator": 242011315120.6
+      },
+      "metric_id": "roe",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2021_revenue",
+      "company_id": "000858",
+      "expected": 66209053612.11,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 66209053612.11
+      },
+      "metric_id": "revenue",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2021_net_profit",
+      "company_id": "000858",
+      "expected": 24507450330.26,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 24507450330.26
+      },
+      "metric_id": "net_profit",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2021_operating_cash_flow",
+      "company_id": "000858",
+      "expected": 26774941873.05,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 26774941873.05
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2021_free_cash_flow",
+      "company_id": "000858",
+      "expected": 25235812692.19,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 1539129180.86,
+        "operating_cash_flow": 26774941873.05
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2021_net_margin",
+      "company_id": "000858",
+      "expected": 37.015255,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 66209053612.11,
+        "numerator": 24507450330.26
+      },
+      "metric_id": "net_margin",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2021_debt_to_asset",
+      "company_id": "000858",
+      "expected": 25.238699,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 135620812221.13,
+        "numerator": 34228928576.26
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2021_ocf_to_net_income",
+      "company_id": "000858",
+      "expected": 1.092523,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 24507450330.26,
+        "numerator": 26774941873.05
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000858_2022_revenue",
+      "company_id": "000858",
+      "expected": 73968640704.54,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 73968640704.54
+      },
+      "metric_id": "revenue",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2022_net_profit",
+      "company_id": "000858",
+      "expected": 27969785575.27,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 27969785575.27
+      },
+      "metric_id": "net_profit",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2022_operating_cash_flow",
+      "company_id": "000858",
+      "expected": 24431136261.48,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 24431136261.48
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2022_free_cash_flow",
+      "company_id": "000858",
+      "expected": 22650601367.96,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 1780534893.52,
+        "operating_cash_flow": 24431136261.48
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2022_net_margin",
+      "company_id": "000858",
+      "expected": 37.813032,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 73968640704.54,
+        "numerator": 27969785575.27
+      },
+      "metric_id": "net_margin",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2022_debt_to_asset",
+      "company_id": "000858",
+      "expected": 23.640104,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 152811927251.18,
+        "numerator": 36124899211.08
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2022_ocf_to_net_income",
+      "company_id": "000858",
+      "expected": 0.873483,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 27969785575.27,
+        "numerator": 24431136261.48
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000858_2022_revenue_growth",
+      "company_id": "000858",
+      "expected": 11.719828,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 73968640704.54,
+        "previous": 66209053612.11
+      },
+      "metric_id": "revenue_growth",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2022_net_profit_growth",
+      "company_id": "000858",
+      "expected": 14.127684,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 27969785575.27,
+        "previous": 24507450330.26
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2022_roa",
+      "company_id": "000858",
+      "expected": 19.394321,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 144216369736.155,
+        "current_denominator": 152811927251.18,
+        "numerator": 27969785575.27,
+        "previous_denominator": 135620812221.13
+      },
+      "metric_id": "roa",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2022_roe",
+      "company_id": "000858",
+      "expected": 25.651069,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 109039455842.485,
+        "current_denominator": 116687028040.1,
+        "numerator": 27969785575.27,
+        "previous_denominator": 101391883644.87
+      },
+      "metric_id": "roe",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2023_revenue",
+      "company_id": "000858",
+      "expected": 83272067317.19,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 83272067317.19
+      },
+      "metric_id": "revenue",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2023_net_profit",
+      "company_id": "000858",
+      "expected": 31520777582.15,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 31520777582.15
+      },
+      "metric_id": "net_profit",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2023_operating_cash_flow",
+      "company_id": "000858",
+      "expected": 41742479908.23,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 41742479908.23
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2023_free_cash_flow",
+      "company_id": "000858",
+      "expected": 38785243225.89,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 2957236682.34,
+        "operating_cash_flow": 41742479908.23
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2023_net_margin",
+      "company_id": "000858",
+      "expected": 37.852762,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 83272067317.19,
+        "numerator": 31520777582.15
+      },
+      "metric_id": "net_margin",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2023_debt_to_asset",
+      "company_id": "000858",
+      "expected": 19.998194,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 165432981684.75,
+        "numerator": 33083608497.58
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2023_ocf_to_net_income",
+      "company_id": "000858",
+      "expected": 1.324285,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 31520777582.15,
+        "numerator": 41742479908.23
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000858_2023_revenue_growth",
+      "company_id": "000858",
+      "expected": 12.577528,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 83272067317.19,
+        "previous": 73968640704.54
+      },
+      "metric_id": "revenue_growth",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2023_net_profit_growth",
+      "company_id": "000858",
+      "expected": 12.695814,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 31520777582.15,
+        "previous": 27969785575.27
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2023_roa",
+      "company_id": "000858",
+      "expected": 19.809132,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 159122454467.965,
+        "current_denominator": 165432981684.75,
+        "numerator": 31520777582.15,
+        "previous_denominator": 152811927251.18
+      },
+      "metric_id": "roa",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2023_roe",
+      "company_id": "000858",
+      "expected": 25.314193,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 124518200613.63501,
+        "current_denominator": 132349373187.17,
+        "numerator": 31520777582.15,
+        "previous_denominator": 116687028040.1
+      },
+      "metric_id": "roe",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2024_revenue",
+      "company_id": "000858",
+      "expected": 89175178322.7,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 89175178322.7
+      },
+      "metric_id": "revenue",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2024_net_profit",
+      "company_id": "000858",
+      "expected": 33193460484.32,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 33193460484.32
+      },
+      "metric_id": "net_profit",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2024_operating_cash_flow",
+      "company_id": "000858",
+      "expected": 33939755192.78,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 33939755192.78
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2024_free_cash_flow",
+      "company_id": "000858",
+      "expected": 31273444412.55,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 2666310780.23,
+        "operating_cash_flow": 33939755192.78
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2024_net_margin",
+      "company_id": "000858",
+      "expected": 37.222758,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 89175178322.7,
+        "numerator": 33193460484.32
+      },
+      "metric_id": "net_margin",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2024_debt_to_asset",
+      "company_id": "000858",
+      "expected": 27.54678,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 188252218704.17,
+        "numerator": 51857424971.48
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2024_ocf_to_net_income",
+      "company_id": "000858",
+      "expected": 1.022483,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 33193460484.32,
+        "numerator": 33939755192.78
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000858_2024_revenue_growth",
+      "company_id": "000858",
+      "expected": 7.088945,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 89175178322.7,
+        "previous": 83272067317.19
+      },
+      "metric_id": "revenue_growth",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2024_net_profit_growth",
+      "company_id": "000858",
+      "expected": 5.306604,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 33193460484.32,
+        "previous": 31520777582.15
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2024_roa",
+      "company_id": "000858",
+      "expected": 18.770059,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 176842600194.46002,
+        "current_denominator": 188252218704.17,
+        "numerator": 33193460484.32,
+        "previous_denominator": 165432981684.75
+      },
+      "metric_id": "roa",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2024_roe",
+      "company_id": "000858",
+      "expected": 24.702646,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 134372083459.93,
+        "current_denominator": 136394793732.69,
+        "numerator": 33193460484.32,
+        "previous_denominator": 132349373187.17
+      },
+      "metric_id": "roe",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2025_revenue",
+      "company_id": "000858",
+      "expected": 40528509770.23,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 40528509770.23
+      },
+      "metric_id": "revenue",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2025_net_profit",
+      "company_id": "000858",
+      "expected": 9317113184.68,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 9317113184.68
+      },
+      "metric_id": "net_profit",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2025_operating_cash_flow",
+      "company_id": "000858",
+      "expected": 29706259919.13,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 29706259919.13
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2025_free_cash_flow",
+      "company_id": "000858",
+      "expected": 27738852602.77,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 1967407316.36,
+        "operating_cash_flow": 29706259919.13
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000858_2025_net_margin",
+      "company_id": "000858",
+      "expected": 22.989035,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 40528509770.23,
+        "numerator": 9317113184.68
+      },
+      "metric_id": "net_margin",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2025_debt_to_asset",
+      "company_id": "000858",
+      "expected": 35.689053,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 189984270815.47,
+        "numerator": 67803587170.33
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2025_ocf_to_net_income",
+      "company_id": "000858",
+      "expected": 3.188355,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 9317113184.68,
+        "numerator": 29706259919.13
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000858_2025_revenue_growth",
+      "company_id": "000858",
+      "expected": -54.551804,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 40528509770.23,
+        "previous": 89175178322.7
+      },
+      "metric_id": "revenue_growth",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2025_net_profit_growth",
+      "company_id": "000858",
+      "expected": -71.930877,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 9317113184.68,
+        "previous": 33193460484.32
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2025_roa",
+      "company_id": "000858",
+      "expected": 4.926607,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 189118244759.82,
+        "current_denominator": 189984270815.47,
+        "numerator": 9317113184.68,
+        "previous_denominator": 188252218704.17
+      },
+      "metric_id": "roa",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000858_2025_roe",
+      "company_id": "000858",
+      "expected": 7.206494,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 129287738688.91501,
+        "current_denominator": 122180683645.14,
+        "numerator": 9317113184.68,
+        "previous_denominator": 136394793732.69
+      },
+      "metric_id": "roe",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2021_revenue",
+      "company_id": "000568",
+      "expected": 20642261724.37,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 20642261724.37
+      },
+      "metric_id": "revenue",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2021_net_profit",
+      "company_id": "000568",
+      "expected": 7937262386.93,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 7937262386.93
+      },
+      "metric_id": "net_profit",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2021_operating_cash_flow",
+      "company_id": "000568",
+      "expected": 7698648104.51,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 7698648104.51
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2021_free_cash_flow",
+      "company_id": "000568",
+      "expected": 5719248162.0,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 1979399942.51,
+        "operating_cash_flow": 7698648104.51
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2021_net_margin",
+      "company_id": "000568",
+      "expected": 38.451515,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 20642261724.37,
+        "numerator": 7937262386.93
+      },
+      "metric_id": "net_margin",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2021_debt_to_asset",
+      "company_id": "000568",
+      "expected": 34.88521,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 43211782005.68,
+        "numerator": 15074520882.85
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2021_ocf_to_net_income",
+      "company_id": "000568",
+      "expected": 0.969937,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 7937262386.93,
+        "numerator": 7698648104.51
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2021",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000568_2022_revenue",
+      "company_id": "000568",
+      "expected": 25123563271.62,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 25123563271.62
+      },
+      "metric_id": "revenue",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2022_net_profit",
+      "company_id": "000568",
+      "expected": 10410589104.43,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 10410589104.43
+      },
+      "metric_id": "net_profit",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2022_operating_cash_flow",
+      "company_id": "000568",
+      "expected": 8262648269.72,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 8262648269.72
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2022_free_cash_flow",
+      "company_id": "000568",
+      "expected": 7227482918.610001,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 1035165351.11,
+        "operating_cash_flow": 8262648269.72
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2022_net_margin",
+      "company_id": "000568",
+      "expected": 41.43755,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 25123563271.62,
+        "numerator": 10410589104.43
+      },
+      "metric_id": "net_margin",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2022_debt_to_asset",
+      "company_id": "000568",
+      "expected": 33.193591,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 51385481354.52,
+        "numerator": 17056686417.88
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2022_ocf_to_net_income",
+      "company_id": "000568",
+      "expected": 0.793677,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 10410589104.43,
+        "numerator": 8262648269.72
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000568_2022_revenue_growth",
+      "company_id": "000568",
+      "expected": 21.709353,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 25123563271.62,
+        "previous": 20642261724.37
+      },
+      "metric_id": "revenue_growth",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2022_net_profit_growth",
+      "company_id": "000568",
+      "expected": 31.160954,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 10410589104.43,
+        "previous": 7937262386.93
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2022_roa",
+      "company_id": "000568",
+      "expected": 22.010339,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 47298631680.1,
+        "current_denominator": 51385481354.52,
+        "numerator": 10410589104.43,
+        "previous_denominator": 43211782005.68
+      },
+      "metric_id": "roa",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2022_roe",
+      "company_id": "000568",
+      "expected": 33.331988,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 31233028029.735,
+        "current_denominator": 34328794936.64,
+        "numerator": 10410589104.43,
+        "previous_denominator": 28137261122.83
+      },
+      "metric_id": "roe",
+      "period": "2022",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2023_revenue",
+      "company_id": "000568",
+      "expected": 30233301388.26,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 30233301388.26
+      },
+      "metric_id": "revenue",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2023_net_profit",
+      "company_id": "000568",
+      "expected": 13288660023.21,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 13288660023.21
+      },
+      "metric_id": "net_profit",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2023_operating_cash_flow",
+      "company_id": "000568",
+      "expected": 10648364935.46,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 10648364935.46
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2023_free_cash_flow",
+      "company_id": "000568",
+      "expected": 9146739800.009998,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 1501625135.45,
+        "operating_cash_flow": 10648364935.46
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2023_net_margin",
+      "company_id": "000568",
+      "expected": 43.953718,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 30233301388.26,
+        "numerator": 13288660023.21
+      },
+      "metric_id": "net_margin",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2023_debt_to_asset",
+      "company_id": "000568",
+      "expected": 34.38334,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 63294455201.6,
+        "numerator": 21762747471.75
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2023_ocf_to_net_income",
+      "company_id": "000568",
+      "expected": 0.801312,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 13288660023.21,
+        "numerator": 10648364935.46
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000568_2023_revenue_growth",
+      "company_id": "000568",
+      "expected": 20.338429,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 30233301388.26,
+        "previous": 25123563271.62
+      },
+      "metric_id": "revenue_growth",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2023_net_profit_growth",
+      "company_id": "000568",
+      "expected": 27.645611,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 13288660023.21,
+        "previous": 10410589104.43
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2023_roa",
+      "company_id": "000568",
+      "expected": 23.175213,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 57339968278.06,
+        "current_denominator": 63294455201.6,
+        "numerator": 13288660023.21,
+        "previous_denominator": 51385481354.52
+      },
+      "metric_id": "roa",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2023_roe",
+      "company_id": "000568",
+      "expected": 35.034463,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 37930251333.244995,
+        "current_denominator": 41531707729.85,
+        "numerator": 13288660023.21,
+        "previous_denominator": 34328794936.64
+      },
+      "metric_id": "roe",
+      "period": "2023",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2024_revenue",
+      "company_id": "000568",
+      "expected": 31196248208.33,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 31196248208.33
+      },
+      "metric_id": "revenue",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2024_net_profit",
+      "company_id": "000568",
+      "expected": 13497778570.89,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 13497778570.89
+      },
+      "metric_id": "net_profit",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2024_operating_cash_flow",
+      "company_id": "000568",
+      "expected": 19181768363.65,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 19181768363.65
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2024_free_cash_flow",
+      "company_id": "000568",
+      "expected": 17993397497.010002,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 1188370866.64,
+        "operating_cash_flow": 19181768363.65
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2024_net_margin",
+      "company_id": "000568",
+      "expected": 43.267314,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 31196248208.33,
+        "numerator": 13497778570.89
+      },
+      "metric_id": "net_margin",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2024_debt_to_asset",
+      "company_id": "000568",
+      "expected": 30.477372,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 68334595564.58,
+        "numerator": 20826588928.87
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2024_ocf_to_net_income",
+      "company_id": "000568",
+      "expected": 1.421106,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 13497778570.89,
+        "numerator": 19181768363.65
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000568_2024_revenue_growth",
+      "company_id": "000568",
+      "expected": 3.185053,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 31196248208.33,
+        "previous": 30233301388.26
+      },
+      "metric_id": "revenue_growth",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2024_net_profit_growth",
+      "company_id": "000568",
+      "expected": 1.573662,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 13497778570.89,
+        "previous": 13288660023.21
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2024_roa",
+      "company_id": "000568",
+      "expected": 20.508814,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 65814525383.09,
+        "current_denominator": 68334595564.58,
+        "numerator": 13497778570.89,
+        "previous_denominator": 63294455201.6
+      },
+      "metric_id": "roa",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2024_roe",
+      "company_id": "000568",
+      "expected": 30.318558,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 44519857182.78,
+        "current_denominator": 47508006635.71,
+        "numerator": 13497778570.89,
+        "previous_denominator": 41531707729.85
+      },
+      "metric_id": "roe",
+      "period": "2024",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2025_revenue",
+      "company_id": "000568",
+      "expected": 25731010647.32,
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "inputs": {
+        "value": 25731010647.32
+      },
+      "metric_id": "revenue",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2025_net_profit",
+      "company_id": "000568",
+      "expected": 10859910680.17,
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "inputs": {
+        "value": 10859910680.17
+      },
+      "metric_id": "net_profit",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2025_operating_cash_flow",
+      "company_id": "000568",
+      "expected": 7123218677.88,
+      "formula": "reported:cash_flow_statement.operating_cash_flow",
+      "formula_version": "operating-cash-flow-reported-v1",
+      "inputs": {
+        "value": 7123218677.88
+      },
+      "metric_id": "operating_cash_flow",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2025_free_cash_flow",
+      "company_id": "000568",
+      "expected": 5190455707.91,
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "inputs": {
+        "capital_expenditure": 1932762969.97,
+        "operating_cash_flow": 7123218677.88
+      },
+      "metric_id": "free_cash_flow",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "CNY"
+    },
+    {
+      "case_id": "real_000568_2025_net_margin",
+      "company_id": "000568",
+      "expected": 42.205535,
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "inputs": {
+        "denominator": 25731010647.32,
+        "numerator": 10859910680.17
+      },
+      "metric_id": "net_margin",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2025_debt_to_asset",
+      "company_id": "000568",
+      "expected": 22.997012,
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "inputs": {
+        "denominator": 64794994851.27,
+        "numerator": 14900912470.81
+      },
+      "metric_id": "debt_to_asset",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2025_ocf_to_net_income",
+      "company_id": "000568",
+      "expected": 0.655919,
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-to-net-income-v1",
+      "inputs": {
+        "denominator": 10859910680.17,
+        "numerator": 7123218677.88
+      },
+      "metric_id": "ocf_to_net_income",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "x"
+    },
+    {
+      "case_id": "real_000568_2025_revenue_growth",
+      "company_id": "000568",
+      "expected": -17.518894,
+      "formula": "(current_revenue - previous_revenue) / abs(previous_revenue) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 25731010647.32,
+        "previous": 31196248208.33
+      },
+      "metric_id": "revenue_growth",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2025_net_profit_growth",
+      "company_id": "000568",
+      "expected": -19.542978,
+      "formula": "(current_net_profit - previous_net_profit) / abs(previous_net_profit) * 100",
+      "formula_version": "growth-v1",
+      "inputs": {
+        "current": 10859910680.17,
+        "previous": 13497778570.89
+      },
+      "metric_id": "net_profit_growth",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2025_roa",
+      "company_id": "000568",
+      "expected": 16.314796,
+      "formula": "net_profit / average(total_assets) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 66564795207.925,
+        "current_denominator": 64794994851.27,
+        "numerator": 10859910680.17,
+        "previous_denominator": 68334595564.58
+      },
+      "metric_id": "roa",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    },
+    {
+      "case_id": "real_000568_2025_roe",
+      "company_id": "000568",
+      "expected": 22.299133,
+      "formula": "net_profit / average(total_equity) * 100",
+      "formula_version": "average-balance-v1",
+      "inputs": {
+        "average_denominator": 48701044508.085,
+        "current_denominator": 49894082380.46,
+        "numerator": 10859910680.17,
+        "previous_denominator": 47508006635.71
+      },
+      "metric_id": "roe",
+      "period": "2025",
+      "tolerance": 1e-06,
+      "unit": "%"
+    }
+  ],
+  "description": "Expected values independently calculated from the Eastmoney F10 real-data snapshot; not generated by MetricEngine.",
+  "version": "financial-real-formula-golden-v1"
+}

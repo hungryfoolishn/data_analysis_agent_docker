@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from langgraph_langchain.data.assets import hash_file
+from langgraph_langchain.data.assets import canonical_text_sha256, hash_file
 
 from .fact import FinancialFact
 from .data_service import FinancialDataService
@@ -72,6 +72,8 @@ class RealSourceRecord:
     document_name: str
     raw_file: str
     source_hash: str
+    facts_file: str | None = None
+    facts_file_hash: str | None = None
     document_url: str | None = None
     published_at: str | None = None
 
@@ -174,14 +176,45 @@ class RealFinancialDataLoader:
             if not raw_path.is_file():
                 errors.append(f"missing raw source file: {record.raw_file}")
                 continue
-            actual_hash = hash_file(raw_path)
-            expected_hash = record.source_hash.removeprefix("sha256:")
+            if record.source_hash.startswith("sha256-canonical-text:"):
+                actual_hash = canonical_text_sha256(raw_path)
+                expected_hash = record.source_hash.removeprefix(
+                    "sha256-canonical-text:"
+                )
+                actual_hash_label = f"sha256-canonical-text:{actual_hash}"
+            elif record.source_hash.startswith("sha256:"):
+                actual_hash = hash_file(raw_path)
+                expected_hash = record.source_hash.removeprefix("sha256:")
+                actual_hash_label = f"sha256:{actual_hash}"
+            else:
+                errors.append(
+                    f"unsupported source hash for {record.source_id}: "
+                    f"{record.source_hash}"
+                )
+                continue
             if actual_hash != expected_hash:
                 errors.append(
                     f"source hash mismatch for {record.source_id}: "
-                    f"expected {record.source_hash}, got sha256:{actual_hash}"
+                    f"expected {record.source_hash}, got {actual_hash_label}"
                 )
                 continue
+            if record.facts_file:
+                facts_path = self.directory / record.facts_file
+                if not facts_path.is_file():
+                    errors.append(f"missing parsed facts file: {record.facts_file}")
+                    continue
+                if record.facts_file_hash:
+                    actual_facts_hash = canonical_text_sha256(facts_path)
+                    expected_facts_hash = record.facts_file_hash.removeprefix(
+                        "sha256-canonical-text:"
+                    )
+                    if actual_facts_hash != expected_facts_hash:
+                        errors.append(
+                            f"facts file hash mismatch for {record.source_id}: "
+                            f"expected {record.facts_file_hash}, "
+                            f"got sha256-canonical-text:{actual_facts_hash}"
+                        )
+                        continue
             try:
                 self.period_normalizer.parse(record.report_period)
             except ValueError as exc:
@@ -212,11 +245,17 @@ class RealFinancialDataLoader:
             source = sources.get(source_record.source_id)
             if source is None:
                 continue
-            raw_path = self.directory / source_record.raw_file
+            facts_path = (
+                self.directory / source_record.facts_file
+                if source_record.facts_file
+                else self.directory / source_record.raw_file
+            )
             try:
-                payload = json.loads(raw_path.read_text(encoding="utf-8"))
+                payload = json.loads(facts_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                errors.append(f"cannot parse raw source {source_record.source_id}: {exc}")
+                errors.append(
+                    f"cannot parse facts file for {source_record.source_id}: {exc}"
+                )
                 continue
 
             records = payload.get("facts", []) if isinstance(payload, dict) else payload

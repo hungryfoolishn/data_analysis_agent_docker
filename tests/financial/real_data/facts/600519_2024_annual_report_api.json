@@ -1,0 +1,187 @@
+{
+  "company_id": "600519",
+  "facts": [
+    {
+      "company_id": "600519",
+      "metric_id": "revenue",
+      "original_metric_name": "TOTAL_OPERATE_INCOME",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.TOTAL_OPERATE_INCOME",
+      "unit": "CNY",
+      "value": 174144069958.25
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "cost_of_revenue",
+      "original_metric_name": "OPERATE_COST",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.OPERATE_COST",
+      "unit": "CNY",
+      "value": 13789482367.98
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "operating_profit",
+      "original_metric_name": "OPERATE_PROFIT",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.OPERATE_PROFIT",
+      "unit": "CNY",
+      "value": 119688579453.23
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "net_profit",
+      "original_metric_name": "NETPROFIT",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.NETPROFIT",
+      "unit": "CNY",
+      "value": 89334728025.9
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "net_profit_attributable",
+      "original_metric_name": "PARENT_NETPROFIT",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.PARENT_NETPROFIT",
+      "unit": "CNY",
+      "value": 86228146421.62
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "total_assets",
+      "original_metric_name": "TOTAL_ASSETS",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.TOTAL_ASSETS",
+      "unit": "CNY",
+      "value": 298944579918.7
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "total_liabilities",
+      "original_metric_name": "TOTAL_LIABILITIES",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.TOTAL_LIABILITIES",
+      "unit": "CNY",
+      "value": 56933264798.1
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "total_equity",
+      "original_metric_name": "TOTAL_EQUITY",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.TOTAL_EQUITY",
+      "unit": "CNY",
+      "value": 242011315120.6
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "cash",
+      "original_metric_name": "MONETARYFUNDS",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.MONETARYFUNDS",
+      "unit": "CNY",
+      "value": 59295822956.89
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "accounts_receivable",
+      "original_metric_name": "ACCOUNTS_RECE",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.ACCOUNTS_RECE",
+      "unit": "CNY",
+      "value": 18974192.75
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "inventory",
+      "original_metric_name": "INVENTORY",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.INVENTORY",
+      "unit": "CNY",
+      "value": 54343285157.47
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "fixed_assets",
+      "original_metric_name": "FIXED_ASSET",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.FIXED_ASSET",
+      "unit": "CNY",
+      "value": 21871446747.14
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "current_assets",
+      "original_metric_name": "TOTAL_CURRENT_ASSETS",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.TOTAL_CURRENT_ASSETS",
+      "unit": "CNY",
+      "value": 251726674636.66
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "current_liabilities",
+      "original_metric_name": "TOTAL_CURRENT_LIAB",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.TOTAL_CURRENT_LIAB",
+      "unit": "CNY",
+      "value": 56515990618.96
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "operating_cash_flow",
+      "original_metric_name": "NETCASH_OPERATE",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.NETCASH_OPERATE",
+      "unit": "CNY",
+      "value": 92463692168.43
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "investing_cash_flow",
+      "original_metric_name": "NETCASH_INVEST",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.NETCASH_INVEST",
+      "unit": "CNY",
+      "value": -1785202630.71
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "financing_cash_flow",
+      "original_metric_name": "NETCASH_FINANCE",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.NETCASH_FINANCE",
+      "unit": "CNY",
+      "value": -71067506484.81
+    },
+    {
+      "company_id": "600519",
+      "metric_id": "capital_expenditure",
+      "original_metric_name": "CONSTRUCT_LONG_ASSET",
+      "original_period": "2024年报",
+      "source_id": "600519_2024_annual_report_api",
+      "source_label": "eastmoney_f10.CONSTRUCT_LONG_ASSET",
+      "unit": "CNY",
+      "value": 4678712053.56
+    }
+  ],
+  "report_period": "2024年报",
+  "source_id": "600519_2024_annual_report_api"
+}
