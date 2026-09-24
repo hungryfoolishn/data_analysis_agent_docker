@@ -328,7 +328,7 @@ def compute_metric(
             metric_id=metric_id,
             status=CALCULATED,
             value=round(value, 6),
-            inputs={key: round(value, 6) for key, value in inputs.items()},
+            inputs={key: None if item is None else round(item, 6) for key, item in inputs.items()},
         )
 
     if definition.metric_id == "free_cash_flow":
@@ -353,7 +353,7 @@ def compute_metric(
             metric_id=metric_id,
             status=CALCULATED,
             value=round(value, 6),
-            inputs={key: round(value, 6) for key, value in inputs.items()},
+            inputs={key: None if item is None else round(item, 6) for key, item in inputs.items()},
         )
 
     if definition.balance_policy == "average_balance":
@@ -404,7 +404,7 @@ def compute_metric(
             metric_id=metric_id,
             status=CALCULATED,
             value=round(value, 6),
-            inputs={key: round(value, 6) for key, value in inputs.items()},
+            inputs={key: None if item is None else round(item, 6) for key, item in inputs.items()},
         )
 
     numerator = _ratio_value(definition.numerator or "", income, balance, cash_flow, missing_fields)
@@ -432,7 +432,7 @@ def compute_metric(
         metric_id=metric_id,
         status=CALCULATED,
         value=round(value, 6),
-        inputs={key: round(value, 6) for key, value in inputs.items()},
+        inputs={key: None if item is None else round(item, 6) for key, item in inputs.items()},
     )
 
 

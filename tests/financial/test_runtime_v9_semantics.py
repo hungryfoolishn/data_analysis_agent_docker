@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from langgraph_langchain.runtime.financial import (
     CALCULATED,
     INVALID,
@@ -234,6 +236,67 @@ def test_adapter_reports_v9_2_semantics():
     assert candidate.metadata["data_source_count"] == len(result.data_sources)
     assert candidate.metadata["unavailable_calculation_count"] == 0
     assert candidate.metadata["invalid_calculation_count"] == 0
+
+def test_metric_inputs_preserve_source_values_not_final_results():
+    service = build_service()
+    company = service.resolve_company("白酒样本01")
+    period = "2025"
+    previous_period = service.previous_period(company.company_id, period)
+    previous_balance = service.previous_balance(company.company_id, period)
+    income, balance, cash_flow, previous_income = service.statements(
+        company.company_id,
+        period,
+        previous_period,
+    )
+
+    growth = compute_metric(
+        "revenue_growth",
+        income=income,
+        balance=balance,
+        cash_flow=cash_flow,
+        previous_income=previous_income,
+        previous_balance=previous_balance,
+    )
+    roe = compute_metric(
+        "roe",
+        income=income,
+        balance=balance,
+        cash_flow=cash_flow,
+        previous_income=previous_income,
+        previous_balance=previous_balance,
+    )
+    free_cash_flow = compute_metric(
+        "free_cash_flow",
+        income=income,
+        balance=balance,
+        cash_flow=cash_flow,
+        previous_income=previous_income,
+        previous_balance=previous_balance,
+    )
+
+    assert growth.value == pytest.approx(
+        (income.revenue - previous_income.revenue)
+        / abs(previous_income.revenue)
+        * 100
+    )
+    assert growth.inputs == {
+        "current": income.revenue,
+        "previous": previous_income.revenue,
+    }
+    assert roe.inputs["numerator"] == income.net_profit
+    assert roe.inputs["current_denominator"] == balance.total_equity
+    assert roe.inputs["previous_denominator"] == previous_balance.total_equity
+    assert roe.inputs["average_denominator"] == (
+        balance.total_equity + previous_balance.total_equity
+    ) / 2
+    assert free_cash_flow.inputs == {
+        "operating_cash_flow": cash_flow.operating_cash_flow,
+        "capital_expenditure": cash_flow.capital_expenditure,
+    }
+    assert free_cash_flow.value == pytest.approx(
+        cash_flow.operating_cash_flow - cash_flow.capital_expenditure
+    )
+
 
 def test_nan_is_invalid():
     service = build_service()
