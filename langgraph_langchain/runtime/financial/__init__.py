@@ -48,6 +48,13 @@ from .anomaly_engine import FinancialAnomalyEngine
 from .finding_engine import FinancialFindingEngine
 from .evaluation import FinancialEvaluationAdapter
 from .risk_detector import FinancialRiskDetector
+from .real_data import (
+    RealCompanyRecord,
+    RealFinancialDataLoader,
+    RealFinancialDataset,
+    RealFinancialManifest,
+    RealSourceRecord,
+)
 
 __all__ = [
     "BalanceSheetStatement",
@@ -95,6 +102,11 @@ __all__ = [
     "PeriodNormalizationError",
     "PeriodNormalizer",
     "PeriodType",
+    "RealCompanyRecord",
+    "RealFinancialDataLoader",
+    "RealFinancialDataset",
+    "RealFinancialManifest",
+    "RealSourceRecord",
     "UnitConversion",
     "UnitNormalizer",
     "financial_metric_registry",
