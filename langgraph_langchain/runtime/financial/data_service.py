@@ -14,6 +14,7 @@ from .models import (
     FinancialDataSource,
     IncomeStatement,
 )
+from .period import PeriodNormalizer
 
 
 class FinancialDataService:
@@ -45,6 +46,7 @@ class FinancialDataService:
             (item.company_id, item.period): item for item in cash_flows
         }
         self._sources_by_id = self._build_sources()
+        self._period_normalizer = PeriodNormalizer()
 
     @classmethod
     def from_csv_directory(cls, directory: str | Path) -> "FinancialDataService":
@@ -106,10 +108,15 @@ class FinancialDataService:
         return company
 
     def periods_for(self, company_id: str) -> list[str]:
-        return sorted({
+        """Return raw periods ordered by normalized financial period semantics."""
+        raw_periods = {
             item.period for item in self.income_statements
             if item.company_id == company_id
-        })
+        }
+        return sorted(
+            raw_periods,
+            key=self._period_normalizer.order_key,
+        )
 
     def statements(
         self,
@@ -135,12 +142,14 @@ class FinancialDataService:
         return self._balance_by_key.get((company_id, previous_period))
 
     def previous_period(self, company_id: str, period: str) -> str | None:
+        """Return the semantically previous period when present in the dataset."""
         periods = self.periods_for(company_id)
-        try:
-            index = periods.index(period)
-        except ValueError as exc:
-            raise KeyError(f"Unknown period {period} for {company_id}") from exc
-        return periods[index - 1] if index > 0 else None
+        if period not in periods:
+            raise KeyError(f"Unknown period {period} for {company_id}")
+        previous = self._period_normalizer.parse(period).previous()
+        # Missing prior periods must remain absent so average-balance metrics
+        # become UNAVAILABLE instead of silently using an older available period.
+        return previous.normalized_period if previous.normalized_period in periods else None
 
     def list_sources(self) -> list[FinancialDataSource]:
         return sorted(self._sources_by_id.values(), key=lambda item: item.source_id)

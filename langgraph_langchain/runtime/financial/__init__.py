@@ -30,6 +30,16 @@ from .metrics import (
     compute_metric,
     financial_metric_registry,
 )
+from .period import FinancialPeriod, PeriodNormalizer, PeriodNormalizationError, PeriodType
+from .unit import UnitConversion, UnitNormalizer
+from .fact import FinancialFact, FinancialFactBuilder
+from .golden import (
+    FormulaGoldenCase,
+    FormulaGoldenLoader,
+    FormulaGoldenResult,
+    FormulaGoldenRunner,
+    FormulaGoldenSummary,
+)
 from .data_service import FinancialDataService
 from .classifier import FinancialTaskClassifier, FinancialTaskType
 from .workflow import FinancialAnalysisWorkflow
@@ -54,10 +64,18 @@ __all__ = [
     "FinancialDataService",
     "FinancialDataSource",
     "FinancialVerificationEngine",
+    "FormulaGoldenCase",
+    "FormulaGoldenLoader",
+    "FormulaGoldenResult",
+    "FormulaGoldenRunner",
+    "FormulaGoldenSummary",
     "INVALID",
     "MetricComputation",
     "FinancialEvidence",
+    "FinancialFact",
+    "FinancialFactBuilder",
     "FinancialFinding",
+    "FinancialPeriod",
     "FinancialEvaluationAdapter",
     "FinancialIndicator",
     "FinancialMetricDefinition",
@@ -74,5 +92,10 @@ __all__ = [
     "FinancialTaskType",
     "FinancialVerification",
     "IncomeStatement",
+    "PeriodNormalizationError",
+    "PeriodNormalizer",
+    "PeriodType",
+    "UnitConversion",
+    "UnitNormalizer",
     "financial_metric_registry",
 ]

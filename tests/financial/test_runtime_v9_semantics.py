@@ -21,6 +21,14 @@ from langgraph_langchain.runtime.financial import (
     compute_metric,
 )
 from langgraph_langchain.runtime.financial.evaluation import FinancialEvaluationAdapter
+from langgraph_langchain.runtime.financial.fact import FinancialFactBuilder
+from langgraph_langchain.runtime.financial.period import (
+    FinancialPeriod,
+    PeriodNormalizer,
+    PeriodNormalizationError,
+    PeriodType,
+)
+from langgraph_langchain.runtime.financial.unit import UnitNormalizer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "tests" / "financial" / "data" / "financial"
@@ -422,3 +430,107 @@ def test_verification_engine_marks_non_finite_actual_result_invalid():
     assert verification.passed is False
     assert verification.actual_value is None
     assert verification.message == "独立公式验证结果是非有限值，判定为 INVALID。"
+
+
+@pytest.mark.parametrize(
+    ("raw", "year", "period_type", "normalized"),
+    [
+        ("2025", 2025, PeriodType.FY, "2025"),
+        ("2025年度", 2025, PeriodType.FY, "2025"),
+        ("FY2025", 2025, PeriodType.FY, "2025"),
+        ("2025Q1", 2025, PeriodType.Q1, "2025Q1"),
+        ("2025-Q2", 2025, PeriodType.Q2, "2025Q2"),
+        ("2025Q3", 2025, PeriodType.Q3, "2025Q3"),
+        ("2025-Q4", 2025, PeriodType.Q4, "2025Q4"),
+        ("2025H1", 2025, PeriodType.H1, "2025H1"),
+        ("2025-H2", 2025, PeriodType.H2, "2025H2"),
+    ],
+)
+def test_period_normalizer_parses_supported_formats(raw, year, period_type, normalized):
+    period = PeriodNormalizer().parse(raw)
+
+    assert period.year == year
+    assert period.period_type == period_type
+    assert period.normalized_period == normalized
+    assert period.start_date < period.end_date
+
+
+@pytest.mark.parametrize("raw", ["abc", "2025XYZ", "FY", "2025-Q5", "TTM", "LTM"])
+def test_period_normalizer_rejects_unsupported_periods(raw):
+    with pytest.raises(PeriodNormalizationError):
+        PeriodNormalizer().parse(raw)
+
+
+def test_period_ordering_and_previous_period():
+    normalizer = PeriodNormalizer()
+    q1 = normalizer.parse("2025Q1")
+    q3 = normalizer.parse("2025-Q3")
+    q4 = normalizer.parse("2025Q4")
+    fy = normalizer.parse("FY2025")
+
+    assert q3 < q4 < fy
+    assert fy.previous().normalized_period == "2024"
+    assert q4.previous().normalized_period == "2025Q3"
+    assert q1.previous().normalized_period == "2024Q4"
+
+
+def test_data_service_orders_and_resolves_previous_period():
+    service = FinancialDataService.from_csv_directory(DATA_DIR)
+    company = service.resolve_company("白酒样本01")
+
+    assert service.periods_for(company.company_id) == [
+        "2021", "2022", "2023", "2024", "2025"
+    ]
+    assert service.previous_period(company.company_id, "2025") == "2024"
+    assert service.previous_period(company.company_id, "2021") is None
+
+
+@pytest.mark.parametrize(
+    ("value", "unit", "expected"),
+    [
+        (1_000_000, "CNY", 1_000_000),
+        (1_000, "万元", 10_000_000),
+        (1, "亿元", 1_000_000_000),
+        (2.5, "CNY_MILLION", 2_500_000),
+        (10, "CNY_THOUSAND", 10_000),
+    ],
+)
+def test_unit_normalizer_converts_to_cny(value, unit, expected):
+    conversion = UnitNormalizer().normalize(value, unit)
+
+    assert conversion.status == "calculated"
+    assert conversion.normalized_value == expected
+    assert conversion.normalized_unit == "CNY"
+    assert conversion.conversion_rule.startswith("multiply_by_")
+
+
+def test_unit_normalizer_rejects_missing_and_non_finite_values():
+    normalizer = UnitNormalizer()
+    assert normalizer.normalize(None, "CNY").status == "unavailable"
+    assert normalizer.normalize(float("nan"), "CNY").status == "invalid"
+    assert normalizer.normalize(float("inf"), "CNY").status == "invalid"
+    with pytest.raises(Exception):
+        normalizer.normalize(1, "USD")
+
+
+def test_fact_builder_preserves_period_and_unit_provenance():
+    service = FinancialDataService.from_csv_directory(DATA_DIR)
+    company = service.resolve_company("白酒样本01")
+    period = "2025"
+    income, balance, cash_flow, _ = service.statements(company.company_id, period)
+    source = service.get_source(income.source_id)
+    facts = FinancialFactBuilder().from_statements(
+        income=income,
+        balance=balance,
+        cash_flow=cash_flow,
+        source=source,
+    )
+
+    assert facts
+    revenue = next(item for item in facts if item.metric_id == "revenue")
+    assert revenue.company_id == company.company_id
+    assert revenue.period == "2025"
+    assert revenue.original_period == period
+    assert revenue.source_id == source.source_id
+    assert revenue.status == "VALID"
+    assert revenue.normalized_unit == "CNY"

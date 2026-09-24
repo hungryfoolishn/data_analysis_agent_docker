@@ -1,0 +1,351 @@
+{
+  "version": "financial-formula-golden-v1",
+  "description": "Static expected values independently recorded for Runtime V9.3.",
+  "cases": [
+    {
+      "case_id": "revenue_2025",
+      "metric_id": "revenue",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 2937441024.0
+      },
+      "expected": 2937441024.0,
+      "unit": "CNY",
+      "formula": "reported:income_statement.revenue",
+      "formula_version": "revenue-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "net_profit_2025",
+      "metric_id": "net_profit",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 1375850376.59
+      },
+      "expected": 1375850376.59,
+      "unit": "CNY",
+      "formula": "reported:income_statement.net_profit",
+      "formula_version": "net-profit-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "operating_profit_2025",
+      "metric_id": "operating_profit",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 1677866312.91
+      },
+      "expected": 1677866312.91,
+      "unit": "CNY",
+      "formula": "reported:income_statement.operating_profit",
+      "formula_version": "operating-profit-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "cost_of_revenue_2025",
+      "metric_id": "cost_of_revenue",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 469990563.84
+      },
+      "expected": 469990563.84,
+      "unit": "CNY",
+      "formula": "reported:income_statement.cost_of_revenue",
+      "formula_version": "cost-of-revenue-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "gross_profit_2025",
+      "metric_id": "gross_profit",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 2467450460.16
+      },
+      "expected": 2467450460.16,
+      "unit": "CNY",
+      "formula": "reported:income_statement.gross_profit",
+      "formula_version": "gross-profit-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "eps_2025",
+      "metric_id": "eps",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 1.37585
+      },
+      "expected": 1.37585,
+      "unit": "CNY/share",
+      "formula": "reported:income_statement.eps",
+      "formula_version": "eps-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "total_assets_2025",
+      "metric_id": "total_assets",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 6462370252.8
+      },
+      "expected": 6462370252.8,
+      "unit": "CNY",
+      "formula": "reported:balance_sheet.total_assets",
+      "formula_version": "total-assets-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "total_liabilities_2025",
+      "metric_id": "total_liabilities",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 1550968860.67
+      },
+      "expected": 1550968860.67,
+      "unit": "CNY",
+      "formula": "reported:balance_sheet.total_liabilities",
+      "formula_version": "total-liabilities-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "total_equity_2025",
+      "metric_id": "total_equity",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 4911401392.13
+      },
+      "expected": 4911401392.13,
+      "unit": "CNY",
+      "formula": "reported:balance_sheet.total_equity",
+      "formula_version": "total-equity-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "operating_cash_flow_2025",
+      "metric_id": "operating_cash_flow",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "value": 577857158.17
+      },
+      "expected": 577857158.17,
+      "unit": "CNY",
+      "formula": "reported:cash_flow.operating_cash_flow",
+      "formula_version": "ocf-reported-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "revenue_growth_2025",
+      "metric_id": "revenue_growth",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "current": 2937441024.0,
+        "previous": 2489356800.0
+      },
+      "expected": 18.0,
+      "unit": "%",
+      "formula": "(revenue_current - revenue_previous) / abs(revenue_previous) * 100",
+      "formula_version": "revenue-growth-yoy-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "net_profit_growth_2025",
+      "metric_id": "net_profit_growth",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "current": 1375850376.59,
+        "previous": 1165974895.41
+      },
+      "expected": 18.0,
+      "unit": "%",
+      "formula": "(net_profit_current - net_profit_previous) / abs(net_profit_previous) * 100",
+      "formula_version": "net-profit-growth-yoy-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "net_margin_2025",
+      "metric_id": "net_margin",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 1375850376.59,
+        "denominator": 2937441024.0
+      },
+      "expected": 46.8384,
+      "unit": "%",
+      "formula": "net_profit / revenue * 100",
+      "formula_version": "net-margin-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "roe_2025",
+      "metric_id": "roe",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 1375850376.59,
+        "current_denominator": 4911401392.13,
+        "previous_denominator": 4162204569.6,
+        "average_denominator": 4536802980.865
+      },
+      "expected": 30.32643,
+      "unit": "%",
+      "formula": "net_profit / average(total_equity_current, total_equity_previous) * 100",
+      "formula_version": "roe-average-equity-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "roa_2025",
+      "metric_id": "roa",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 1375850376.59,
+        "current_denominator": 6462370252.8,
+        "previous_denominator": 5476584960.0,
+        "average_denominator": 5969477606.4
+      },
+      "expected": 23.048087,
+      "unit": "%",
+      "formula": "net_profit / average(total_assets_current, total_assets_previous) * 100",
+      "formula_version": "roa-average-assets-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "debt_to_asset_2025",
+      "metric_id": "debt_to_asset",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 1550968860.67,
+        "denominator": 6462370252.8
+      },
+      "expected": 24.0,
+      "unit": "%",
+      "formula": "total_liabilities / total_assets * 100",
+      "formula_version": "debt-to-asset-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "current_ratio_2025",
+      "metric_id": "current_ratio",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 3101937721.34,
+        "denominator": 713445675.91
+      },
+      "expected": 4.347826,
+      "unit": "x",
+      "formula": "current_assets / current_liabilities",
+      "formula_version": "current-ratio-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "quick_ratio_2025",
+      "metric_id": "quick_ratio",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 1449685894.16,
+        "denominator": 713445675.91
+      },
+      "expected": 2.03195,
+      "unit": "x",
+      "formula": "(cash + accounts_receivable) / current_liabilities",
+      "formula_version": "quick-ratio-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "receivable_turnover_2025",
+      "metric_id": "receivable_turnover",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 2937441024.0,
+        "current_denominator": 146872051.2,
+        "previous_denominator": 124467840.0,
+        "average_denominator": 135669945.6
+      },
+      "expected": 21.651376,
+      "unit": "x",
+      "formula": "revenue / average(accounts_receivable_current, accounts_receivable_previous)",
+      "formula_version": "receivable-turnover-average-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "inventory_turnover_2025",
+      "metric_id": "inventory_turnover",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 469990563.84,
+        "current_denominator": 117497640.96,
+        "previous_denominator": 99574272.0,
+        "average_denominator": 108535956.48
+      },
+      "expected": 4.330275,
+      "unit": "x",
+      "formula": "cost_of_revenue / average(inventory_current, inventory_previous)",
+      "formula_version": "inventory-turnover-average-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "asset_turnover_2025",
+      "metric_id": "asset_turnover",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 2937441024.0,
+        "current_denominator": 6462370252.8,
+        "previous_denominator": 5476584960.0,
+        "average_denominator": 5969477606.4
+      },
+      "expected": 0.492077,
+      "unit": "x",
+      "formula": "revenue / average(total_assets_current, total_assets_previous)",
+      "formula_version": "asset-turnover-average-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "ocf_to_net_income_2025",
+      "metric_id": "ocf_to_net_income",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "numerator": 577857158.17,
+        "denominator": 1375850376.59
+      },
+      "expected": 0.42,
+      "unit": "x",
+      "formula": "operating_cash_flow / net_profit",
+      "formula_version": "ocf-net-income-v1",
+      "tolerance": 0.0005
+    },
+    {
+      "case_id": "free_cash_flow_2025",
+      "metric_id": "free_cash_flow",
+      "company_id": "financial_00",
+      "period": "2025",
+      "inputs": {
+        "operating_cash_flow": 577857158.17,
+        "capital_expenditure": 522823143.1
+      },
+      "expected": 55034015.07,
+      "unit": "CNY",
+      "formula": "operating_cash_flow - capital_expenditure",
+      "formula_version": "free-cash-flow-v1",
+      "tolerance": 0.0005
+    }
+  ]
+}
