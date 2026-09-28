@@ -49,8 +49,8 @@ class FinancialPeriod:
         """Order by period end date, with FY explicitly following H2/Q4."""
         rank = {
             PeriodType.Q1: 1.0,
-            PeriodType.H1: 1.5,
             PeriodType.Q2: 2.0,
+            PeriodType.H1: 2.5,
             PeriodType.Q3: 3.0,
             PeriodType.Q4: 4.0,
             PeriodType.H2: 4.5,
@@ -72,8 +72,8 @@ class FinancialPeriod:
                 raw_period=f"{self.year - 1}Q4",
                 year=self.year - 1,
                 period_type=PeriodType.Q4,
-                start_date=date(self.year - 1, 7, 1),
-                end_date=date(self.year - 1, 9, 30),
+                start_date=date(self.year - 1, 10, 1),
+                end_date=date(self.year - 1, 12, 31),
             )
         if self.period_type == PeriodType.Q2:
             return FinancialPeriod(
@@ -96,8 +96,8 @@ class FinancialPeriod:
                 raw_period=f"{self.year}Q3",
                 year=self.year,
                 period_type=PeriodType.Q3,
-                start_date=date(self.year, 4, 1),
-                end_date=date(self.year, 6, 30),
+                start_date=date(self.year, 7, 1),
+                end_date=date(self.year, 9, 30),
             )
         if self.period_type == PeriodType.H2:
             return FinancialPeriod(
@@ -219,5 +219,5 @@ class PeriodNormalizer:
     def normalize(self, raw_period: str | int) -> str:
         return self.parse(raw_period).normalized_period
 
-    def order_key(self, raw_period: str | int) -> tuple[int, int]:
+    def order_key(self, raw_period: str | int) -> tuple[int, float]:
         return self.parse(raw_period).order_key

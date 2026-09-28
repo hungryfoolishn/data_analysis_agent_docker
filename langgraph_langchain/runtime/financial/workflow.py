@@ -9,6 +9,7 @@ from .classifier import FinancialTaskClassifier, FinancialTaskType
 from .data_service import FinancialDataService
 from .finding_engine import FinancialFindingEngine
 from .metrics import compute_metric, financial_metric_registry
+from .period import PeriodNormalizer
 from .models import (
     BalanceSheetStatement,
     CashFlowStatement,
@@ -94,6 +95,7 @@ class FinancialAnalysisWorkflow:
         self.verification_engine = FinancialVerificationEngine()
         self.finding_engine = FinancialFindingEngine()
         self.anomaly_engine = FinancialAnomalyEngine()
+        self._period_normalizer = PeriodNormalizer()
 
     def run(self, query: FinancialQuery | str) -> FinancialAnalysisResult:
         query = self._normalize_query(query)
@@ -114,9 +116,14 @@ class FinancialAnalysisWorkflow:
             selected = [
                 period
                 for period in periods
-                if query.start_year is None
-                or query.end_year is None
-                or query.start_year <= int(period) <= query.end_year
+                if (
+                    query.start_year is None
+                    or self._period_normalizer.parse(period).year >= query.start_year
+                )
+                and (
+                    query.end_year is None
+                    or self._period_normalizer.parse(period).year <= query.end_year
+                )
             ]
             if not selected:
                 selected = periods[-min(5, len(periods)):]
@@ -364,8 +371,8 @@ class FinancialAnalysisWorkflow:
             ))
         return comparisons
 
-    @staticmethod
     def _summary(
+        self,
         *,
         observations: list[FinancialObservation],
         calculations: list[FinancialCalculation],
@@ -378,7 +385,10 @@ class FinancialAnalysisWorkflow:
         if not observations:
             return "未能生成可验证的金融分析结果：所需报表数据缺失或无效。"
 
-        latest_period = max(item.period for item in observations)
+        latest_period = max(
+            (item.period for item in observations),
+            key=self._period_normalizer.order_key,
+        )
         latest = [
             item
             for item in observations

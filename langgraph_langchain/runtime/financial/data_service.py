@@ -36,17 +36,18 @@ class FinancialDataService:
         self._companies_by_id = {item.company_id: item for item in companies}
         self._companies_by_name = {item.company_name: item for item in companies}
         self._companies_by_code = {item.stock_code: item for item in companies}
+        self._period_normalizer = PeriodNormalizer()
         self._income_by_key = {
-            (item.company_id, item.period): item for item in income_statements
+            self._statement_key(item): item for item in income_statements
         }
         self._balance_by_key = {
-            (item.company_id, item.period): item for item in balance_sheets
+            self._statement_key(item): item for item in balance_sheets
         }
         self._cash_by_key = {
-            (item.company_id, item.period): item for item in cash_flows
+            self._statement_key(item): item for item in cash_flows
         }
+        self._canonical_periods_by_company = self._build_periods()
         self._sources_by_id = self._build_sources()
-        self._period_normalizer = PeriodNormalizer()
 
     @classmethod
     def from_csv_directory(cls, directory: str | Path) -> "FinancialDataService":
@@ -66,6 +67,30 @@ class FinancialDataService:
             balance_sheets=balance,
             cash_flows=cash,
         )
+
+    def _statement_key(
+        self,
+        item: IncomeStatement | BalanceSheetStatement | CashFlowStatement,
+    ) -> tuple[str, str]:
+        """Map statements by canonical financial period, not display text."""
+        return (
+            item.company_id,
+            self._period_normalizer.normalize(item.period),
+        )
+
+    def _build_periods(self) -> dict[str, list[str]]:
+        periods: dict[str, set[str]] = {}
+        for item in self.income_statements:
+            periods.setdefault(item.company_id, set()).add(
+                self._period_normalizer.normalize(item.period)
+            )
+        return {
+            company_id: sorted(
+                values,
+                key=self._period_normalizer.order_key,
+            )
+            for company_id, values in periods.items()
+        }
 
     def _build_sources(self) -> dict[str, FinancialDataSource]:
         rows: list[tuple[str, str, IncomeStatement | BalanceSheetStatement | CashFlowStatement]] = []
@@ -87,7 +112,7 @@ class FinancialDataService:
                 source_id=source_id,
                 source_type="annual_report",
                 company_id=statement.company_id,
-                report_period=statement.period,
+                report_period=self._period_normalizer.normalize(statement.period),
                 document_name=f"{source_kind}.csv#{source_id}",
                 source_hash=f"sha256:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}",
             )
@@ -108,15 +133,8 @@ class FinancialDataService:
         return company
 
     def periods_for(self, company_id: str) -> list[str]:
-        """Return raw periods ordered by normalized financial period semantics."""
-        raw_periods = {
-            item.period for item in self.income_statements
-            if item.company_id == company_id
-        }
-        return sorted(
-            raw_periods,
-            key=self._period_normalizer.order_key,
-        )
+        """Return canonical periods ordered by financial period semantics."""
+        return list(self._canonical_periods_by_company.get(company_id, []))
 
     def statements(
         self,
@@ -124,10 +142,18 @@ class FinancialDataService:
         period: str,
         previous_period: str | None = None,
     ) -> tuple[IncomeStatement, BalanceSheetStatement, CashFlowStatement, IncomeStatement | None]:
-        key = (company_id, period)
+        canonical_period = self._period_normalizer.normalize(period)
+        canonical_previous_period = (
+            self._period_normalizer.normalize(previous_period)
+            if previous_period is not None
+            else None
+        )
+        key = (company_id, canonical_period)
         if key not in self._income_by_key or key not in self._balance_by_key or key not in self._cash_by_key:
             raise KeyError(f"No financial statements for {company_id} {period}")
-        previous_income = self._income_by_key.get((company_id, previous_period))
+        previous_income = self._income_by_key.get(
+            (company_id, canonical_previous_period)
+        )
         return (
             self._income_by_key[key],
             self._balance_by_key[key],
@@ -139,14 +165,20 @@ class FinancialDataService:
         previous_period = self.previous_period(company_id, period)
         if previous_period is None:
             return None
-        return self._balance_by_key.get((company_id, previous_period))
+        return self._balance_by_key.get(
+            (
+                company_id,
+                self._period_normalizer.normalize(previous_period),
+            )
+        )
 
     def previous_period(self, company_id: str, period: str) -> str | None:
         """Return the semantically previous period when present in the dataset."""
+        canonical_period = self._period_normalizer.normalize(period)
         periods = self.periods_for(company_id)
-        if period not in periods:
+        if canonical_period not in periods:
             raise KeyError(f"Unknown period {period} for {company_id}")
-        previous = self._period_normalizer.parse(period).previous()
+        previous = self._period_normalizer.parse(canonical_period).previous()
         # Missing prior periods must remain absent so average-balance metrics
         # become UNAVAILABLE instead of silently using an older available period.
         return previous.normalized_period if previous.normalized_period in periods else None
