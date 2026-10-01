@@ -37,15 +37,18 @@ class FinancialDataService:
         self._companies_by_name = {item.company_name: item for item in companies}
         self._companies_by_code = {item.stock_code: item for item in companies}
         self._period_normalizer = PeriodNormalizer()
-        self._income_by_key = {
-            self._statement_key(item): item for item in income_statements
-        }
-        self._balance_by_key = {
-            self._statement_key(item): item for item in balance_sheets
-        }
-        self._cash_by_key = {
-            self._statement_key(item): item for item in cash_flows
-        }
+        self._income_by_key = self._build_statement_index(
+            income_statements,
+            "income",
+        )
+        self._balance_by_key = self._build_statement_index(
+            balance_sheets,
+            "balance",
+        )
+        self._cash_by_key = self._build_statement_index(
+            cash_flows,
+            "cash flow",
+        )
         self._canonical_periods_by_company = self._build_periods()
         self._sources_by_id = self._build_sources()
 
@@ -77,6 +80,24 @@ class FinancialDataService:
             item.company_id,
             self._period_normalizer.normalize(item.period),
         )
+
+    def _build_statement_index(
+        self,
+        statements: list[IncomeStatement] | list[BalanceSheetStatement] | list[CashFlowStatement],
+        statement_type: str,
+    ):
+        """Index statements while rejecting ambiguous canonical periods."""
+        index: dict[tuple[str, str], IncomeStatement | BalanceSheetStatement | CashFlowStatement] = {}
+        for item in statements:
+            key = self._statement_key(item)
+            if key in index:
+                previous = index[key]
+                raise ValueError(
+                    f"Duplicate {statement_type} canonical period for "
+                    f"{key[0]}/{key[1]}: {previous.period} and {item.period}"
+                )
+            index[key] = item
+        return index
 
     def _build_periods(self) -> dict[str, list[str]]:
         periods: dict[str, set[str]] = {}

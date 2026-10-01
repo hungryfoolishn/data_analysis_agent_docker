@@ -77,7 +77,30 @@ FY
 
 的错误顺序。
 
-### 4. Workflow 支持混合期间
+### 4. Canonical period conflict guard
+
+修复后，同一公司、同一 canonical period 只能有一个 Statement。若同时传入：
+
+```text
+2025年度
+FY2025
+```
+
+会在构建 `FinancialDataService` 时显式抛出：
+
+```text
+Duplicate income canonical period for period_test/2025: 2025年度 and FY2025
+```
+
+不再静默覆盖数据。
+
+同时修正 `FinancialPeriod.order_key` 与 `PeriodNormalizer.order_key` 的返回类型注解：
+
+```python
+tuple[int, int, float]
+```
+
+### 5. Workflow 支持混合期间
 
 修复前 Workflow 使用：
 
@@ -115,6 +138,7 @@ tests/financial/test_runtime_v9_period_hardening.py
 6. Workflow 按查询年度过滤季度、半年度、FY。
 7. Workflow summary 使用语义顺序选取最新期间。
 8. canonical 与 raw period 的 source period 表示一致。
+9. 同一 canonical period 的重复 Statement 别名被显式拒绝。
 
 ## 验收结果
 

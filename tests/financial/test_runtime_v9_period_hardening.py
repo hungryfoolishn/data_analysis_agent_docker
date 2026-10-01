@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from langgraph_langchain.runtime.financial import (
     FinancialAnalysisWorkflow,
     FinancialDataService,
@@ -208,6 +210,52 @@ def test_data_service_canonicalizes_raw_annual_periods():
 
     source = service.get_source("income_raw")
     assert source.report_period == "2025"
+
+
+def test_data_service_rejects_duplicate_canonical_period_aliases():
+    aliases = ["2025年度", "FY2025"]
+
+    def statement_for(period: str):
+        if period == "FY2025":
+            revenue = 120.0
+        else:
+            revenue = 121.0
+        return (
+            IncomeStatement(
+                company_id="period_test",
+                period=period,
+                revenue=revenue,
+                net_profit=revenue * 0.2,
+                source_id=f"income_{period}",
+            ),
+            BalanceSheetStatement(
+                company_id="period_test",
+                period=period,
+                total_assets=revenue * 3,
+                total_liabilities=revenue,
+                total_equity=revenue * 2,
+                source_id=f"balance_{period}",
+            ),
+            CashFlowStatement(
+                company_id="period_test",
+                period=period,
+                operating_cash_flow=revenue * 0.25,
+                capital_expenditure=revenue * 0.05,
+                source_id=f"cash_{period}",
+            ),
+        )
+
+    income = [statement_for(period)[0] for period in aliases]
+    balance = [statement_for(period)[1] for period in aliases]
+    cash = [statement_for(period)[2] for period in aliases]
+
+    with pytest.raises(ValueError, match="Duplicate income canonical period"):
+        FinancialDataService(
+            companies=[_company()],
+            income_statements=income,
+            balance_sheets=balance,
+            cash_flows=cash,
+        )
 
 
 def test_data_service_supports_mixed_quarter_half_year_and_fy_periods():

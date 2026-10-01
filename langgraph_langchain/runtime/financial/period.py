@@ -45,7 +45,7 @@ class FinancialPeriod:
         return f"{self.year}{self.period_type.value}"
 
     @property
-    def order_key(self) -> tuple[int, float]:
+    def order_key(self) -> tuple[int, int, float]:
         """Order by period end date, with FY explicitly following H2/Q4."""
         rank = {
             PeriodType.Q1: 1.0,
@@ -219,5 +219,5 @@ class PeriodNormalizer:
     def normalize(self, raw_period: str | int) -> str:
         return self.parse(raw_period).normalized_period
 
-    def order_key(self, raw_period: str | int) -> tuple[int, float]:
+    def order_key(self, raw_period: str | int) -> tuple[int, int, float]:
         return self.parse(raw_period).order_key
