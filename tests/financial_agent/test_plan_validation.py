@@ -8,6 +8,7 @@ from langgraph_langchain.runtime.financial_agent import (
     FinancialPlanTaskType,
     FinancialTaskPlanner,
     FinancialTaskUnderstandingBuilder,
+    PlanningReadiness,
     VerificationStatus,
 )
 
@@ -121,6 +122,72 @@ def test_validate_requires_report_to_depend_on_findings(plan):
     # Removing findings dependency may also produce other DAG errors; the
     # report-contract error is the assertion that matters here.
     assert any(
-        "Report task must depend on finding generation." in error
+        "Report task must depend exactly on findings." in error
         for error in errors
     )
+
+
+def test_validate_detects_verification_coverage_gap(plan):
+    verification = _task(plan, FinancialPlanTaskType.VERIFY_CALCULATIONS)
+    revenue = _task(plan, FinancialPlanTaskType.REVENUE_TREND)
+    verification.dependencies.remove(revenue.task_id)
+
+    errors = FinancialTaskPlanner().validate_plan(plan)
+
+    assert any(
+        f"Verification task does not cover numeric tasks: {revenue.task_id}"
+        in error
+        for error in errors
+    )
+
+
+def test_validate_requires_findings_to_depend_exactly_on_verification(plan):
+    findings = _task(plan, FinancialPlanTaskType.BUILD_FINDINGS)
+    findings.dependencies = [
+        _task(plan, FinancialPlanTaskType.REVENUE_TREND).task_id
+    ]
+
+    errors = FinancialTaskPlanner().validate_plan(plan)
+
+    assert any(
+        "Findings task must depend exactly on verification." in error
+        for error in errors
+    )
+
+
+def test_validate_detects_orphan_numeric_task(plan):
+    revenue = _task(plan, FinancialPlanTaskType.REVENUE_TREND)
+    verification = _task(plan, FinancialPlanTaskType.VERIFY_CALCULATIONS)
+    revenue.dependencies = []
+    verification.dependencies.remove(revenue.task_id)
+
+    errors = FinancialTaskPlanner().validate_plan(plan)
+
+    assert any(
+        f"Task {revenue.task_id} is not reachable from report" in error
+        for error in errors
+    )
+    assert any(
+        f"Verification task does not cover numeric tasks: {revenue.task_id}"
+        in error
+        for error in errors
+    )
+
+
+def test_validate_detects_duplicate_and_self_dependencies(plan):
+    revenue = _task(plan, FinancialPlanTaskType.REVENUE_TREND)
+    revenue.dependencies = [
+        _task(plan, FinancialPlanTaskType.VALIDATE_DATA_COVERAGE).task_id,
+        _task(plan, FinancialPlanTaskType.VALIDATE_DATA_COVERAGE).task_id,
+        revenue.task_id,
+    ]
+
+    errors = FinancialTaskPlanner().validate_plan(plan)
+
+    assert any("duplicate dependency" in error for error in errors)
+    assert any("self-dependency" in error for error in errors)
+
+
+def test_valid_plan_has_ready_planning_state(plan):
+    assert plan.planning_readiness == PlanningReadiness.READY
+    assert plan.planning_diagnostics == []

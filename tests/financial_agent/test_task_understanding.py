@@ -6,7 +6,9 @@ import pytest
 
 from langgraph_langchain.runtime.financial.models import Company
 from langgraph_langchain.runtime.financial_agent import (
+    FinancialTaskPlanner,
     FinancialTaskUnderstandingBuilder,
+    PlanningReadiness,
 )
 
 
@@ -123,3 +125,72 @@ def test_query_id_is_stable_for_same_question():
     second = builder.build("分析贵州茅台 2021-2025 年收入")
 
     assert first.query_id == second.query_id
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_objective"),
+    [
+        (
+            "全面分析贵州茅台 2021-2025 年的经营情况，重点关注偿债能力。",
+            "solvency",
+        ),
+        (
+            "全面分析贵州茅台 2021-2025 年的经营情况，重点关注风险。",
+            "risk",
+        ),
+        (
+            "全面分析贵州茅台 2021-2025 年的经营情况，重点关注营运效率。",
+            "operating_efficiency",
+        ),
+        (
+            "全面分析贵州茅台和五粮液 2021-2025 年的经营情况，并进行比较。",
+            "peer_comparison",
+        ),
+    ],
+)
+def test_comprehensive_analysis_merges_explicit_objectives(
+    question: str,
+    expected_objective: str,
+):
+    understanding = FinancialTaskUnderstandingBuilder(KNOWN_COMPANIES).build(question)
+
+    assert understanding.task_type == "COMPREHENSIVE_ANALYSIS"
+    assert expected_objective in understanding.objectives
+    assert {
+        "revenue_trend", "profit_trend", "profitability", "cashflow"
+    } <= set(understanding.objectives)
+
+
+@pytest.mark.parametrize(
+    ("question", "diagnostic"),
+    [
+        ("分析贵州茅台2025年", "NO_ANALYSIS_OBJECTIVE"),
+        ("分析盈利能力和现金流 2021-2025", "UNRESOLVED_COMPANY"),
+        ("分析贵州茅台盈利能力和现金流", "UNRESOLVED_PERIOD"),
+    ],
+)
+def test_incomplete_requests_are_marked_for_clarification(
+    question: str,
+    diagnostic: str,
+):
+    understanding = FinancialTaskUnderstandingBuilder(KNOWN_COMPANIES).build(question)
+    plan = FinancialTaskPlanner().build(understanding)
+
+    assert understanding.planning_readiness == PlanningReadiness.NEEDS_CLARIFICATION
+    assert diagnostic in understanding.planning_diagnostics
+    assert plan.status.value == "BLOCKED"
+    assert plan.planning_readiness == PlanningReadiness.NEEDS_CLARIFICATION
+    assert diagnostic in plan.planning_diagnostics
+    assert plan.metadata["blocked"] is True
+    assert not plan.tasks
+
+
+def test_empty_question_is_not_executable():
+    understanding = FinancialTaskUnderstandingBuilder(KNOWN_COMPANIES).build("")
+    plan = FinancialTaskPlanner().build(understanding)
+
+    assert understanding.planning_readiness == PlanningReadiness.NOT_EXECUTABLE
+    assert "EMPTY_QUESTION" in understanding.planning_diagnostics
+    assert plan.status.value == "FAILED"
+    assert plan.planning_readiness == PlanningReadiness.NOT_EXECUTABLE
+    assert not plan.tasks

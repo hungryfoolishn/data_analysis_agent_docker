@@ -11,6 +11,7 @@ from .models import (
     CompanyResolution,
     FinancialTaskUnderstanding,
     PeriodResolution,
+    PlanningReadiness,
 )
 
 
@@ -143,10 +144,28 @@ class FinancialTaskUnderstandingBuilder:
                     required_metrics.append(metric_id)
 
         missing_information: list[str] = []
+        planning_diagnostics: list[str] = []
+        if not raw_question:
+            planning_diagnostics.append("EMPTY_QUESTION")
         if not companies:
             missing_information.append("company_names_unresolved")
+            planning_diagnostics.append("UNRESOLVED_COMPANY")
         if period_range is None:
             missing_information.append("period_range_unresolved")
+            planning_diagnostics.append("UNRESOLVED_PERIOD")
+        if not objectives:
+            missing_information.append("analysis_objectives_unresolved")
+            planning_diagnostics.append("NO_ANALYSIS_OBJECTIVE")
+
+        planning_readiness = (
+            PlanningReadiness.NOT_EXECUTABLE
+            if "EMPTY_QUESTION" in planning_diagnostics
+            else (
+                PlanningReadiness.READY
+                if not planning_diagnostics
+                else PlanningReadiness.NEEDS_CLARIFICATION
+            )
+        )
 
         confidence = 0.4
         if companies:
@@ -168,6 +187,8 @@ class FinancialTaskUnderstandingBuilder:
             comparison_enabled=comparison_enabled,
             ambiguities=ambiguities,
             missing_information=missing_information,
+            planning_readiness=planning_readiness,
+            planning_diagnostics=planning_diagnostics,
             confidence=confidence,
         )
 
@@ -201,14 +222,18 @@ class FinancialTaskUnderstandingBuilder:
                 objectives.append(objective)
 
         if "comprehensive" in objectives:
+            # Comprehensive expands the default scope but never discards an
+            # explicitly requested objective such as solvency, operating
+            # efficiency, risk, or peer comparison.
             expanded = [
                 "revenue_trend",
                 "profit_trend",
                 "profitability",
                 "cashflow",
             ]
-            if "peer_comparison" in objectives:
-                expanded.append("peer_comparison")
+            for objective in objectives:
+                if objective != "comprehensive" and objective not in expanded:
+                    expanded.append(objective)
             objectives = expanded
 
         if "peer_comparison" in objectives and len(objectives) > 1:

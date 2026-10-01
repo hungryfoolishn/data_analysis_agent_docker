@@ -14,6 +14,7 @@ from .models import (
     FinancialPlanTaskType,
     FinancialTaskUnderstanding,
     PlanStatus,
+    PlanningReadiness,
     VerificationStatus,
 )
 from .tools import FINANCIAL_TOOL_REGISTRY, TASK_TOOL_IDS, FinancialToolSpec
@@ -106,6 +107,27 @@ class FinancialTaskPlanner:
         self,
         understanding: FinancialTaskUnderstanding,
     ) -> FinancialPlan:
+        if understanding.planning_readiness != PlanningReadiness.READY:
+            status = (
+                PlanStatus.BLOCKED
+                if understanding.planning_readiness == PlanningReadiness.NEEDS_CLARIFICATION
+                else PlanStatus.FAILED
+            )
+            return FinancialPlan(
+                plan_id=_plan_id(understanding.query_id),
+                query_id=understanding.query_id,
+                status=status,
+                planning_readiness=understanding.planning_readiness,
+                planning_diagnostics=list(understanding.planning_diagnostics),
+                metadata={
+                    "task_type": understanding.task_type,
+                    "company_count": len(understanding.companies),
+                    "comparison_enabled": understanding.comparison_enabled,
+                    "blocked": True,
+                    "blocked_reasons": list(understanding.planning_diagnostics),
+                },
+            )
+
         tasks: list[FinancialPlanTask] = []
         task_ids: dict[FinancialPlanTaskType, str] = {}
 
@@ -210,6 +232,11 @@ class FinancialTaskPlanner:
         )
         errors = self.validate_plan(plan)
         plan.status = PlanStatus.VALIDATED if not errors else PlanStatus.INVALID
+        plan.planning_readiness = (
+            PlanningReadiness.READY
+            if not errors
+            else PlanningReadiness.NOT_EXECUTABLE
+        )
         plan.validation_errors = errors
         return plan
 
@@ -229,7 +256,18 @@ class FinancialTaskPlanner:
 
         tasks_by_id = {task.task_id: task for task in plan.tasks}
         for task in plan.tasks:
+            seen_dependencies: set[str] = set()
             for dependency in task.dependencies:
+                if dependency == task.task_id:
+                    errors.append(
+                        f"Task {task.task_id} has a self-dependency."
+                    )
+                if dependency in seen_dependencies:
+                    errors.append(
+                        f"Task {task.task_id} has duplicate dependency "
+                        f"{dependency}."
+                    )
+                seen_dependencies.add(dependency)
                 if dependency not in tasks_by_id:
                     errors.append(
                         f"Task {task.task_id} has unknown dependency {dependency}."
@@ -274,20 +312,68 @@ class FinancialTaskPlanner:
         if len(verification_tasks) != 1:
             errors.append("Plan must contain exactly one verification task.")
 
+        findings_tasks = [
+            task for task in plan.tasks
+            if task.task_type == FinancialPlanTaskType.BUILD_FINDINGS
+        ]
+        if len(findings_tasks) != 1:
+            errors.append("Plan must contain exactly one findings task.")
+        else:
+            findings = findings_tasks[0]
+            verification_ids = {
+                task.task_id for task in verification_tasks
+            }
+            if (
+                len(findings.dependencies) != 1
+                or findings.dependencies[0] not in verification_ids
+            ):
+                errors.append(
+                    "Findings task must depend exactly on verification."
+                )
+
         report_tasks = [
             task for task in plan.tasks
             if task.task_type == FinancialPlanTaskType.GENERATE_REPORT
         ]
         if len(report_tasks) != 1:
             errors.append("Plan must contain exactly one report task.")
-        elif report_tasks[0].dependencies:
-            report_dependencies = {
-                tasks_by_id[dependency].task_type
-                for dependency in report_tasks[0].dependencies
-                if dependency in tasks_by_id
+        else:
+            report = report_tasks[0]
+            findings_ids = {
+                task.task_id for task in findings_tasks
             }
-            if FinancialPlanTaskType.BUILD_FINDINGS not in report_dependencies:
-                errors.append("Report task must depend on finding generation.")
+            if (
+                len(report.dependencies) != 1
+                or report.dependencies[0] not in findings_ids
+            ):
+                errors.append("Report task must depend exactly on findings.")
+
+        numeric_task_ids = {
+            task.task_id for task in plan.tasks
+            if task.task_type in _NUMERIC_TASK_TYPES
+        }
+        if not numeric_task_ids:
+            errors.append("Plan has no analysis tasks.")
+        elif len(verification_tasks) == 1:
+            verification = verification_tasks[0]
+            covered_ids = set(verification.dependencies)
+            uncovered_ids = sorted(numeric_task_ids - covered_ids)
+            if uncovered_ids:
+                errors.append(
+                    "Verification task does not cover numeric tasks: "
+                    + ", ".join(uncovered_ids)
+                )
+
+        if report_tasks:
+            reachable_from_report = self._ancestors(
+                report_tasks[0].task_id,
+                plan.tasks,
+            )
+            unreachable_ids = sorted(set(task_ids) - reachable_from_report)
+            for unreachable_id in unreachable_ids:
+                errors.append(
+                    f"Task {unreachable_id} is not reachable from report."
+                )
 
         errors.extend(self._detect_cycles(plan.tasks))
         return list(dict.fromkeys(errors))
@@ -315,6 +401,22 @@ class FinancialTaskPlanner:
         }:
             return FailurePolicy.FAIL_FAST
         return FailurePolicy.CONTINUE_WITH_WARNING
+
+    @staticmethod
+    def _ancestors(report_task_id: str, tasks: list[FinancialPlanTask]) -> set[str]:
+        dependencies = {
+            task.task_id: list(task.dependencies)
+            for task in tasks
+        }
+        visited: set[str] = set()
+        stack = [report_task_id]
+        while stack:
+            task_id = stack.pop()
+            if task_id in visited:
+                continue
+            visited.add(task_id)
+            stack.extend(dependencies.get(task_id, []))
+        return visited
 
     @staticmethod
     def _detect_cycles(tasks: list[FinancialPlanTask]) -> list[str]:

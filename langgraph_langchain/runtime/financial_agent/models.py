@@ -64,6 +64,12 @@ class FailurePolicy(str, Enum):
     REPLAN_OR_FAIL = "REPLAN_OR_FAIL"
 
 
+class PlanningReadiness(str, Enum):
+    READY = "READY"
+    NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
+    NOT_EXECUTABLE = "NOT_EXECUTABLE"
+
+
 class CompanyResolution(BaseModel):
     company_name: str
     company_id: str
@@ -100,6 +106,8 @@ class FinancialTaskUnderstanding(BaseModel):
     comparison_enabled: bool = False
     ambiguities: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
+    planning_readiness: PlanningReadiness = PlanningReadiness.NEEDS_CLARIFICATION
+    planning_diagnostics: list[str] = Field(default_factory=list)
     confidence: float = 0.0
 
 
@@ -126,4 +134,6 @@ class FinancialPlan(BaseModel):
     status: PlanStatus = PlanStatus.DRAFT
     tasks: list[FinancialPlanTask] = Field(default_factory=list)
     validation_errors: list[str] = Field(default_factory=list)
+    planning_readiness: PlanningReadiness = PlanningReadiness.NOT_EXECUTABLE
+    planning_diagnostics: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
