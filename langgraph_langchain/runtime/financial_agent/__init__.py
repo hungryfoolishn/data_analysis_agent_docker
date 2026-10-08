@@ -44,6 +44,13 @@ from .tool_execution import (
     UnknownFinancialToolError,
 )
 from .execution_plan import ExecutionPlanBuilder
+from .runtime_integration import (
+    FinancialRuntimeExecutor,
+    RuntimeExecutionResult,
+    RuntimeExecutionStatus,
+    RuntimeIntegrationError,
+    RuntimeTaskResult,
+)
 from .understanding import FinancialTaskUnderstandingBuilder
 from .planner import FinancialTaskPlanner
 
@@ -83,6 +90,11 @@ __all__ = [
     "ExecutionPlanStatus",
     "ExecutionTask",
     "ExecutionPlanBuilder",
+    "FinancialRuntimeExecutor",
+    "RuntimeExecutionResult",
+    "RuntimeExecutionStatus",
+    "RuntimeIntegrationError",
+    "RuntimeTaskResult",
     "PlanStatus",
     "PlanningReadiness",
     "TASK_TOOL_IDS",

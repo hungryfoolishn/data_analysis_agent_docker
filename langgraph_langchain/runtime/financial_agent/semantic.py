@@ -396,12 +396,16 @@ class FinancialSemanticResolver:
 
         for period in period_item.selected_periods:
             try:
-                income, balance, cash_flow, previous_income = (
-                    self.data_service.statements(company.company_id, period)
-                )
                 previous_period = self.data_service.previous_period(
                     company.company_id,
                     period,
+                )
+                income, balance, cash_flow, previous_income = (
+                    self.data_service.statements(
+                        company.company_id,
+                        period,
+                        previous_period,
+                    )
                 )
                 previous_balance = self.data_service.previous_balance(
                     company.company_id,

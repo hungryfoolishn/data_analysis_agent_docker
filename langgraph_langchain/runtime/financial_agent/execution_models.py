@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from .models import ExecutionStatus, FailurePolicy
+from .models import ExecutionStatus, FailurePolicy, PlanStatus, VerificationStatus
 
 
 def _utc_now() -> str:
@@ -97,3 +97,42 @@ class ExecutionPlan(BaseModel):
             task for task in self.tasks
             if task.status == ExecutionStatus.UNAVAILABLE
         ]
+
+
+class RuntimeExecutionStatus(str, Enum):
+    SUCCEEDED = "SUCCEEDED"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+
+
+class RuntimeTaskResult(BaseModel):
+    execution_task_id: str
+    company_id: str
+    company_name: str
+    period: str
+    metric_id: str
+    status: ExecutionStatus
+    verification_status: VerificationStatus = VerificationStatus.NOT_REQUIRED
+    calculation_id: str | None = None
+    verification_id: str | None = None
+    evidence_id: str | None = None
+    status_reason: str | None = None
+    error: str | None = None
+    output_refs: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RuntimeExecutionResult(BaseModel):
+    execution_id: str
+    plan_id: str
+    query_id: str
+    status: RuntimeExecutionStatus
+    task_results: list[RuntimeTaskResult] = Field(default_factory=list)
+    succeeded_count: int = 0
+    unavailable_count: int = 0
+    failed_count: int = 0
+    analysis_result: Any = None
+    report_markdown: str = ""
+    started_at: str = Field(default_factory=_utc_now)
+    finished_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
