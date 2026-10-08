@@ -33,14 +33,14 @@ _FINANCIAL_TOOL_REGISTRY: dict[str, FinancialToolSpec] = {
         _tool(
             "company_resolver",
             "Company Resolver",
-            "v10.0.0",
+            "v10.1.0",
             ["company_resolution"],
             [FinancialPlanTaskType.RESOLVE_COMPANIES],
         ),
         _tool(
             "period_resolver",
             "Period Resolver",
-            "v10.0.0",
+            "v10.1.0",
             ["period_resolution"],
             [FinancialPlanTaskType.RESOLVE_PERIODS],
         ),

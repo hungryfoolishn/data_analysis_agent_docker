@@ -12,6 +12,21 @@ from .models import (
     PlanningReadiness,
     VerificationStatus,
 )
+from .semantic import FinancialSemanticResolver
+from .semantic_models import (
+    CompanyDataCoverage,
+    CompanyMatch,
+    CompanyMatchType,
+    CompanyResolutionResult,
+    DataCoverageGap,
+    DataCoverageResult,
+    DataRequirement,
+    MetricCoverage,
+    MetricDefinitionResolution,
+    MetricResolutionResult,
+    PeriodCoverage,
+    SemanticResolution,
+)
 from .tools import FINANCIAL_TOOL_REGISTRY, TASK_TOOL_IDS
 from .understanding import FinancialTaskUnderstandingBuilder
 from .planner import FinancialTaskPlanner
@@ -27,6 +42,19 @@ __all__ = [
     "FinancialTaskUnderstanding",
     "FinancialTaskUnderstandingBuilder",
     "FinancialToolSpec",
+    "FinancialSemanticResolver",
+    "CompanyDataCoverage",
+    "CompanyMatch",
+    "CompanyMatchType",
+    "CompanyResolutionResult",
+    "DataCoverageGap",
+    "DataCoverageResult",
+    "DataRequirement",
+    "MetricCoverage",
+    "MetricDefinitionResolution",
+    "MetricResolutionResult",
+    "PeriodCoverage",
+    "SemanticResolution",
     "PlanStatus",
     "PlanningReadiness",
     "TASK_TOOL_IDS",

@@ -17,6 +17,8 @@ from .models import (
     PlanningReadiness,
     VerificationStatus,
 )
+from .semantic import FinancialSemanticResolver
+from .semantic_models import SemanticResolution
 from .tools import FINANCIAL_TOOL_REGISTRY, TASK_TOOL_IDS, FinancialToolSpec
 
 
@@ -100,13 +102,41 @@ class FinancialTaskPlanner:
         self,
         *,
         tool_registry: dict[str, FinancialToolSpec] | None = None,
+        semantic_resolver: FinancialSemanticResolver | None = None,
     ) -> None:
         self.tool_registry = tool_registry or FINANCIAL_TOOL_REGISTRY
+        self.semantic_resolver = semantic_resolver
 
     def build(
         self,
         understanding: FinancialTaskUnderstanding,
     ) -> FinancialPlan:
+        semantic_resolution: SemanticResolution | None = None
+        if self.semantic_resolver is not None:
+            semantic_resolution = self.semantic_resolver.resolve(understanding)
+            if not semantic_resolution.ready_for_planning:
+                return FinancialPlan(
+                    plan_id=_plan_id(understanding.query_id),
+                    query_id=understanding.query_id,
+                    status=PlanStatus.BLOCKED,
+                    planning_readiness=understanding.planning_readiness,
+                    planning_diagnostics=list(dict.fromkeys([
+                        *semantic_resolution.diagnostics,
+                        *semantic_resolution.blockers,
+                    ])),
+                    metadata={
+                        "task_type": understanding.task_type,
+                        "company_count": len(understanding.companies),
+                        "comparison_enabled": understanding.comparison_enabled,
+                        "blocked": True,
+                        "blocked_by": "semantic_resolution",
+                        "blocked_reasons": list(semantic_resolution.blockers),
+                        "semantic_resolution": semantic_resolution.model_dump(
+                            mode="json"
+                        ),
+                    },
+                )
+
         if understanding.planning_readiness != PlanningReadiness.READY:
             status = (
                 PlanStatus.BLOCKED
@@ -228,17 +258,30 @@ class FinancialTaskPlanner:
                 "task_type": understanding.task_type,
                 "company_count": len(understanding.companies),
                 "comparison_enabled": understanding.comparison_enabled,
+                **self._semantic_metadata(semantic_resolution),
             },
         )
         errors = self.validate_plan(plan)
         plan.status = PlanStatus.VALIDATED if not errors else PlanStatus.INVALID
-        plan.planning_readiness = (
-            PlanningReadiness.READY
-            if not errors
-            else PlanningReadiness.NOT_EXECUTABLE
-        )
+        # Planning readiness describes whether the user request had enough
+        # semantic input. Plan status describes whether the generated DAG is
+        # structurally valid. These are intentionally independent.
+        plan.planning_readiness = understanding.planning_readiness
         plan.validation_errors = errors
         return plan
+
+    @staticmethod
+    def _semantic_metadata(
+        resolution: SemanticResolution | None,
+    ) -> dict:
+        if resolution is None:
+            return {"semantic_resolution_version": "not_configured"}
+        return {
+            "semantic_resolution_version": resolution.metadata[
+                "resolver_version"
+            ],
+            "semantic_resolution": resolution.model_dump(mode="json"),
+        }
 
     def validate_plan(self, plan: FinancialPlan) -> list[str]:
         errors: list[str] = []
