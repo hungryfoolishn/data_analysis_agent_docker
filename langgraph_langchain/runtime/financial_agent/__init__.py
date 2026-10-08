@@ -29,6 +29,9 @@ from .semantic_models import (
 )
 from .tools import FINANCIAL_TOOL_REGISTRY, TASK_TOOL_IDS
 from .execution_models import (
+    ExecutionPlan,
+    ExecutionPlanStatus,
+    ExecutionTask,
     ToolExecutionRequest,
     ToolExecutionResult,
     ToolExecutionStatus,
@@ -40,6 +43,7 @@ from .tool_execution import (
     ToolExecutor,
     UnknownFinancialToolError,
 )
+from .execution_plan import ExecutionPlanBuilder
 from .understanding import FinancialTaskUnderstandingBuilder
 from .planner import FinancialTaskPlanner
 
@@ -75,6 +79,10 @@ __all__ = [
     "ToolExecutionResult",
     "ToolExecutionStatus",
     "UnknownFinancialToolError",
+    "ExecutionPlan",
+    "ExecutionPlanStatus",
+    "ExecutionTask",
+    "ExecutionPlanBuilder",
     "PlanStatus",
     "PlanningReadiness",
     "TASK_TOOL_IDS",

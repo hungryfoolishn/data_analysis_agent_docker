@@ -47,6 +47,7 @@ class ExecutionStatus(str, Enum):
     SKIPPED = "SKIPPED"
     NOT_EXECUTABLE = "NOT_EXECUTABLE"
     CANCELLED = "CANCELLED"
+    UNAVAILABLE = "UNAVAILABLE"
 
 
 class VerificationStatus(str, Enum):
