@@ -28,6 +28,18 @@ from .semantic_models import (
     SemanticResolution,
 )
 from .tools import FINANCIAL_TOOL_REGISTRY, TASK_TOOL_IDS
+from .execution_models import (
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    ToolExecutionStatus,
+)
+from .tool_execution import (
+    ExecutableFinancialTool,
+    FinancialToolExecutionRegistry,
+    FinancialToolRegistryError,
+    ToolExecutor,
+    UnknownFinancialToolError,
+)
 from .understanding import FinancialTaskUnderstandingBuilder
 from .planner import FinancialTaskPlanner
 
@@ -55,6 +67,14 @@ __all__ = [
     "MetricResolutionResult",
     "PeriodCoverage",
     "SemanticResolution",
+    "ExecutableFinancialTool",
+    "FinancialToolExecutionRegistry",
+    "FinancialToolRegistryError",
+    "ToolExecutor",
+    "ToolExecutionRequest",
+    "ToolExecutionResult",
+    "ToolExecutionStatus",
+    "UnknownFinancialToolError",
     "PlanStatus",
     "PlanningReadiness",
     "TASK_TOOL_IDS",
