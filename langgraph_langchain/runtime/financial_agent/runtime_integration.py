@@ -39,14 +39,21 @@ WORKFLOW_TOOL_ID = "financial_workflow_runtime"
 
 
 class RuntimeIntegrationError(ValueError):
-    """Raised when an execution plan cannot be run against V9.3."""
+    """Raised for caller contract violations before plan execution starts.
+
+    Once a plan is RUNNING, workflow-level failures are represented by a
+    structured ``RuntimeExecutionResult`` so task details remain recoverable.
+    """
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _failure_task_results(plan: ExecutionPlan, reason: str) -> tuple[list[RuntimeTaskResult], int, int]:
+def _failure_task_results(
+    plan: ExecutionPlan,
+    reason: str,
+) -> tuple[list[RuntimeTaskResult], int, int]:
     """Materialize a result for every task during a workflow-level failure.
 
     Previously unavailable tasks keep their UNAVAILABLE semantics; every other
@@ -93,25 +100,14 @@ def _failed_result(
     error: str,
     *,
     started_at: str,
-    task_results=None,
     analysis_result=None,
     report_markdown: str = "",
     metadata: dict | None = None,
 ) -> RuntimeExecutionResult:
-    if task_results is None:
-        task_results, unavailable_count, failed_count = _failure_task_results(
-            plan,
-            error,
-        )
-    else:
-        unavailable_count = sum(
-            item.status == ExecutionStatus.UNAVAILABLE
-            for item in task_results
-        )
-        failed_count = sum(
-            item.status == ExecutionStatus.FAILED
-            for item in task_results
-        )
+    task_results, unavailable_count, failed_count = _failure_task_results(
+        plan,
+        error,
+    )
     finished_at = _utc_now()
     plan.status = ExecutionPlanStatus.FAILED
     plan.finished_at = finished_at
@@ -222,10 +218,15 @@ class FinancialRuntimeExecutor:
                 metadata=registry_metadata,
             )
         except UnknownFinancialToolError as exc:
-            plan.status = ExecutionPlanStatus.FAILED
-            plan.finished_at = _utc_now()
-            _failure_task_results(plan, str(exc))
-            raise RuntimeIntegrationError(str(exc)) from exc
+            return _failed_result(
+                plan,
+                f"Unknown workflow tool: {WORKFLOW_TOOL_ID}",
+                started_at=started_at,
+                metadata={
+                    "tool_status": "UNKNOWN",
+                    "tool_error": str(exc),
+                },
+            )
 
         if tool_result.status != ToolExecutionStatus.SUCCEEDED:
             error = tool_result.error or "workflow tool failed"
@@ -245,10 +246,14 @@ class FinancialRuntimeExecutor:
 
         analysis_result = tool_result.output
         if not isinstance(analysis_result, FinancialAnalysisResult):
-            plan.status = ExecutionPlanStatus.FAILED
-            plan.finished_at = _utc_now()
-            raise RuntimeIntegrationError(
-                "Registered workflow tool returned an unexpected result type."
+            return _failed_result(
+                plan,
+                "Registered workflow tool returned an unexpected result type.",
+                started_at=started_at,
+                metadata={
+                    "tool_request_id": tool_result.request_id,
+                    "tool_status": tool_result.status.value,
+                },
             )
 
         analysis_result.query = query

@@ -23,6 +23,7 @@ from langgraph_langchain.runtime.financial_agent import (
     FinancialTaskUnderstandingBuilder,
     RuntimeExecutionStatus,
     RuntimeIntegrationError,
+    VerificationStatus,
 )
 
 
@@ -117,6 +118,15 @@ def _build_plan(question: str):
     ).build(understanding, plan_id="plan_runtime_test")
 
 
+def _assert_result_accounting(result):
+    assert (
+        result.succeeded_count
+        + result.unavailable_count
+        + result.failed_count
+        == len(result.task_results)
+    )
+
+
 def test_runtime_executor_completes_plan_and_preserves_evidence():
     understanding, resolver, execution_plan = _build_plan(
         "分析贵州茅台 2022-2024 年收入和净利润"
@@ -133,6 +143,7 @@ def test_runtime_executor_completes_plan_and_preserves_evidence():
     assert result.unavailable_count == 0
     assert result.failed_count == 0
     assert result.report_markdown
+    _assert_result_accounting(result)
     assert result.metadata["evidence_count"] > 0
     assert result.metadata["finding_count"] > 0
 
@@ -169,6 +180,7 @@ def test_runtime_executor_maps_first_missing_previous_period_to_unavailable():
     assert result.succeeded_count == 14
     assert result.unavailable_count == 2
     assert result.failed_count == 0
+    _assert_result_accounting(result)
 
     unavailable = [
         item for item in result.task_results
@@ -260,6 +272,142 @@ def test_runtime_executes_tool_through_registry():
     assert result.metadata["workflow_tool_id"] == WORKFLOW_TOOL_ID
     assert result.status == RuntimeExecutionStatus.SUCCEEDED
     assert execution_plan.status == ExecutionPlanStatus.SUCCEEDED
+
+
+def test_runtime_missing_tool_returns_structured_failure_result():
+    understanding = _understanding("分析贵州茅台 2021-2024 年收入和净利润")
+    execution_plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_service())
+    ).build(understanding, plan_id="plan_missing_workflow_tool")
+    unavailable_task_ids = {
+        task.task_id
+        for task in execution_plan.tasks
+        if task.status == ExecutionStatus.UNAVAILABLE
+    }
+    assert unavailable_task_ids
+
+    result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(_service()),
+        tool_registry=FinancialToolExecutionRegistry([]),
+    ).execute_plan(execution_plan, understanding=understanding)
+
+    error = f"Unknown workflow tool: {WORKFLOW_TOOL_ID}"
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert execution_plan.status == ExecutionPlanStatus.FAILED
+    assert execution_plan.finished_at is not None
+    assert result.metadata["error"] == error
+    assert result.metadata["tool_status"] == "UNKNOWN"
+    assert result.metadata["tool_error"]
+    assert len(result.task_results) == len(execution_plan.tasks)
+    assert result.succeeded_count == 0
+    assert result.unavailable_count == len(unavailable_task_ids)
+    assert result.failed_count == len(execution_plan.tasks) - len(unavailable_task_ids)
+    _assert_result_accounting(result)
+
+    result_by_task_id = {item.execution_task_id: item for item in result.task_results}
+    for task in execution_plan.tasks:
+        task_result = result_by_task_id[task.task_id]
+        expected_status = (
+            ExecutionStatus.UNAVAILABLE
+            if task.task_id in unavailable_task_ids
+            else ExecutionStatus.FAILED
+        )
+        expected_verification = (
+            VerificationStatus.NOT_REQUIRED
+            if task.task_id in unavailable_task_ids
+            else VerificationStatus.FAILED
+        )
+        assert task.status == expected_status
+        assert task.verification_status == expected_verification.value
+        if expected_status == ExecutionStatus.FAILED:
+            assert task.status_reason == error
+        assert task_result.status == expected_status
+        assert task_result.verification_status == expected_verification
+        expected_error = (
+            task.status_reason
+            if expected_status == ExecutionStatus.UNAVAILABLE
+            else error
+        )
+        assert task_result.error == expected_error
+
+
+def test_runtime_workflow_failure_preserves_unavailable_task_semantics():
+    class ExplodingWorkflow:
+        def run(self, query):
+            raise RuntimeError("workflow exploded")
+
+    understanding = _understanding("分析贵州茅台 2021-2024 年收入和净利润")
+    execution_plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_service())
+    ).build(understanding, plan_id="plan_workflow_failure_details")
+    unavailable_count = len(execution_plan.unavailable_tasks)
+    assert unavailable_count
+
+    result = FinancialRuntimeExecutor(ExplodingWorkflow()).execute_plan(
+        execution_plan,
+        understanding=understanding,
+    )
+
+    error = "workflow tool failed"
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert execution_plan.status == ExecutionPlanStatus.FAILED
+    assert len(result.task_results) == len(execution_plan.tasks)
+    assert result.succeeded_count == 0
+    assert result.unavailable_count == unavailable_count
+    assert result.failed_count == len(execution_plan.tasks) - unavailable_count
+    _assert_result_accounting(result)
+    assert {
+        item.execution_task_id
+        for item in result.task_results
+        if item.status == ExecutionStatus.UNAVAILABLE
+    } == {
+        task.task_id for task in execution_plan.unavailable_tasks
+    }
+    assert all(
+        item.status_reason == error
+        for item in result.task_results
+        if item.status == ExecutionStatus.FAILED
+    )
+
+
+def test_runtime_unexpected_tool_output_returns_structured_failure_result():
+    spec = FinancialToolSpec(
+        tool_id=WORKFLOW_TOOL_ID,
+        name="Invalid Output Workflow",
+        version="v10.2.1",
+        input_schema="financial_workflow_runtime_input_v1",
+        output_schema="financial_workflow_runtime_output_v1",
+    )
+    registry = FinancialToolExecutionRegistry([
+        ExecutableFinancialTool(
+            spec=spec,
+            executor=lambda payload: {"unexpected": True},
+        ),
+    ])
+    understanding = _understanding("分析贵州茅台 2022-2024 年收入")
+    execution_plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_service())
+    ).build(understanding, plan_id="plan_invalid_workflow_output")
+
+    result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(_service()),
+        tool_registry=registry,
+    ).execute_plan(execution_plan, understanding=understanding)
+
+    error = "Registered workflow tool returned an unexpected result type."
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert execution_plan.status == ExecutionPlanStatus.FAILED
+    assert result.metadata["error"] == error
+    assert result.metadata["tool_status"] == "SUCCEEDED"
+    assert len(result.task_results) == len(execution_plan.tasks)
+    assert result.succeeded_count == 0
+    assert result.unavailable_count == 0
+    assert result.failed_count == len(execution_plan.tasks)
+    _assert_result_accounting(result)
+    assert all(
+        task.status == ExecutionStatus.FAILED
+        for task in execution_plan.tasks
+    )
 
 
 def test_runtime_marks_plan_failed_when_workflow_raises():
