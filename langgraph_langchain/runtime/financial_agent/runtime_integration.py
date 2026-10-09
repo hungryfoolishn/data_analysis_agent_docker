@@ -46,6 +46,48 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _failure_task_results(plan: ExecutionPlan, reason: str) -> tuple[list[RuntimeTaskResult], int, int]:
+    """Materialize a result for every task during a workflow-level failure.
+
+    Previously unavailable tasks keep their UNAVAILABLE semantics; every other
+    task is explicitly marked FAILED instead of silently retaining PENDING.
+    """
+    task_results: list[RuntimeTaskResult] = []
+    unavailable_count = 0
+    failed_count = 0
+
+    for task in plan.tasks:
+        if task.status == ExecutionStatus.UNAVAILABLE:
+            status = ExecutionStatus.UNAVAILABLE
+            verification_status = VerificationStatus.NOT_REQUIRED
+            status_reason = task.status_reason or "data_unavailable"
+            unavailable_count += 1
+        else:
+            status = ExecutionStatus.FAILED
+            verification_status = VerificationStatus.FAILED
+            status_reason = reason
+            task.status = status
+            task.verification_status = verification_status.value
+            task.status_reason = status_reason
+            failed_count += 1
+
+        task_results.append(RuntimeTaskResult(
+            execution_task_id=task.task_id,
+            company_id=task.company_id,
+            company_name=task.company_name,
+            period=task.period,
+            metric_id=task.metric_id,
+            status=status,
+            verification_status=verification_status,
+            status_reason=status_reason,
+            error=status_reason,
+            output_refs=list(task.output_refs),
+            metadata={"source": "workflow_failure"},
+        ))
+
+    return task_results, unavailable_count, failed_count
+
+
 def _failed_result(
     plan: ExecutionPlan,
     error: str,
@@ -56,6 +98,20 @@ def _failed_result(
     report_markdown: str = "",
     metadata: dict | None = None,
 ) -> RuntimeExecutionResult:
+    if task_results is None:
+        task_results, unavailable_count, failed_count = _failure_task_results(
+            plan,
+            error,
+        )
+    else:
+        unavailable_count = sum(
+            item.status == ExecutionStatus.UNAVAILABLE
+            for item in task_results
+        )
+        failed_count = sum(
+            item.status == ExecutionStatus.FAILED
+            for item in task_results
+        )
     finished_at = _utc_now()
     plan.status = ExecutionPlanStatus.FAILED
     plan.finished_at = finished_at
@@ -64,10 +120,10 @@ def _failed_result(
         plan_id=plan.plan_id,
         query_id=plan.query_id,
         status=RuntimeExecutionStatus.FAILED,
-        task_results=list(task_results or []),
+        task_results=task_results,
         succeeded_count=0,
-        unavailable_count=0,
-        failed_count=len(plan.tasks),
+        unavailable_count=unavailable_count,
+        failed_count=failed_count,
         analysis_result=analysis_result,
         report_markdown=report_markdown,
         started_at=started_at,
@@ -166,6 +222,9 @@ class FinancialRuntimeExecutor:
                 metadata=registry_metadata,
             )
         except UnknownFinancialToolError as exc:
+            plan.status = ExecutionPlanStatus.FAILED
+            plan.finished_at = _utc_now()
+            _failure_task_results(plan, str(exc))
             raise RuntimeIntegrationError(str(exc)) from exc
 
         if tool_result.status != ToolExecutionStatus.SUCCEEDED:
