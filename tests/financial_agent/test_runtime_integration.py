@@ -123,6 +123,7 @@ def _assert_result_accounting(result):
         result.succeeded_count
         + result.unavailable_count
         + result.failed_count
+        + result.blocked_count
         == len(result.task_results)
     )
 

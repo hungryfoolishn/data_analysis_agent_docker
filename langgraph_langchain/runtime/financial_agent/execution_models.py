@@ -132,6 +132,7 @@ class RuntimeExecutionResult(BaseModel):
     succeeded_count: int = 0
     unavailable_count: int = 0
     failed_count: int = 0
+    blocked_count: int = 0
     analysis_result: Any = None
     report_markdown: str = ""
     started_at: str = Field(default_factory=_utc_now)

@@ -52,6 +52,12 @@ from .runtime_integration import (
     RuntimeIntegrationError,
     RuntimeTaskResult,
 )
+from .scheduler import (
+    DeterministicDAGScheduler,
+    SchedulerValidationError,
+    TaskExecutionOutcome,
+    TaskExecutor,
+)
 from .understanding import FinancialTaskUnderstandingBuilder
 from .planner import FinancialTaskPlanner
 
@@ -97,6 +103,10 @@ __all__ = [
     "RuntimeExecutionStatus",
     "RuntimeIntegrationError",
     "RuntimeTaskResult",
+    "DeterministicDAGScheduler",
+    "SchedulerValidationError",
+    "TaskExecutionOutcome",
+    "TaskExecutor",
     "PlanStatus",
     "PlanningReadiness",
     "TASK_TOOL_IDS",
