@@ -1,15 +1,22 @@
-"""Runtime integration between V10 execution plans and the V9.3 workflow."""
+"""Runtime integration between V10 execution plans and the V9.3 workflow.
+
+The batched V9.3 workflow is exposed as a registered executable tool.  A plan
+is executed once through the registry; per-task results are then mapped back
+without duplicating financial formulas.
+"""
 
 from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+from typing import Any
 
 from langgraph_langchain.runtime.financial.models import (
     FinancialAnalysisResult,
     FinancialQuery,
 )
 
+from .execution_plan import ExecutionPlanBuilder
 from .execution_models import (
     ExecutionPlan,
     ExecutionPlanStatus,
@@ -18,7 +25,17 @@ from .execution_models import (
     RuntimeExecutionStatus,
     RuntimeTaskResult,
 )
-from .models import PlanStatus, VerificationStatus
+from .models import FinancialToolSpec, VerificationStatus
+from .tool_execution import (
+    ExecutableFinancialTool,
+    FinancialToolExecutionRegistry,
+    ToolExecutionResult,
+    ToolExecutionStatus,
+    UnknownFinancialToolError,
+)
+
+
+WORKFLOW_TOOL_ID = "financial_workflow_runtime"
 
 
 class RuntimeIntegrationError(ValueError):
@@ -29,11 +46,71 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class FinancialRuntimeExecutor:
-    """Execute a validated V10.2 plan through the existing V9.3 workflow."""
+def _failed_result(
+    plan: ExecutionPlan,
+    error: str,
+    *,
+    started_at: str,
+    task_results=None,
+    analysis_result=None,
+    report_markdown: str = "",
+    metadata: dict | None = None,
+) -> RuntimeExecutionResult:
+    finished_at = _utc_now()
+    plan.status = ExecutionPlanStatus.FAILED
+    plan.finished_at = finished_at
+    return RuntimeExecutionResult(
+        execution_id=f"runtime_{plan.execution_id}",
+        plan_id=plan.plan_id,
+        query_id=plan.query_id,
+        status=RuntimeExecutionStatus.FAILED,
+        task_results=list(task_results or []),
+        succeeded_count=0,
+        unavailable_count=0,
+        failed_count=len(plan.tasks),
+        analysis_result=analysis_result,
+        report_markdown=report_markdown,
+        started_at=started_at,
+        finished_at=finished_at,
+        metadata={
+            "workflow_tool_id": WORKFLOW_TOOL_ID,
+            "error": error,
+            **(metadata or {}),
+        },
+    )
 
-    def __init__(self, workflow) -> None:
+
+class FinancialRuntimeExecutor:
+    """Execute a validated V10.2 plan through the registered V9.3 workflow."""
+
+    def __init__(
+        self,
+        workflow,
+        *,
+        tool_registry: FinancialToolExecutionRegistry | None = None,
+    ) -> None:
         self.workflow = workflow
+        self.tool_registry = tool_registry or self._build_registry()
+
+    def _build_registry(self) -> FinancialToolExecutionRegistry:
+        def run_workflow(payload: dict[str, Any]) -> FinancialAnalysisResult:
+            query = FinancialQuery.model_validate(payload["query"])
+            return self.workflow.run(query)
+
+        spec = FinancialToolSpec(
+            tool_id=WORKFLOW_TOOL_ID,
+            name="Financial Analysis Workflow Runtime",
+            version="v10.2.1",
+            input_schema="financial_workflow_runtime_input_v1",
+            output_schema="financial_workflow_runtime_output_v1",
+            capabilities=["financial_analysis", "verification", "evidence"],
+            supported_task_types=[],
+            deterministic=True,
+            requires_verification=False,
+        )
+        return FinancialToolExecutionRegistry([
+            ExecutableFinancialTool(spec=spec, executor=run_workflow),
+        ])
 
     def execute_plan(
         self,
@@ -43,8 +120,17 @@ class FinancialRuntimeExecutor:
     ) -> RuntimeExecutionResult:
         if plan.status != ExecutionPlanStatus.PENDING:
             raise RuntimeIntegrationError(
-                f"Execution plan must be PENDING before execution, got {plan.status.value}."
+                f"Execution plan must be PENDING before execution, got "
+                f"{plan.status.value}."
             )
+
+        validation_errors = self.validate_plan(plan)
+        if validation_errors:
+            error = "Invalid execution plan: " + "; ".join(validation_errors)
+            plan.status = ExecutionPlanStatus.FAILED
+            plan.finished_at = _utc_now()
+            raise RuntimeIntegrationError(error)
+
         if not plan.tasks:
             raise RuntimeIntegrationError("Execution plan has no tasks.")
 
@@ -55,7 +141,6 @@ class FinancialRuntimeExecutor:
             task.metric_id for task in plan.tasks
         ))
         years = [int(task.period) for task in plan.tasks]
-
         query = FinancialQuery(
             question=understanding.raw_question,
             task_type=understanding.task_type,
@@ -67,25 +152,84 @@ class FinancialRuntimeExecutor:
 
         plan.status = ExecutionPlanStatus.RUNNING
         plan.started_at = _utc_now()
-        analysis_result: FinancialAnalysisResult = self.workflow.run(query)
+        started_at = plan.started_at
+        registry_metadata = {
+            "plan_id": plan.plan_id,
+            "query_id": plan.query_id,
+            "task_count": len(plan.tasks),
+        }
+
+        try:
+            tool_result: ToolExecutionResult = self.tool_registry.execute(
+                WORKFLOW_TOOL_ID,
+                {"query": query.model_dump(mode="json")},
+                metadata=registry_metadata,
+            )
+        except UnknownFinancialToolError as exc:
+            raise RuntimeIntegrationError(str(exc)) from exc
+
+        if tool_result.status != ToolExecutionStatus.SUCCEEDED:
+            error = tool_result.error or "workflow tool failed"
+            result = _failed_result(
+                plan,
+                "workflow tool failed",
+                started_at=started_at,
+                metadata={
+                    "workflow_tool_id": WORKFLOW_TOOL_ID,
+                    "tool_request_id": tool_result.request_id,
+                    "tool_duration_ms": tool_result.duration_ms,
+                    "tool_status": tool_result.status.value,
+                    "tool_error": tool_result.error,
+                },
+            )
+            return result
+
+        analysis_result = tool_result.output
+        if not isinstance(analysis_result, FinancialAnalysisResult):
+            plan.status = ExecutionPlanStatus.FAILED
+            plan.finished_at = _utc_now()
+            raise RuntimeIntegrationError(
+                "Registered workflow tool returned an unexpected result type."
+            )
+
         analysis_result.query = query
 
-        calculations = self._index(
-            analysis_result.calculations,
-            lambda item: (item.company_id, item.period, item.metric_id),
-        )
-        verifications = self._index(
-            analysis_result.verifications,
-            lambda item: (item.company_id, item.period, item.metric_id),
-        )
-        observations = self._index(
-            analysis_result.observations,
-            lambda item: (item.company_id, item.period, item.metric_id),
-        )
-        evidence = self._index(
-            analysis_result.evidence,
-            lambda item: (item.company_id, item.period, item.metric_id),
-        )
+        try:
+            calculations = self._index(
+                analysis_result.calculations,
+                lambda item: (item.company_id, item.period, item.metric_id),
+                item_type="calculation",
+            )
+            verifications = self._index(
+                analysis_result.verifications,
+                lambda item: (item.company_id, item.period, item.metric_id),
+                item_type="verification",
+            )
+            observations = self._index(
+                analysis_result.observations,
+                lambda item: (item.company_id, item.period, item.metric_id),
+                item_type="observation",
+            )
+            evidence = self._index(
+                analysis_result.evidence,
+                lambda item: (item.company_id, item.period, item.metric_id),
+                item_type="evidence",
+            )
+        except RuntimeIntegrationError as exc:
+            error = str(exc)
+            plan.status = ExecutionPlanStatus.FAILED
+            plan.finished_at = _utc_now()
+            return _failed_result(
+                plan,
+                error,
+                started_at=started_at,
+                analysis_result=analysis_result,
+                report_markdown=analysis_result.report_markdown,
+                metadata={
+                    "workflow_tool_id": WORKFLOW_TOOL_ID,
+                    "tool_request_id": tool_result.request_id,
+                },
+            )
 
         task_results: list[RuntimeTaskResult] = []
         succeeded_count = 0
@@ -184,15 +328,18 @@ class FinancialRuntimeExecutor:
             else:
                 failed_count += 1
 
-        if succeeded_count == len(plan.tasks):
+        if failed_count:
+            runtime_status = RuntimeExecutionStatus.FAILED
+            plan_status = ExecutionPlanStatus.FAILED
+        elif succeeded_count == len(plan.tasks):
             runtime_status = RuntimeExecutionStatus.SUCCEEDED
             plan_status = ExecutionPlanStatus.SUCCEEDED
         elif succeeded_count:
             runtime_status = RuntimeExecutionStatus.PARTIAL
             plan_status = ExecutionPlanStatus.PARTIAL
         else:
-            runtime_status = RuntimeExecutionStatus.FAILED
-            plan_status = ExecutionPlanStatus.FAILED
+            runtime_status = RuntimeExecutionStatus.BLOCKED
+            plan_status = ExecutionPlanStatus.BLOCKED
 
         plan.status = plan_status
         plan.finished_at = _utc_now()
@@ -207,7 +354,12 @@ class FinancialRuntimeExecutor:
             failed_count=failed_count,
             analysis_result=analysis_result,
             report_markdown=analysis_result.report_markdown,
+            started_at=started_at,
+            finished_at=plan.finished_at,
             metadata={
+                "workflow_tool_id": WORKFLOW_TOOL_ID,
+                "tool_request_id": tool_result.request_id,
+                "tool_duration_ms": tool_result.duration_ms,
                 "workflow_task_type": analysis_result.task_type,
                 "workflow_metric_count": len(analysis_result.metrics),
                 "evidence_count": len(analysis_result.evidence),
@@ -215,12 +367,19 @@ class FinancialRuntimeExecutor:
                 "comparison_count": len(analysis_result.comparisons),
             },
         )
-        result.finished_at = _utc_now()
         return result
 
+    def validate_plan(self, plan: ExecutionPlan) -> list[str]:
+        return ExecutionPlanBuilder.validate(plan)
+
     @staticmethod
-    def _index(items, key_function) -> dict:
-        indexed: dict = defaultdict(list)
+    def _index(items, key_function, *, item_type: str) -> dict:
+        indexed: dict = {}
         for item in items:
-            indexed[key_function(item)].append(item)
-        return {key: values[0] for key, values in indexed.items()}
+            key = key_function(item)
+            if key in indexed:
+                raise RuntimeIntegrationError(
+                    f"Duplicate {item_type} result for {key[0]}/{key[1]}/{key[2]}."
+                )
+            indexed[key] = item
+        return indexed

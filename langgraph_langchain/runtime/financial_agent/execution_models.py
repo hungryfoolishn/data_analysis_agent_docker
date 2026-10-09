@@ -102,6 +102,7 @@ class ExecutionPlan(BaseModel):
 class RuntimeExecutionStatus(str, Enum):
     SUCCEEDED = "SUCCEEDED"
     PARTIAL = "PARTIAL"
+    BLOCKED = "BLOCKED"
     FAILED = "FAILED"
 
 

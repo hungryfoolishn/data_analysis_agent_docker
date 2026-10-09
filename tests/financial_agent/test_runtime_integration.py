@@ -87,13 +87,21 @@ def _cash(period: str) -> CashFlowStatement:
     )
 
 
-def _service() -> FinancialDataService:
+def _service(*, income_overrides=None, cash_overrides=None) -> FinancialDataService:
     company = _company()
+    income_overrides = income_overrides or {}
+    cash_overrides = cash_overrides or {}
     return FinancialDataService(
         companies=[company],
-        income_statements=[_income(period) for period in PERIODS],
+        income_statements=[
+            _income(period, **income_overrides.get(period, {}))
+            for period in PERIODS
+        ],
         balance_sheets=[_balance(period) for period in PERIODS],
-        cash_flows=[_cash(period) for period in PERIODS],
+        cash_flows=[
+            _cash(period, **cash_overrides.get(period, {}))
+            for period in PERIODS
+        ],
     )
 
 
@@ -197,3 +205,189 @@ def test_runtime_executor_rejects_non_pending_plan():
             execution_plan,
             understanding=understanding,
         )
+"""Additional V10.2.1 runtime hardening tests."""
+
+
+import pytest
+
+from langgraph_langchain.runtime.financial.models import FinancialQuery
+from langgraph_langchain.runtime.financial_agent import (
+    ExecutableFinancialTool,
+    ExecutionPlanStatus,
+    ExecutionStatus,
+    FinancialToolExecutionRegistry,
+    FinancialToolSpec,
+    RuntimeExecutionStatus,
+)
+import langgraph_langchain.runtime.financial_agent.runtime_integration as runtime_integration_module
+
+
+WORKFLOW_TOOL_ID = runtime_integration_module.WORKFLOW_TOOL_ID
+
+
+def _registry_spy(workflow, calls):
+    def execute_workflow(payload):
+        calls.append(payload)
+        return workflow.run(FinancialQuery.model_validate(payload["query"]))
+
+    spec = FinancialToolSpec(
+        tool_id=WORKFLOW_TOOL_ID,
+        name="Financial Analysis Workflow Spy",
+        version="v10.2.1",
+        input_schema="financial_workflow_runtime_input_v1",
+        output_schema="financial_workflow_runtime_output_v1",
+        capabilities=["financial_analysis", "verification", "evidence"],
+        deterministic=True,
+    )
+    return FinancialToolExecutionRegistry([
+        ExecutableFinancialTool(spec=spec, executor=execute_workflow),
+    ])
+
+
+def test_runtime_executes_tool_through_registry():
+    calls = []
+    workflow = FinancialAnalysisWorkflow(_service())
+    understanding, _, execution_plan = _build_plan(
+        "分析贵州茅台 2022-2024 年收入和净利润"
+    )
+    result = FinancialRuntimeExecutor(
+        workflow,
+        tool_registry=_registry_spy(workflow, calls),
+    ).execute_plan(execution_plan, understanding=understanding)
+
+    assert len(calls) == 1
+    assert calls[0]["query"]["company_names"] == ["贵州茅台"]
+    assert result.metadata["workflow_tool_id"] == WORKFLOW_TOOL_ID
+    assert result.status == RuntimeExecutionStatus.SUCCEEDED
+    assert execution_plan.status == ExecutionPlanStatus.SUCCEEDED
+
+
+def test_runtime_marks_plan_failed_when_workflow_raises():
+    class ExplodingWorkflow:
+        def run(self, query):
+            raise RuntimeError("workflow exploded")
+
+    understanding = _understanding("分析贵州茅台 2022-2024 年收入")
+    execution_plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_service())
+    ).build(understanding, plan_id="plan_exploding_workflow")
+    result = FinancialRuntimeExecutor(ExplodingWorkflow()).execute_plan(
+        execution_plan,
+        understanding=understanding,
+    )
+
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert execution_plan.status == ExecutionPlanStatus.FAILED
+    assert execution_plan.finished_at is not None
+    assert execution_plan.status.value != "RUNNING"
+    assert result.metadata["error"] == "workflow tool failed"
+    assert result.metadata["tool_status"] == "FAILED"
+
+
+def test_runtime_handles_all_tasks_unavailable():
+    service = _service(
+        income_overrides={
+            period: {"revenue": None}
+            for period in PERIODS
+        },
+    )
+    understanding = _understanding("分析贵州茅台 2021-2024 年收入")
+    resolver = FinancialSemanticResolver(service)
+    execution_plan = ExecutionPlanBuilder(
+        semantic_resolver=resolver
+    ).build(understanding, plan_id="plan_all_unavailable")
+    assert execution_plan.pending_tasks == []
+    assert execution_plan.unavailable_tasks
+
+    result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(service)
+    ).execute_plan(execution_plan, understanding=understanding)
+
+    assert result.status == RuntimeExecutionStatus.BLOCKED
+    assert execution_plan.status == ExecutionPlanStatus.BLOCKED
+    assert result.succeeded_count == 0
+    assert result.unavailable_count == len(execution_plan.tasks)
+    assert result.failed_count == 0
+    assert all(
+        item.status == ExecutionStatus.UNAVAILABLE
+        for item in result.task_results
+    )
+
+
+def test_runtime_rejects_duplicate_workflow_results():
+    workflow = FinancialAnalysisWorkflow(_service())
+
+    def duplicate_results(payload):
+        result = workflow.run(FinancialQuery.model_validate(payload["query"]))
+        result.calculations.append(result.calculations[0].model_copy())
+        return result
+
+    spec = FinancialToolSpec(
+        tool_id=WORKFLOW_TOOL_ID,
+        name="Duplicate Result Workflow",
+        version="v10.2.1",
+        input_schema="financial_workflow_runtime_input_v1",
+        output_schema="financial_workflow_runtime_output_v1",
+    )
+    registry = FinancialToolExecutionRegistry([
+        ExecutableFinancialTool(spec=spec, executor=duplicate_results),
+    ])
+    understanding = _understanding("分析贵州茅台 2022-2024 年收入")
+    execution_plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_service())
+    ).build(understanding, plan_id="plan_duplicate_results")
+
+    result = FinancialRuntimeExecutor(
+        workflow,
+        tool_registry=registry,
+    ).execute_plan(execution_plan, understanding=understanding)
+
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert execution_plan.status == ExecutionPlanStatus.FAILED
+    assert result.metadata["error"].startswith("Duplicate calculation result for ")
+
+
+def test_runtime_rejects_invalid_execution_plan():
+    understanding = _understanding("分析贵州茅台 2022-2024 年收入")
+    execution_plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_service())
+    ).build(understanding, plan_id="plan_invalid")
+    execution_plan.tasks[0].dependencies.append("exec_missing")
+
+    with pytest.raises(RuntimeIntegrationError, match="Invalid execution plan"):
+        FinancialRuntimeExecutor(
+            FinancialAnalysisWorkflow(_service())
+        ).execute_plan(execution_plan, understanding=understanding)
+
+    assert execution_plan.status == ExecutionPlanStatus.FAILED
+    assert execution_plan.finished_at is not None
+
+
+def test_runtime_preserves_evidence_refs_after_registry_execution():
+    calls = []
+    workflow = FinancialAnalysisWorkflow(_service())
+    understanding, _, execution_plan = _build_plan(
+        "分析贵州茅台 2022-2024 年收入和净利润"
+    )
+    result = FinancialRuntimeExecutor(
+        workflow,
+        tool_registry=_registry_spy(workflow, calls),
+    ).execute_plan(execution_plan, understanding=understanding)
+
+    successful = [
+        item for item in result.task_results
+        if item.status == ExecutionStatus.SUCCEEDED
+    ]
+    assert successful
+    assert len(calls) == 1
+
+    result_by_task_id = {item.execution_task_id: item for item in result.task_results}
+    for task in execution_plan.tasks:
+        if task.status != ExecutionStatus.SUCCEEDED:
+            continue
+        task_result = result_by_task_id[task.task_id]
+        assert task.output_refs == task_result.output_refs
+        assert len(task.output_refs) == 3
+        assert task_result.evidence_id in task.output_refs
+        assert task_result.calculation_id in task.output_refs
+        assert task_result.verification_id in task.output_refs

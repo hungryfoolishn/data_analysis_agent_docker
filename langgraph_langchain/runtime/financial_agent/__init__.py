@@ -45,6 +45,7 @@ from .tool_execution import (
 )
 from .execution_plan import ExecutionPlanBuilder
 from .runtime_integration import (
+    WORKFLOW_TOOL_ID,
     FinancialRuntimeExecutor,
     RuntimeExecutionResult,
     RuntimeExecutionStatus,
@@ -90,6 +91,7 @@ __all__ = [
     "ExecutionPlanStatus",
     "ExecutionTask",
     "ExecutionPlanBuilder",
+    "WORKFLOW_TOOL_ID",
     "FinancialRuntimeExecutor",
     "RuntimeExecutionResult",
     "RuntimeExecutionStatus",
