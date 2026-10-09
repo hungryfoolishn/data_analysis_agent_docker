@@ -232,7 +232,7 @@ class FinancialRuntimeExecutor:
             error = tool_result.error or "workflow tool failed"
             result = _failed_result(
                 plan,
-                "workflow tool failed",
+                error,
                 started_at=started_at,
                 metadata={
                     "workflow_tool_id": WORKFLOW_TOOL_ID,

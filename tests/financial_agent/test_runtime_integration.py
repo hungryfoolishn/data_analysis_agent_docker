@@ -348,7 +348,7 @@ def test_runtime_workflow_failure_preserves_unavailable_task_semantics():
         understanding=understanding,
     )
 
-    error = "workflow tool failed"
+    error = "RuntimeError: workflow exploded"
     assert result.status == RuntimeExecutionStatus.FAILED
     assert execution_plan.status == ExecutionPlanStatus.FAILED
     assert len(result.task_results) == len(execution_plan.tasks)
@@ -364,10 +364,12 @@ def test_runtime_workflow_failure_preserves_unavailable_task_semantics():
         task.task_id for task in execution_plan.unavailable_tasks
     }
     assert all(
-        item.status_reason == error
+        item.status_reason == error and item.error == error
         for item in result.task_results
         if item.status == ExecutionStatus.FAILED
     )
+    assert result.metadata["error"] == error
+    assert result.metadata["tool_error"] == error
 
 
 def test_runtime_unexpected_tool_output_returns_structured_failure_result():
@@ -428,7 +430,8 @@ def test_runtime_marks_plan_failed_when_workflow_raises():
     assert execution_plan.status == ExecutionPlanStatus.FAILED
     assert execution_plan.finished_at is not None
     assert execution_plan.status.value != "RUNNING"
-    assert result.metadata["error"] == "workflow tool failed"
+    assert result.metadata["error"] == "RuntimeError: workflow exploded"
+    assert result.metadata["tool_error"] == "RuntimeError: workflow exploded"
     assert result.metadata["tool_status"] == "FAILED"
 
 
