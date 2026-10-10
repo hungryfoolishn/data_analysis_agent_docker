@@ -13,6 +13,7 @@ from langgraph_langchain.runtime.financial.models import (
 from langgraph_langchain.runtime.financial import FinancialDataService
 from langgraph_langchain.runtime.financial_agent import (
     ExecutionPlanBuilder,
+    ExecutionTask,
     ExecutionPlanStatus,
     ExecutionStatus,
     FinancialSemanticResolver,
@@ -159,7 +160,7 @@ def test_complete_revenue_and_profit_plan_expands_all_tasks():
     assert all(task.missing_fields == [] for task in reported_tasks)
 
 
-def test_growth_task_links_previous_reported_metric_task():
+def test_growth_task_links_current_and_previous_reported_metric_tasks():
     plan = _build_plan(
         _service(),
         "分析贵州茅台 2021-2024 年收入增长率",
@@ -169,12 +170,30 @@ def test_growth_task_links_previous_reported_metric_task():
         task for task in plan.tasks
         if task.period == "2023" and task.metric_id == "revenue_growth"
     )
+    revenue_2023 = next(
+        task for task in plan.tasks
+        if task.period == "2023" and task.metric_id == "revenue"
+    )
     revenue_2022 = next(
         task for task in plan.tasks
         if task.period == "2022" and task.metric_id == "revenue"
     )
 
-    assert growth_2023.dependencies == [revenue_2022.task_id]
+    assert growth_2023.dependencies == [
+        revenue_2023.task_id,
+        revenue_2022.task_id,
+    ]
+    assert growth_2023.inputs["growth_input_contract"] == {
+        "base_metric_id": "revenue",
+        "current_period": "2023",
+        "previous_period": "2022",
+        "required_inputs": [
+            "current_base_metric",
+            "previous_base_metric",
+        ],
+        "input_mode": "task_output_or_direct_data_source",
+    }
+    assert growth_2023.inputs["linked_dependency_periods"] == ["2023", "2022"]
 
 
 def test_first_growth_period_is_unavailable_without_previous_data():
@@ -290,3 +309,63 @@ def test_execution_plan_records_semantic_resolution():
     assert plan.metadata["resolved_metric_count"] >= 1
     assert plan.metadata["semantic_resolution"]["ready_for_planning"] is True
     assert plan.diagnostics == list(resolver.resolve(understanding).diagnostics)
+
+
+
+def test_growth_task_reads_direct_data_when_current_base_task_is_absent():
+    builder = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_service())
+    )
+    growth_task = ExecutionTask(
+        task_id="exec_growth",
+        tool_id="financial_metric_engine",
+        tool_version="test",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023",
+        metric_id="revenue_growth",
+        metric_name="收入增长率",
+        status=ExecutionStatus.PENDING,
+        metadata={"metric_id": "revenue_growth", "previous_period": "2022"},
+    )
+
+    builder._link_dependencies([growth_task], {})
+
+    assert growth_task.status == ExecutionStatus.PENDING
+    assert growth_task.status_reason is None
+    assert growth_task.dependencies == []
+    assert growth_task.inputs["growth_dependency_mode"] == (
+        "task_output_or_direct_data_source"
+    )
+    assert growth_task.inputs["linked_dependency_periods"] == []
+
+
+def test_growth_task_reads_direct_data_when_previous_base_task_is_absent():
+    builder = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_service())
+    )
+    growth_task = ExecutionTask(
+        task_id="exec_growth",
+        tool_id="financial_metric_engine",
+        tool_version="test",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023",
+        metric_id="revenue_growth",
+        metric_name="收入增长率",
+        status=ExecutionStatus.PENDING,
+        metadata={"metric_id": "revenue_growth", "previous_period": "2022"},
+    )
+
+    builder._link_dependencies(
+        [growth_task],
+        {("600519", "2023", "revenue"): "exec_current_revenue"},
+    )
+
+    assert growth_task.status == ExecutionStatus.PENDING
+    assert growth_task.status_reason is None
+    assert growth_task.dependencies == ["exec_current_revenue"]
+    assert growth_task.inputs["growth_dependency_mode"] == (
+        "task_output_or_direct_data_source"
+    )
+    assert growth_task.inputs["linked_dependency_periods"] == ["2023"]

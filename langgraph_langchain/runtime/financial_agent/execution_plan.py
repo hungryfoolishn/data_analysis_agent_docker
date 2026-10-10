@@ -165,6 +165,19 @@ class ExecutionPlanBuilder:
         executable = coverage is not None and coverage.status == "AVAILABLE"
         previous_period = self._previous_period(period_coverage, period)
         missing_fields = list(coverage.missing_fields) if coverage else []
+        base_metric_id = metric.metric_id.removesuffix("_growth")
+        growth_input_contract = None
+        if metric.metric_id.endswith("_growth"):
+            growth_input_contract = {
+                "base_metric_id": base_metric_id,
+                "current_period": period,
+                "previous_period": previous_period,
+                "required_inputs": [
+                    "current_base_metric",
+                    "previous_base_metric",
+                ],
+                "input_mode": "task_output_or_direct_data_source",
+            }
 
         return ExecutionTask(
             task_id=f"pending_{uuid4().hex}",
@@ -188,6 +201,7 @@ class ExecutionPlanBuilder:
                 "calculation_type": metric.calculation_type,
                 "balance_policy": metric.balance_policy,
                 "previous_period": previous_period,
+                "growth_input_contract": growth_input_contract,
                 "source_fields": metric.source_fields,
                 "coverage_status": (
                     coverage.status if coverage else "PERIOD_MISSING"
@@ -231,17 +245,33 @@ class ExecutionPlanBuilder:
             metric_id = task.metadata["metric_id"]
             if not metric_id.endswith("_growth"):
                 continue
+
             base_metric_id = metric_id.removesuffix("_growth")
+            dependency_periods = [task.period]
             previous_period = task.metadata.get("previous_period")
-            if not previous_period:
-                continue
-            dependency_id = task_id_by_key.get((
-                task.company_id,
-                previous_period,
-                base_metric_id,
-            ))
-            if dependency_id:
-                task.dependencies.append(dependency_id)
+            if previous_period:
+                dependency_periods.append(previous_period)
+
+            linked_dependency_periods: list[str] = []
+            for period in dependency_periods:
+                dependency_id = task_id_by_key.get((
+                    task.company_id,
+                    period,
+                    base_metric_id,
+                ))
+                if dependency_id:
+                    task.dependencies.append(dependency_id)
+                    linked_dependency_periods.append(period)
+
+            # V10.2/V10.3 batch workflow may read base values directly from the
+            # data service when an upstream task is not part of this plan.
+            # Missing task output is therefore not the same as missing data;
+            # the builder already marks a growth task UNAVAILABLE when its
+            # previous-period data coverage is actually absent.
+            task.inputs["growth_dependency_mode"] = (
+                "task_output_or_direct_data_source"
+            )
+            task.inputs["linked_dependency_periods"] = linked_dependency_periods
 
     def _previous_period(
         self,

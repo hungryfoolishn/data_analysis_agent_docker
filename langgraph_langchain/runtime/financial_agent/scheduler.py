@@ -23,7 +23,7 @@ from .execution_models import (
     RuntimeTaskResult,
 )
 from .execution_plan import ExecutionPlanBuilder
-from .models import ExecutionStatus, VerificationStatus
+from .models import ExecutionStatus, FailurePolicy, VerificationStatus
 
 
 SCHEDULER_NAME = "deterministic_dag_v10_3_0"
@@ -82,6 +82,21 @@ class DeterministicDAGScheduler:
         plan.status = ExecutionPlanStatus.RUNNING
         plan.started_at = started_at
 
+        try:
+            return self._schedule(plan, started_at=started_at)
+        except Exception as exc:  # noqa: BLE001 - scheduler failure boundary
+            return self._internal_failure_result(
+                plan,
+                started_at=started_at,
+                exc=exc,
+            )
+
+    def _schedule(
+        self,
+        plan: ExecutionPlan,
+        *,
+        started_at: str,
+    ) -> RuntimeExecutionResult:
         tasks_by_id = {task.task_id: task for task in plan.tasks}
         order_by_id = {
             task.task_id: index for index, task in enumerate(plan.tasks)
@@ -98,6 +113,8 @@ class DeterministicDAGScheduler:
             for task in plan.tasks
             if task.status == ExecutionStatus.PENDING
         }
+        failure_policy_stop: dict[str, str] | None = None
+        unsupported_failure_policies: list[str] = []
 
         # Initial UNAVAILABLE tasks are already terminal and must propagate
         # dependency blocking before any ready task is selected.
@@ -157,6 +174,27 @@ class DeterministicDAGScheduler:
                         pending_task_ids=pending_task_ids,
                     )
 
+                if task.status != ExecutionStatus.FAILED:
+                    continue
+
+                failure_policy_stop = self._stop_for_failure_policy(
+                    task=task,
+                    tasks_by_id=tasks_by_id,
+                    order_by_id=order_by_id,
+                    blocked_task_ids=blocked_task_ids,
+                    pending_task_ids=pending_task_ids,
+                )
+                if failure_policy_stop is not None:
+                    if (
+                        task.failure_policy
+                        == FailurePolicy.REPLAN_OR_FAIL
+                    ):
+                        unsupported_failure_policies.append(task.task_id)
+                    break
+
+            if failure_policy_stop is not None:
+                break
+
         finished_at = _utc_now()
         plan.finished_at = finished_at
         task_results = [
@@ -184,6 +222,19 @@ class DeterministicDAGScheduler:
         )
         plan.status = self._plan_status(runtime_status)
 
+        metadata: dict[str, Any] = {
+            "scheduler": SCHEDULER_NAME,
+            "execution_order": execution_order,
+            "blocked_task_ids": [
+                task_id
+                for task_id in sorted(blocked_task_ids, key=order_by_id.__getitem__)
+            ],
+        }
+        if failure_policy_stop is not None:
+            metadata["failure_policy_stop"] = failure_policy_stop
+        if unsupported_failure_policies:
+            metadata["unsupported_failure_policies"] = unsupported_failure_policies
+
         return RuntimeExecutionResult(
             execution_id=f"runtime_{plan.execution_id}",
             plan_id=plan.plan_id,
@@ -196,13 +247,127 @@ class DeterministicDAGScheduler:
             blocked_count=blocked_count,
             started_at=started_at,
             finished_at=finished_at,
+            metadata=metadata,
+        )
+
+    def _stop_for_failure_policy(
+        self,
+        *,
+        task: ExecutionTask,
+        tasks_by_id: dict[str, ExecutionTask],
+        order_by_id: dict[str, int],
+        blocked_task_ids: set[str],
+        pending_task_ids: set[str],
+    ) -> dict[str, str] | None:
+        if task.failure_policy == FailurePolicy.FAIL_FAST:
+            reason = f"fail-fast: task {task.task_id} failed"
+        elif task.failure_policy == FailurePolicy.REPLAN_OR_FAIL:
+            original_reason = task.status_reason or "task failed"
+            task.status_reason = (
+                "REPLAN_OR_FAIL is not supported by deterministic DAG scheduler: "
+                f"{original_reason}"
+            )
+            task.metadata["failure_policy"] = task.failure_policy.value
+            task.metadata["replan_supported"] = False
+            reason = (
+                "REPLAN_OR_FAIL is not supported by deterministic DAG scheduler"
+            )
+        else:
+            return None
+
+        self._block_remaining_pending(
+            reason=reason,
+            tasks_by_id=tasks_by_id,
+            order_by_id=order_by_id,
+            blocked_task_ids=blocked_task_ids,
+            pending_task_ids=pending_task_ids,
+        )
+        return {
+            "task_id": task.task_id,
+            "policy": task.failure_policy.value,
+            "reason": reason,
+        }
+
+    def _block_remaining_pending(
+        self,
+        *,
+        reason: str,
+        tasks_by_id: dict[str, ExecutionTask],
+        order_by_id: dict[str, int],
+        blocked_task_ids: set[str],
+        pending_task_ids: set[str],
+    ) -> None:
+        for task_id in sorted(pending_task_ids, key=order_by_id.__getitem__):
+            task = tasks_by_id[task_id]
+            if task.status not in {
+                ExecutionStatus.PENDING,
+                ExecutionStatus.READY,
+            }:
+                continue
+            self._mark_blocked(
+                task,
+                reason=reason,
+                blocked_task_ids=blocked_task_ids,
+            )
+        pending_task_ids.clear()
+
+    def _internal_failure_result(
+        self,
+        plan: ExecutionPlan,
+        *,
+        started_at: str,
+        exc: Exception,
+    ) -> RuntimeExecutionResult:
+        error = f"{type(exc).__name__}: {exc}"
+        for task in plan.tasks:
+            if task.status == ExecutionStatus.RUNNING:
+                task.status = ExecutionStatus.FAILED
+                task.status_reason = error
+                task.verification_status = VerificationStatus.FAILED.value
+            elif task.status in {
+                ExecutionStatus.PENDING,
+                ExecutionStatus.READY,
+            }:
+                task.status = ExecutionStatus.BLOCKED
+                task.status_reason = f"scheduler internal error: {error}"
+                task.verification_status = VerificationStatus.NOT_REQUIRED.value
+
+        finished_at = _utc_now()
+        plan.finished_at = finished_at
+        plan.status = ExecutionPlanStatus.FAILED
+        task_results = [
+            self._task_result(task, execution_index=index)
+            for index, task in enumerate(plan.tasks)
+        ]
+        succeeded_count = sum(
+            item.status == ExecutionStatus.SUCCEEDED for item in task_results
+        )
+        unavailable_count = sum(
+            item.status == ExecutionStatus.UNAVAILABLE for item in task_results
+        )
+        failed_count = sum(
+            item.status == ExecutionStatus.FAILED for item in task_results
+        )
+        blocked_count = sum(
+            item.status == ExecutionStatus.BLOCKED for item in task_results
+        )
+
+        return RuntimeExecutionResult(
+            execution_id=f"runtime_{plan.execution_id}",
+            plan_id=plan.plan_id,
+            query_id=plan.query_id,
+            status=RuntimeExecutionStatus.FAILED,
+            task_results=task_results,
+            succeeded_count=succeeded_count,
+            unavailable_count=unavailable_count,
+            failed_count=failed_count,
+            blocked_count=blocked_count,
+            started_at=started_at,
+            finished_at=finished_at,
             metadata={
                 "scheduler": SCHEDULER_NAME,
-                "execution_order": execution_order,
-                "blocked_task_ids": [
-                    task_id
-                    for task_id in sorted(blocked_task_ids, key=order_by_id.__getitem__)
-                ],
+                "error": error,
+                "scheduler_internal_error": True,
             },
         )
 
@@ -228,7 +393,7 @@ class DeterministicDAGScheduler:
 
     def _execute_task(self, task: ExecutionTask) -> TaskExecutionOutcome:
         try:
-            return self._executor(task)
+            outcome = self._executor(task)
         except Exception as exc:  # noqa: BLE001 - task execution boundary
             error = f"{type(exc).__name__}: {exc}"
             return TaskExecutionOutcome(
@@ -236,6 +401,18 @@ class DeterministicDAGScheduler:
                 status_reason=error,
                 error=error,
             )
+
+        if not isinstance(outcome, TaskExecutionOutcome):
+            error = (
+                "Invalid task executor return type: expected TaskExecutionOutcome, "
+                f"got {type(outcome).__name__}"
+            )
+            return TaskExecutionOutcome(
+                status=ExecutionStatus.FAILED,
+                status_reason=error,
+                error=error,
+            )
+        return outcome
 
     def _apply_outcome(
         self,

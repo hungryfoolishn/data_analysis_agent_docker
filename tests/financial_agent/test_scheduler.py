@@ -10,6 +10,7 @@ from langgraph_langchain.runtime.financial_agent import (
     ExecutionPlanStatus,
     ExecutionStatus,
     ExecutionTask,
+    FailurePolicy,
     RuntimeExecutionStatus,
     SchedulerValidationError,
     TaskExecutionOutcome,
@@ -21,6 +22,7 @@ def _task(
     *,
     dependencies: tuple[str, ...] = (),
     status: ExecutionStatus = ExecutionStatus.PENDING,
+    failure_policy: FailurePolicy = FailurePolicy.CONTINUE_WITH_WARNING,
 ) -> ExecutionTask:
     return ExecutionTask(
         task_id=task_id,
@@ -34,6 +36,7 @@ def _task(
         dependencies=list(dependencies),
         status=status,
         status_reason="data_unavailable" if status == ExecutionStatus.UNAVAILABLE else None,
+        failure_policy=failure_policy,
     )
 
 
@@ -263,3 +266,271 @@ def test_scheduler_does_not_count_a_task_more_than_once():
         + result.blocked_count
         == len(result.task_results)
     )
+
+
+@pytest.mark.parametrize(
+    "invalid_return",
+    [None, {"status": "SUCCEEDED"}],
+    ids=["none", "dict"],
+)
+def test_scheduler_converts_invalid_executor_return_type_to_failure(invalid_return):
+    calls: list[str] = []
+
+    def execute(task: ExecutionTask):
+        calls.append(task.task_id)
+        return invalid_return
+
+    scheduler = DeterministicDAGScheduler(execute)
+    plan = _plan(
+        _task("task_a"),
+        _task("task_b", dependencies=("task_a",)),
+    )
+
+    result = scheduler.run(plan)
+
+    expected_type = type(invalid_return).__name__
+    assert calls == ["task_a"]
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert plan.status == ExecutionPlanStatus.FAILED
+    assert plan.finished_at is not None
+    assert result.failed_count == 1
+    assert result.blocked_count == 1
+    assert result.task_results[0].error == (
+        "Invalid task executor return type: expected TaskExecutionOutcome, "
+        f"got {expected_type}"
+    )
+    assert result.task_results[1].status == ExecutionStatus.BLOCKED
+
+
+def test_scheduler_converts_invalid_outcome_status_to_failure():
+    scheduler = DeterministicDAGScheduler(
+        lambda task: TaskExecutionOutcome(status=ExecutionStatus.READY)
+    )
+    plan = _plan(_task("task_a"))
+
+    result = scheduler.run(plan)
+
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert plan.status == ExecutionPlanStatus.FAILED
+    assert plan.finished_at is not None
+    assert result.failed_count == 1
+    assert result.task_results[0].error == "Invalid task execution status: READY"
+
+
+def test_scheduler_internal_exception_returns_structured_failure(monkeypatch):
+    scheduler = DeterministicDAGScheduler(_success)
+
+    def apply_outcome(task: ExecutionTask, outcome: TaskExecutionOutcome):
+        raise RuntimeError("scheduler state update crashed")
+
+    monkeypatch.setattr(scheduler, "_apply_outcome", apply_outcome)
+    plan = _plan(
+        _task("task_a"),
+        _task("task_b"),
+    )
+
+    result = scheduler.run(plan)
+
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert plan.status == ExecutionPlanStatus.FAILED
+    assert plan.finished_at is not None
+    assert result.metadata["scheduler_internal_error"] is True
+    assert result.metadata["error"] == "RuntimeError: scheduler state update crashed"
+    assert result.task_results[0].status == ExecutionStatus.FAILED
+    assert result.task_results[0].error == "RuntimeError: scheduler state update crashed"
+    assert result.task_results[1].status == ExecutionStatus.BLOCKED
+    assert result.task_results[1].error == (
+        "scheduler internal error: RuntimeError: scheduler state update crashed"
+    )
+    assert result.failed_count == 1
+    assert result.blocked_count == 1
+
+
+def test_fail_fast_policy_stops_independent_tasks(monkeypatch):
+    calls: list[str] = []
+
+    def execute(task: ExecutionTask) -> TaskExecutionOutcome:
+        calls.append(task.task_id)
+        if task.task_id == "task_a":
+            return TaskExecutionOutcome(
+                status=ExecutionStatus.FAILED,
+                status_reason="fake failure",
+                error="fake failure",
+            )
+        return _success(task)
+
+    scheduler = DeterministicDAGScheduler(execute)
+    plan = _plan(
+        _task("task_a", failure_policy=FailurePolicy.FAIL_FAST),
+        _task("task_b"),
+        _task("task_c", dependencies=("task_a",)),
+    )
+
+    result = scheduler.run(plan)
+
+    assert calls == ["task_a"]
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert plan.status == ExecutionPlanStatus.FAILED
+    assert result.failed_count == 1
+    assert result.blocked_count == 2
+    assert result.metadata["failure_policy_stop"] == {
+        "task_id": "task_a",
+        "policy": "FAIL_FAST",
+        "reason": "fail-fast: task task_a failed",
+    }
+    assert result.task_results[1].status_reason == "fail-fast: task task_a failed"
+    assert result.task_results[2].status_reason == "dependency task_a failed"
+
+
+def test_continue_with_warning_policy_executes_independent_tasks():
+    calls: list[str] = []
+
+    def execute(task: ExecutionTask) -> TaskExecutionOutcome:
+        calls.append(task.task_id)
+        if task.task_id == "task_a":
+            return TaskExecutionOutcome(
+                status=ExecutionStatus.FAILED,
+                status_reason="fake failure",
+                error="fake failure",
+            )
+        return _success(task)
+
+    scheduler = DeterministicDAGScheduler(execute)
+    plan = _plan(
+        _task(
+            "task_a",
+            failure_policy=FailurePolicy.CONTINUE_WITH_WARNING,
+        ),
+        _task("task_b"),
+        _task("task_c", dependencies=("task_a",)),
+    )
+
+    result = scheduler.run(plan)
+
+    assert calls == ["task_a", "task_b"]
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert result.succeeded_count == 1
+    assert result.failed_count == 1
+    assert result.blocked_count == 1
+    assert "failure_policy_stop" not in result.metadata
+
+
+def test_replan_or_fail_policy_returns_explicit_unsupported_failure():
+    calls: list[str] = []
+
+    def execute(task: ExecutionTask) -> TaskExecutionOutcome:
+        calls.append(task.task_id)
+        if task.task_id == "task_a":
+            return TaskExecutionOutcome(
+                status=ExecutionStatus.FAILED,
+                status_reason="fake failure",
+                error="fake failure",
+            )
+        return _success(task)
+
+    scheduler = DeterministicDAGScheduler(execute)
+    plan = _plan(
+        _task(
+            "task_a",
+            failure_policy=FailurePolicy.REPLAN_OR_FAIL,
+        ),
+        _task("task_b"),
+    )
+
+    result = scheduler.run(plan)
+
+    assert calls == ["task_a"]
+    assert result.status == RuntimeExecutionStatus.FAILED
+    assert result.failed_count == 1
+    assert result.blocked_count == 1
+    assert result.metadata["unsupported_failure_policies"] == ["task_a"]
+    assert result.task_results[0].status_reason == (
+        "REPLAN_OR_FAIL is not supported by deterministic DAG scheduler: "
+        "fake failure"
+    )
+    assert result.task_results[1].status_reason == (
+        "REPLAN_OR_FAIL is not supported by deterministic DAG scheduler"
+    )
+
+
+def test_scheduler_blocks_all_descendants_after_ancestor_failure():
+    calls: list[str] = []
+
+    def execute(task: ExecutionTask) -> TaskExecutionOutcome:
+        calls.append(task.task_id)
+        if task.task_id == "task_a":
+            return TaskExecutionOutcome(
+                status=ExecutionStatus.FAILED,
+                status_reason="fake failure",
+                error="fake failure",
+            )
+        return _success(task)
+
+    scheduler = DeterministicDAGScheduler(execute)
+    plan = _plan(
+        _task("task_a"),
+        _task("task_b", dependencies=("task_a",)),
+        _task("task_c", dependencies=("task_b",)),
+        _task("task_d"),
+    )
+
+    result = scheduler.run(plan)
+
+    assert calls == ["task_a", "task_d"]
+    assert result.succeeded_count == 1
+    assert result.failed_count == 1
+    assert result.blocked_count == 2
+    assert result.metadata["blocked_task_ids"] == ["task_b", "task_c"]
+
+
+def test_duplicate_dependency_declarations_do_not_duplicate_execution():
+    calls: list[str] = []
+    scheduler = DeterministicDAGScheduler(
+        lambda task: (calls.append(task.task_id), _success(task))[1]
+    )
+    plan = _plan(
+        _task("task_a"),
+        _task("task_b", dependencies=("task_a", "task_a")),
+    )
+
+    result = scheduler.run(plan)
+
+    assert calls == ["task_a", "task_b"]
+    assert len(calls) == len(set(calls)) == 2
+    assert len(result.task_results) == 2
+    assert result.succeeded_count == 2
+
+
+def test_all_unavailable_tasks_return_blocked_result():
+    calls: list[str] = []
+    scheduler = DeterministicDAGScheduler(
+        lambda task: (calls.append(task.task_id), _success(task))[1]
+    )
+    plan = _plan(
+        _task("task_a", status=ExecutionStatus.UNAVAILABLE),
+        _task("task_b", status=ExecutionStatus.UNAVAILABLE),
+    )
+
+    result = scheduler.run(plan)
+
+    assert calls == []
+    assert result.status == RuntimeExecutionStatus.BLOCKED
+    assert plan.status == ExecutionPlanStatus.BLOCKED
+    assert result.unavailable_count == 2
+    assert result.blocked_count == 0
+    assert result.succeeded_count == 0
+    assert result.failed_count == 0
+
+
+def test_rejected_plan_is_not_mutated_by_scheduler():
+    scheduler = DeterministicDAGScheduler(_success)
+    plan = _plan(_task("task_a"))
+    plan.status = ExecutionPlanStatus.RUNNING
+
+    with pytest.raises(SchedulerValidationError):
+        scheduler.run(plan)
+
+    assert plan.status == ExecutionPlanStatus.RUNNING
+    assert plan.started_at is None
+    assert plan.finished_at is None
+    assert plan.tasks[0].status == ExecutionStatus.PENDING
