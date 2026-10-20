@@ -55,6 +55,7 @@ class TaskExecutionOutcome(BaseModel):
     error: str | None = None
     output_refs: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    output: Any = None
 
 
 TaskExecutor = Callable[[ExecutionTask], TaskExecutionOutcome]
@@ -69,10 +70,18 @@ class DeterministicDAGScheduler:
     introduced.
     """
 
-    def __init__(self, executor: TaskExecutor) -> None:
+    def __init__(
+        self,
+        executor: TaskExecutor,
+        *,
+        on_outcome: Callable[[ExecutionTask, TaskExecutionOutcome], None] | None = None,
+    ) -> None:
         if not callable(executor):
             raise ValueError("DAG task executor must be callable.")
+        if on_outcome is not None and not callable(on_outcome):
+            raise ValueError("DAG outcome observer must be callable.")
         self._executor = executor
+        self._on_outcome = on_outcome
 
     def run(self, plan: ExecutionPlan) -> RuntimeExecutionResult:
         """Schedule ``plan`` and return one result for every task."""
@@ -161,6 +170,8 @@ class DeterministicDAGScheduler:
 
                 outcome = self._execute_task(task)
                 self._apply_outcome(task, outcome)
+                if self._on_outcome is not None:
+                    self._on_outcome(task, outcome)
                 execution_order.append(task.task_id)
 
                 if task.status != ExecutionStatus.SUCCEEDED:
@@ -514,6 +525,9 @@ class DeterministicDAGScheduler:
             metric_id=task.metric_id,
             status=task.status,
             verification_status=self._verification_status(task.status),
+            calculation_id=task.metadata.get("calculation_id"),
+            verification_id=task.metadata.get("verification_id"),
+            evidence_id=task.metadata.get("evidence_id"),
             status_reason=task.status_reason,
             error=(
                 None
@@ -522,6 +536,7 @@ class DeterministicDAGScheduler:
             ),
             output_refs=list(task.output_refs),
             metadata={
+                **task.metadata,
                 "scheduler": SCHEDULER_NAME,
                 "execution_index": execution_index,
             },

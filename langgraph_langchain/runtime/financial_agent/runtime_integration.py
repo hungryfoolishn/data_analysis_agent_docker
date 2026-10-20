@@ -26,6 +26,11 @@ from .execution_models import (
     RuntimeTaskResult,
 )
 from .models import FinancialToolSpec, VerificationStatus
+from .scheduler import DeterministicDAGScheduler
+from .task_executor import (
+    TaskLevelFinancialExecutor,
+    TaskOutputStore,
+)
 from .tool_execution import (
     ExecutableFinancialTool,
     FinancialToolExecutionRegistry,
@@ -133,16 +138,28 @@ def _failed_result(
 
 
 class FinancialRuntimeExecutor:
-    """Execute a validated V10.2 plan through the registered V9.3 workflow."""
+    """Execute a validated plan through task-level DAG or legacy workflow mode.
+
+    V10.3.1 defaults to the deterministic DAG scheduler.  The registered V9.3
+    batched workflow remains available with ``execution_mode="workflow"`` for
+    compatibility and end-to-end comparison.
+    """
 
     def __init__(
         self,
         workflow,
         *,
         tool_registry: FinancialToolExecutionRegistry | None = None,
+        execution_mode: str = "dag",
     ) -> None:
+        if execution_mode not in {"dag", "workflow"}:
+            raise RuntimeIntegrationError(
+                "Execution mode must be 'dag' or 'workflow', got "
+                f"{execution_mode!r}."
+            )
         self.workflow = workflow
         self.tool_registry = tool_registry or self._build_registry()
+        self.execution_mode = execution_mode
 
     def _build_registry(self) -> FinancialToolExecutionRegistry:
         def run_workflow(payload: dict[str, Any]) -> FinancialAnalysisResult:
@@ -165,6 +182,132 @@ class FinancialRuntimeExecutor:
         ])
 
     def execute_plan(
+        self,
+        plan: ExecutionPlan,
+        *,
+        understanding,
+    ) -> RuntimeExecutionResult:
+        if self.execution_mode == "workflow":
+            return self._execute_plan_with_workflow(
+                plan,
+                understanding=understanding,
+            )
+
+        if plan.status != ExecutionPlanStatus.PENDING:
+            raise RuntimeIntegrationError(
+                f"Execution plan must be PENDING before execution, got "
+                f"{plan.status.value}."
+            )
+        validation_errors = self.validate_plan(plan)
+        if validation_errors:
+            error = "Invalid execution plan: " + "; ".join(validation_errors)
+            plan.status = ExecutionPlanStatus.FAILED
+            plan.finished_at = _utc_now()
+            raise RuntimeIntegrationError(error)
+        if not plan.tasks:
+            raise RuntimeIntegrationError("Execution plan has no tasks.")
+
+        return self._execute_plan_with_scheduler(
+            plan,
+            understanding=understanding,
+        )
+
+    def _execute_plan_with_scheduler(
+        self,
+        plan: ExecutionPlan,
+        *,
+        understanding,
+    ) -> RuntimeExecutionResult:
+        output_store = TaskOutputStore()
+        task_executor = TaskLevelFinancialExecutor(
+            self.workflow,
+            output_store,
+        )
+        scheduler = DeterministicDAGScheduler(
+            task_executor,
+            on_outcome=output_store.record,
+        )
+        result = scheduler.run(plan)
+        analysis_result = self._build_task_analysis_result(
+            plan,
+            understanding=understanding,
+            output_store=output_store,
+        )
+        result.analysis_result = analysis_result
+        result.report_markdown = analysis_result.report_markdown
+
+        metadata = dict(result.metadata)
+        metadata.update({
+            "execution_mode": "dag",
+            "task_execution_adapter": "financial_task_v10_3_1",
+            "calculation_count": len(analysis_result.calculations),
+            "verification_count": len(analysis_result.verifications),
+            "evidence_count": len(analysis_result.evidence),
+            "observation_count": len(analysis_result.observations),
+            "dependency_output_count": sum(
+                1
+                for task in plan.tasks
+                if any(
+                    source.startswith("dependency_task:")
+                    for source in task.metadata.get("input_sources", {}).values()
+                )
+            ),
+        })
+        result.metadata = metadata
+        return result
+
+    def _build_task_analysis_result(
+        self,
+        plan: ExecutionPlan,
+        *,
+        understanding,
+        output_store: TaskOutputStore,
+    ):
+        outputs = output_store.outputs_in_plan_order(plan.tasks)
+        calculations = [item.calculation for item in outputs]
+        verifications = [item.verification for item in outputs]
+        evidence = [item.evidence for item in outputs]
+        observations = [item.observation for item in outputs]
+        source_ids = list(dict.fromkeys(
+            source_id
+            for item in outputs
+            for source_id in item.calculation.source_ids
+        ))
+        years = [int(task.period) for task in plan.tasks]
+        query = FinancialQuery(
+            question=understanding.raw_question,
+            task_type=understanding.task_type,
+            company_names=list(dict.fromkeys(
+                task.company_name for task in plan.tasks
+            )),
+            metrics=list(dict.fromkeys(
+                task.metric_id for task in plan.tasks
+            )),
+            start_year=min(years),
+            end_year=max(years),
+        )
+        analysis_result = FinancialAnalysisResult(
+            query=query,
+            task_type=understanding.task_type or "financial_analysis",
+            metrics=query.metrics,
+            observations=observations,
+            calculations=calculations,
+            verifications=verifications,
+            evidence=evidence,
+            data_sources=self.workflow.data_service.get_sources(source_ids),
+        )
+        analysis_result.summary = self.workflow._summary(
+            observations=observations,
+            calculations=calculations,
+            comparisons=[],
+            risks=[],
+            findings=[],
+            anomalies=[],
+        )
+        analysis_result.report_markdown = self.workflow._report(analysis_result)
+        return analysis_result
+
+    def _execute_plan_with_workflow(
         self,
         plan: ExecutionPlan,
         *,

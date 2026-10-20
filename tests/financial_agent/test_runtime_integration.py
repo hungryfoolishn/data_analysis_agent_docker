@@ -128,12 +128,20 @@ def _assert_result_accounting(result):
     )
 
 
+def _workflow_executor(workflow, **kwargs):
+    return FinancialRuntimeExecutor(
+        workflow,
+        execution_mode="workflow",
+        **kwargs,
+    )
+
+
 def test_runtime_executor_completes_plan_and_preserves_evidence():
     understanding, resolver, execution_plan = _build_plan(
         "分析贵州茅台 2022-2024 年收入和净利润"
     )
     workflow = FinancialAnalysisWorkflow(_service())
-    result = FinancialRuntimeExecutor(workflow).execute_plan(
+    result = _workflow_executor(workflow).execute_plan(
         execution_plan,
         understanding=understanding,
     )
@@ -171,7 +179,7 @@ def test_runtime_executor_maps_first_missing_previous_period_to_unavailable():
         "分析贵州茅台 2021-2024 年收入和净利润"
     )
     workflow = FinancialAnalysisWorkflow(_service())
-    result = FinancialRuntimeExecutor(workflow).execute_plan(
+    result = _workflow_executor(workflow).execute_plan(
         execution_plan,
         understanding=understanding,
     )
@@ -214,7 +222,7 @@ def test_runtime_executor_rejects_non_pending_plan():
     execution_plan.status = ExecutionPlanStatus.SUCCEEDED
 
     with pytest.raises(RuntimeIntegrationError, match="must be PENDING"):
-        FinancialRuntimeExecutor(FinancialAnalysisWorkflow(_service())).execute_plan(
+        _workflow_executor(FinancialAnalysisWorkflow(_service())).execute_plan(
             execution_plan,
             understanding=understanding,
         )
@@ -263,7 +271,7 @@ def test_runtime_executes_tool_through_registry():
     understanding, _, execution_plan = _build_plan(
         "分析贵州茅台 2022-2024 年收入和净利润"
     )
-    result = FinancialRuntimeExecutor(
+    result = _workflow_executor(
         workflow,
         tool_registry=_registry_spy(workflow, calls),
     ).execute_plan(execution_plan, understanding=understanding)
@@ -287,7 +295,7 @@ def test_runtime_missing_tool_returns_structured_failure_result():
     }
     assert unavailable_task_ids
 
-    result = FinancialRuntimeExecutor(
+    result = _workflow_executor(
         FinancialAnalysisWorkflow(_service()),
         tool_registry=FinancialToolExecutionRegistry([]),
     ).execute_plan(execution_plan, understanding=understanding)
@@ -344,7 +352,7 @@ def test_runtime_workflow_failure_preserves_unavailable_task_semantics():
     unavailable_count = len(execution_plan.unavailable_tasks)
     assert unavailable_count
 
-    result = FinancialRuntimeExecutor(ExplodingWorkflow()).execute_plan(
+    result = _workflow_executor(ExplodingWorkflow()).execute_plan(
         execution_plan,
         understanding=understanding,
     )
@@ -392,7 +400,7 @@ def test_runtime_unexpected_tool_output_returns_structured_failure_result():
         semantic_resolver=FinancialSemanticResolver(_service())
     ).build(understanding, plan_id="plan_invalid_workflow_output")
 
-    result = FinancialRuntimeExecutor(
+    result = _workflow_executor(
         FinancialAnalysisWorkflow(_service()),
         tool_registry=registry,
     ).execute_plan(execution_plan, understanding=understanding)
@@ -422,7 +430,7 @@ def test_runtime_marks_plan_failed_when_workflow_raises():
     execution_plan = ExecutionPlanBuilder(
         semantic_resolver=FinancialSemanticResolver(_service())
     ).build(understanding, plan_id="plan_exploding_workflow")
-    result = FinancialRuntimeExecutor(ExplodingWorkflow()).execute_plan(
+    result = _workflow_executor(ExplodingWorkflow()).execute_plan(
         execution_plan,
         understanding=understanding,
     )
@@ -451,7 +459,7 @@ def test_runtime_handles_all_tasks_unavailable():
     assert execution_plan.pending_tasks == []
     assert execution_plan.unavailable_tasks
 
-    result = FinancialRuntimeExecutor(
+    result = _workflow_executor(
         FinancialAnalysisWorkflow(service)
     ).execute_plan(execution_plan, understanding=understanding)
 
@@ -489,7 +497,7 @@ def test_runtime_rejects_duplicate_workflow_results():
         semantic_resolver=FinancialSemanticResolver(_service())
     ).build(understanding, plan_id="plan_duplicate_results")
 
-    result = FinancialRuntimeExecutor(
+    result = _workflow_executor(
         workflow,
         tool_registry=registry,
     ).execute_plan(execution_plan, understanding=understanding)
@@ -507,7 +515,7 @@ def test_runtime_rejects_invalid_execution_plan():
     execution_plan.tasks[0].dependencies.append("exec_missing")
 
     with pytest.raises(RuntimeIntegrationError, match="Invalid execution plan"):
-        FinancialRuntimeExecutor(
+        _workflow_executor(
             FinancialAnalysisWorkflow(_service())
         ).execute_plan(execution_plan, understanding=understanding)
 
@@ -521,7 +529,7 @@ def test_runtime_preserves_evidence_refs_after_registry_execution():
     understanding, _, execution_plan = _build_plan(
         "分析贵州茅台 2022-2024 年收入和净利润"
     )
-    result = FinancialRuntimeExecutor(
+    result = _workflow_executor(
         workflow,
         tool_registry=_registry_spy(workflow, calls),
     ).execute_plan(execution_plan, understanding=understanding)

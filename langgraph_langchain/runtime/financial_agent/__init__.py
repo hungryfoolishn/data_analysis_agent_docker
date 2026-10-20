@@ -58,6 +58,11 @@ from .scheduler import (
     TaskExecutionOutcome,
     TaskExecutor,
 )
+from .task_executor import (
+    TaskExecutionOutput,
+    TaskLevelFinancialExecutor,
+    TaskOutputStore,
+)
 from .understanding import FinancialTaskUnderstandingBuilder
 from .planner import FinancialTaskPlanner
 
@@ -107,6 +112,9 @@ __all__ = [
     "SchedulerValidationError",
     "TaskExecutionOutcome",
     "TaskExecutor",
+    "TaskExecutionOutput",
+    "TaskLevelFinancialExecutor",
+    "TaskOutputStore",
     "PlanStatus",
     "PlanningReadiness",
     "TASK_TOOL_IDS",
