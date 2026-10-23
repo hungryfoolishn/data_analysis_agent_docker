@@ -307,33 +307,53 @@ class TaskLevelFinancialExecutor:
             else None
         )
 
+        current: float | None = None
+        previous: float | None = None
+
         if current_output is not None:
             current = current_output.value
             input_sources["current"] = f"dependency_task:{current_output.task_id}"
         else:
-            current = compute_metric(
+            input_sources["current"] = "data_service"
+            current_computation = compute_metric(
                 base_metric_id,
                 income=income,
                 balance=balance,
                 cash_flow=cash_flow,
-            ).value
-            input_sources["current"] = "data_service"
+            )
+            if current_computation.status != CALCULATED:
+                return self._growth_base_status(
+                    task,
+                    phase="current",
+                    base_metric_id=base_metric_id,
+                    computation=current_computation,
+                    other_value=previous,
+                )
+            current = current_computation.value
 
         if previous_output is not None:
             previous = previous_output.value
             input_sources["previous"] = f"dependency_task:{previous_output.task_id}"
         else:
-            previous = (
-                compute_metric(
+            input_sources["previous"] = "data_service"
+            if previous_income is None:
+                previous = None
+            else:
+                previous_computation = compute_metric(
                     base_metric_id,
                     income=previous_income,
                     balance=balance,
                     cash_flow=cash_flow,
-                ).value
-                if previous_income is not None
-                else None
-            )
-            input_sources["previous"] = "data_service"
+                )
+                if previous_computation.status != CALCULATED:
+                    return self._growth_base_status(
+                        task,
+                        phase="previous",
+                        base_metric_id=base_metric_id,
+                        computation=previous_computation,
+                        other_value=current,
+                    )
+                previous = previous_computation.value
 
         missing_fields: list[str] = []
         if current is None:
@@ -371,6 +391,43 @@ class TaskLevelFinancialExecutor:
                 "current": round(current, 6),
                 "previous": round(previous, 6),
             },
+        )
+
+    @staticmethod
+    def _growth_base_status(
+        task: ExecutionTask,
+        *,
+        phase: str,
+        base_metric_id: str,
+        computation: MetricComputation,
+        other_value: float | None,
+    ) -> MetricComputation:
+        inputs = {
+            "current": other_value if phase == "previous" else None,
+            "previous": other_value if phase == "current" else None,
+        }
+        if computation.status == UNAVAILABLE:
+            return MetricComputation(
+                metric_id=task.metric_id,
+                status=UNAVAILABLE,
+                inputs=inputs,
+                missing_fields=[
+                    f"{phase}.{base_metric_id}",
+                    *computation.missing_fields,
+                ],
+                reason=(
+                    f"{phase}_base_metric_unavailable:"
+                    f"{computation.reason or 'base_metric_unavailable'}"
+                ),
+            )
+        return MetricComputation(
+            metric_id=task.metric_id,
+            status=INVALID,
+            inputs=inputs,
+            reason=(
+                f"{phase}_base_metric_invalid:"
+                f"{computation.reason or 'base_metric_invalid'}"
+            ),
         )
 
     @staticmethod

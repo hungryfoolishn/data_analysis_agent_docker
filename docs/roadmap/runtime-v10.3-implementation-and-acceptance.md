@@ -467,3 +467,198 @@ V10.3.1 状态：Task-level Financial Execution Adapter 完成
 任务级执行测试：6 / 6 passed
 联合定向回归：58 passed
 ```
+## 阶段 3：V10.3.2 财务正确性与报告兼容性收尾
+
+### 目标
+
+- 复核并验收平均余额类指标的上一期资产负债表输入。
+- 增长率直接读取数据服务时，显式传播基础指标计算状态。
+- 建立全指标 DAG 与旧批量工作流对照矩阵。
+- 恢复 DAG 模式的比较、风险、异常和 Finding 分析层。
+- 保证 DAG 报告与旧 V9.3 工作流报告使用同一分析和报告构建逻辑。
+
+### 非目标
+
+- 不新增任务重试、幂等、持久化或并发调度。
+- 不修改财务公式定义。
+- 不改变 `UNAVAILABLE`、`FAILED`、`BLOCKED` 的既有语义。
+
+## V10.3.2 代码变更
+
+### 1. 平均余额输入契约验收
+
+复核 `TaskLevelFinancialExecutor` 后确认：非增长率任务调用 `compute_metric()` 时已传入：
+
+```text
+previous_balance=previous_balance
+```
+
+本阶段补充显式测试，覆盖：
+
+```text
+ROE
+ROA
+应收账款周转率
+存货周转率
+总资产周转率
+```
+
+测试断言当期分母、上一期分母、平均分母、计算结果和验证结果。缺少上一期资产负债表时，平均余额指标保持 `UNAVAILABLE`，原因为：
+
+```text
+average_balance_previous_period_missing
+```
+
+### 2. 增长率直接读取状态传播
+
+增长率任务没有依赖任务输出时，不再只读取 `compute_metric(...).value`，而是显式检查基础指标计算结果状态：
+
+- `CALCULATED`：基础值进入增长率公式。
+- `UNAVAILABLE`：增长率返回 `UNAVAILABLE`，保留基础指标缺失原因。
+- `INVALID`：增长率返回 `FAILED`，保留基础指标无效原因。
+
+示例错误语义：
+
+```text
+current_base_metric_unavailable:reported_value_missing
+current_base_metric_invalid:reported_value_not_finite
+previous_base_metric_unavailable:reported_value_missing
+previous_base_metric_invalid:reported_value_not_finite
+growth_previous_period_zero
+```
+
+测试覆盖当前期字段缺失、当前期非有限值、上一期字段缺失、上一期非有限值和上一期基础值为零。
+
+### 3. 全指标回归矩阵
+
+新增测试遍历 `financial_metric_registry.list_metrics()` 中的全部当前支持指标，并对比：
+
+- DAG 任务级计算结果
+- 旧 V9.3 批量工作流计算结果
+
+对照字段包括：
+
+```text
+result
+formula
+status
+inputs
+missing_fields
+unit
+verification.passed
+verification.actual_value
+```
+
+该矩阵覆盖基础指标、增长率、利润率、平均余额指标、偿债能力、现金流和派生现金流指标。
+
+### 4. 共享分析与报告层
+
+`FinancialAnalysisWorkflow` 新增：
+
+```python
+build_analysis_result(...)
+```
+
+该方法统一构建：
+
+```text
+comparisons
+risk_signals
+anomalies
+findings
+summary
+report_markdown
+```
+
+旧批量工作流和 DAG 聚合路径现在复用同一方法。因此 DAG 模式不再向分析层传空列表，报告保留：
+
+- 同业比较
+- 核心发现
+- 风险信号
+- Evidence-backed Finding
+- 异常信号对应的分析结论
+
+`RuntimeExecutionResult.metadata` 同步记录：
+
+```text
+finding_count
+comparison_count
+risk_signal_count
+anomaly_count
+```
+
+## V10.3.2 测试
+
+### 任务级财务正确性测试
+
+```bash
+PYTHONPATH=. pytest tests/financial_agent/test_task_executor.py -q
+```
+
+实际结果：
+
+```text
+14 passed in 2.56s
+```
+
+### V10.3.2 联合定向回归
+
+```bash
+PYTHONPATH=. pytest \
+  tests/financial_agent/test_task_executor.py \
+  tests/financial_agent/test_scheduler.py \
+  tests/financial_agent/test_execution_plan.py \
+  tests/financial_agent/test_runtime_integration.py \
+  tests/financial_agent/test_tool_execution.py \
+  -q
+```
+
+实际结果：
+
+```text
+66 passed in 3.58s
+```
+
+### V9.3 工作流兼容性回归
+
+```bash
+PYTHONPATH=. pytest \
+  tests/financial/test_runtime_v9_semantics.py \
+  tests/financial/test_runtime_v9_period_hardening.py \
+  tests/financial/test_runtime_v9.py \
+  tests/financial/test_runtime_v9_hardening.py \
+  tests/financial/test_runtime_v9_golden.py \
+  -q
+```
+
+实际结果：
+
+```text
+60 passed in 3.32s
+```
+
+### 全量回归
+
+```bash
+PYTHONPATH=. pytest -q
+```
+
+实际结果：
+
+```text
+890 passed, 11 warnings, 4 subtests passed in 207.43s (0:03:27)
+```
+
+## V10.3.2 验收结论
+
+```text
+V10.3.2 状态：财务正确性与报告兼容性收尾完成
+平均余额输入：previous_balance 已传入并有全指标矩阵验收
+增长率状态传播：CALCULATED / UNAVAILABLE / INVALID 显式区分
+全指标对照：DAG 与旧工作流结果、公式、输入、验证一致
+分析报告层：DAG 复用旧工作流共享构建逻辑
+任务级测试：14 / 14 passed
+联合定向回归：66 passed
+V9.3 工作流回归：60 passed
+全量回归：890 passed
+```

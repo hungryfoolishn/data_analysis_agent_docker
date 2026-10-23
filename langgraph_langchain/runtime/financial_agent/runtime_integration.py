@@ -244,6 +244,10 @@ class FinancialRuntimeExecutor:
             "verification_count": len(analysis_result.verifications),
             "evidence_count": len(analysis_result.evidence),
             "observation_count": len(analysis_result.observations),
+            "finding_count": len(analysis_result.findings),
+            "comparison_count": len(analysis_result.comparisons),
+            "risk_signal_count": len(analysis_result.risk_signals),
+            "anomaly_count": len(analysis_result.anomalies),
             "dependency_output_count": sum(
                 1
                 for task in plan.tasks
@@ -274,9 +278,13 @@ class FinancialRuntimeExecutor:
             for source_id in item.calculation.source_ids
         ))
         years = [int(task.period) for task in plan.tasks]
+        task_type = (
+            understanding.task_type
+            or self.workflow.classifier.classify(understanding.raw_question)
+        )
         query = FinancialQuery(
             question=understanding.raw_question,
-            task_type=understanding.task_type,
+            task_type=task_type,
             company_names=list(dict.fromkeys(
                 task.company_name for task in plan.tasks
             )),
@@ -286,26 +294,16 @@ class FinancialRuntimeExecutor:
             start_year=min(years),
             end_year=max(years),
         )
-        analysis_result = FinancialAnalysisResult(
+        return self.workflow.build_analysis_result(
             query=query,
-            task_type=understanding.task_type or "financial_analysis",
+            task_type=task_type,
             metrics=query.metrics,
             observations=observations,
             calculations=calculations,
             verifications=verifications,
             evidence=evidence,
-            data_sources=self.workflow.data_service.get_sources(source_ids),
+            source_ids=source_ids,
         )
-        analysis_result.summary = self.workflow._summary(
-            observations=observations,
-            calculations=calculations,
-            comparisons=[],
-            risks=[],
-            findings=[],
-            anomalies=[],
-        )
-        analysis_result.report_markdown = self.workflow._report(analysis_result)
-        return analysis_result
 
     def _execute_plan_with_workflow(
         self,

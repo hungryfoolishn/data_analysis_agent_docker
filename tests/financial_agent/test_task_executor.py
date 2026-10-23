@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from langgraph_langchain.runtime.financial import FinancialAnalysisWorkflow
-from langgraph_langchain.runtime.financial.models import FinancialVerification
+from langgraph_langchain.runtime.financial import (
+    FinancialAnalysisWorkflow,
+    FinancialDataService,
+    FinancialQuery,
+    financial_metric_registry,
+)
+from langgraph_langchain.runtime.financial.models import Company, FinancialVerification
 from langgraph_langchain.runtime.financial_agent import (
     DeterministicDAGScheduler,
     ExecutionPlan,
@@ -15,12 +20,16 @@ from langgraph_langchain.runtime.financial_agent import (
     ExecutionTask,
     FinancialRuntimeExecutor,
     FinancialSemanticResolver,
+    FinancialTaskUnderstandingBuilder,
     RuntimeExecutionStatus,
     TaskExecutionOutcome,
     TaskLevelFinancialExecutor,
     TaskOutputStore,
 )
 from test_runtime_integration import (
+    PERIODS,
+    _assert_result_accounting,
+    _balance,
     _build_plan,
     _cash,
     _company,
@@ -292,3 +301,399 @@ def test_unknown_metric_is_execution_failure_not_data_unavailable():
     assert outcome.status == ExecutionStatus.FAILED
     assert outcome.status_reason == "unsupported financial metric: unsupported_metric"
     assert outcome.output is None
+
+_AVERAGE_BALANCE_METRICS = {
+    "roe",
+    "roa",
+    "receivable_turnover",
+    "inventory_turnover",
+    "asset_turnover",
+}
+
+
+def _metric_task(index: int, definition, *, dependencies=()):
+    return ExecutionTask(
+        task_id=f"exec_metric_{index:04d}",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023",
+        metric_id=definition.metric_id,
+        metric_name=definition.name,
+        dependencies=list(dependencies),
+        required_data=list(definition.source_fields),
+        inputs={"previous_period": "2022"},
+        metadata={
+            "metric_id": definition.metric_id,
+            "previous_period": "2022",
+        },
+    )
+
+
+def test_average_balance_metric_uses_previous_period_balance():
+    workflow = FinancialAnalysisWorkflow(_service())
+    task = ExecutionTask(
+        task_id="exec_roe_average",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023",
+        metric_id="roe",
+        metric_name="净资产收益率",
+    )
+    executor = TaskLevelFinancialExecutor(workflow, TaskOutputStore())
+    outcome = executor(task)
+
+    assert outcome.status == ExecutionStatus.SUCCEEDED
+    calculation = outcome.output.calculation
+    assert calculation.inputs == {
+        "numerator": 25.0,
+        "current_denominator": 300.0,
+        "previous_denominator": 300.0,
+        "average_denominator": 300.0,
+    }
+    assert calculation.result == pytest.approx(8.333333)
+    assert outcome.output.verification.passed is True
+    assert outcome.output.verification.actual_value == pytest.approx(
+        calculation.result
+    )
+
+
+def test_average_balance_metric_without_previous_balance_is_unavailable():
+    service = type(_service())(
+        companies=[_company()],
+        income_statements=[_income("2022"), _income("2023")],
+        balance_sheets=[_balance("2023")],
+        cash_flows=[_cash("2022"), _cash("2023")],
+    )
+    task = ExecutionTask(
+        task_id="exec_roe_missing_previous_balance",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023",
+        metric_id="roe",
+        metric_name="净资产收益率",
+    )
+    executor = TaskLevelFinancialExecutor(
+        FinancialAnalysisWorkflow(service),
+        TaskOutputStore(),
+    )
+    outcome = executor(task)
+
+    assert outcome.status == ExecutionStatus.UNAVAILABLE
+    assert outcome.status_reason == "average_balance_previous_period_missing"
+    assert outcome.output is None
+
+
+def test_task_level_dag_matches_workflow_for_all_supported_metrics():
+    definitions = financial_metric_registry.list_metrics()
+    assert definitions
+    task_id_by_metric = {
+        definition.metric_id: f"exec_metric_{index:04d}"
+        for index, definition in enumerate(definitions, start=1)
+    }
+    tasks = []
+    for index, definition in enumerate(definitions, start=1):
+        dependencies = []
+        if definition.calculation_type == "growth":
+            base_metric_id = definition.growth_of or ""
+            if base_metric_id in task_id_by_metric:
+                dependencies.append(task_id_by_metric[base_metric_id])
+        tasks.append(_metric_task(
+            index,
+            definition,
+            dependencies=dependencies,
+        ))
+
+    execution_plan = ExecutionPlan(
+        plan_id="plan_all_metrics",
+        query_id="query_all_metrics",
+        tasks=tasks,
+    )
+    service = _service(income_overrides={
+        period: {"eps": 1.0 + int(period)}
+        for period in PERIODS
+    })
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023年全部财务指标")
+    dag_result = FinancialRuntimeExecutor(workflow).execute_plan(
+        execution_plan,
+        understanding=understanding,
+    )
+
+    assert dag_result.status == RuntimeExecutionStatus.SUCCEEDED
+    assert dag_result.succeeded_count == len(definitions)
+    assert dag_result.unavailable_count == 0
+    assert dag_result.failed_count == 0
+    assert dag_result.blocked_count == 0
+
+    workflow_result = workflow.run(FinancialQuery(
+        question=understanding.raw_question,
+        task_type=understanding.task_type,
+        company_names=["贵州茅台"],
+        metrics=[definition.metric_id for definition in definitions],
+        start_year=2023,
+        end_year=2023,
+    ))
+
+    dag_calculations = _analysis_by_key(dag_result.analysis_result)
+    workflow_calculations = _analysis_by_key(workflow_result)
+    assert set(dag_calculations) == set(workflow_calculations)
+    for key, calculation in dag_calculations.items():
+        expected = workflow_calculations[key]
+        assert calculation.result == expected.result
+        assert calculation.formula == expected.formula
+        assert calculation.status == expected.status
+        assert calculation.inputs == expected.inputs
+        assert calculation.missing_fields == expected.missing_fields
+        assert calculation.unit == expected.unit
+
+    dag_verifications = {
+        (item.company_id, item.period, item.metric_id): item
+        for item in dag_result.analysis_result.verifications
+    }
+    workflow_verifications = {
+        (item.company_id, item.period, item.metric_id): item
+        for item in workflow_result.verifications
+    }
+    assert set(dag_verifications) == set(workflow_verifications)
+    for key, verification in dag_verifications.items():
+        assert verification.passed is True
+        assert verification.actual_value == pytest.approx(
+            workflow_verifications[key].actual_value
+        )
+
+    expected_previous_denominator = {
+        "roe": 300.0,
+        "roa": 500.0,
+        "receivable_turnover": 20.0,
+        "inventory_turnover": 30.0,
+        "asset_turnover": 500.0,
+    }
+    for metric_id, previous_denominator in expected_previous_denominator.items():
+        calculation = dag_calculations[("600519", "2023", metric_id)]
+        assert calculation.inputs["previous_denominator"] == previous_denominator
+        assert calculation.inputs["average_denominator"] == previous_denominator
+
+
+def test_growth_direct_read_propagates_base_computation_status():
+    missing_previous = _service(income_overrides={
+        "2022": {"net_profit": None},
+    })
+    missing_task = ExecutionTask(
+        task_id="exec_growth_base_unavailable",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023",
+        metric_id="net_profit_growth",
+        metric_name="净利润增长率",
+        inputs={"previous_period": "2022"},
+        metadata={"previous_period": "2022"},
+    )
+    missing_outcome = TaskLevelFinancialExecutor(
+        FinancialAnalysisWorkflow(missing_previous),
+        TaskOutputStore(),
+    )(missing_task)
+
+    assert missing_outcome.status == ExecutionStatus.UNAVAILABLE
+    assert missing_outcome.status_reason == (
+        "previous_base_metric_unavailable:reported_value_missing"
+    )
+
+    invalid_previous = _service(income_overrides={
+        "2022": {"revenue": float("nan")},
+    })
+    invalid_task = ExecutionTask(
+        task_id="exec_growth_base_invalid",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023",
+        metric_id="revenue_growth",
+        metric_name="收入增长率",
+        inputs={"previous_period": "2022"},
+        metadata={"previous_period": "2022"},
+    )
+    invalid_outcome = TaskLevelFinancialExecutor(
+        FinancialAnalysisWorkflow(invalid_previous),
+        TaskOutputStore(),
+    )(invalid_task)
+
+    assert invalid_outcome.status == ExecutionStatus.FAILED
+    assert invalid_outcome.status_reason == (
+        "previous_base_metric_invalid:reported_value_not_finite"
+    )
+
+
+@pytest.mark.parametrize(
+    ("income_overrides", "expected_status", "expected_reason"),
+    [
+        (
+            {"2023": {"revenue": None}},
+            ExecutionStatus.UNAVAILABLE,
+            "current_base_metric_unavailable:reported_value_missing",
+        ),
+        (
+            {"2023": {"revenue": float("nan")}},
+            ExecutionStatus.FAILED,
+            "current_base_metric_invalid:reported_value_not_finite",
+        ),
+        (
+            {"2022": {"revenue": 0.0}},
+            ExecutionStatus.FAILED,
+            "growth_previous_period_zero",
+        ),
+    ],
+)
+def test_growth_direct_read_preserves_current_and_previous_edge_status(
+    income_overrides,
+    expected_status,
+    expected_reason,
+):
+    workflow = FinancialAnalysisWorkflow(_service(income_overrides=income_overrides))
+    task = ExecutionTask(
+        task_id=f"exec_growth_edge_{expected_reason}",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023",
+        metric_id="revenue_growth",
+        metric_name="收入增长率",
+        inputs={"previous_period": "2022"},
+        metadata={"previous_period": "2022"},
+    )
+    outcome = TaskLevelFinancialExecutor(workflow, TaskOutputStore())(task)
+
+    assert outcome.status == expected_status
+    assert outcome.status_reason == expected_reason
+    assert outcome.output is None
+
+
+def _peer_service():
+    companies = [
+        _company(),
+        Company(
+            company_id="000858",
+            stock_code="000858",
+            company_name="五粮液",
+            exchange="SZSE",
+            industry_id="baijiu",
+        ),
+    ]
+    periods = ["2020", "2021", "2022", "2023", "2024"]
+    revenues = {
+        "600519": [100.0, 200.0, 100.0, 400.0, 4400.0],
+        "000858": [100.0, 150.0, 180.0, 200.0, 220.0],
+    }
+    income_statements = []
+    balance_sheets = []
+    cash_flows = []
+    for company in companies:
+        for index, period in enumerate(periods):
+            income_statements.append(_income(period).model_copy(update={
+                "company_id": company.company_id,
+                "source_id": f"income_{company.company_id}_{period}",
+                "revenue": revenues[company.company_id][index],
+            }))
+            balance_sheets.append(_balance(period).model_copy(update={
+                "company_id": company.company_id,
+                "source_id": f"balance_{company.company_id}_{period}",
+            }))
+            cash_flows.append(_cash(period).model_copy(update={
+                "company_id": company.company_id,
+                "source_id": f"cash_{company.company_id}_{period}",
+            }))
+    return FinancialDataService(
+        companies=companies,
+        income_statements=income_statements,
+        balance_sheets=balance_sheets,
+        cash_flows=cash_flows,
+    )
+
+
+def _build_peer_plan(service, plan_id: str):
+    understanding = FinancialTaskUnderstandingBuilder([
+        "贵州茅台",
+        "五粮液",
+    ]).build("综合比较贵州茅台和五粮液 2020-2024年收入和净利润")
+    resolver = FinancialSemanticResolver(service)
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=resolver,
+    ).build(understanding, plan_id=plan_id)
+    return understanding, plan
+
+
+def test_dag_mode_preserves_workflow_analysis_and_report_layers():
+    service = _peer_service()
+    understanding, dag_plan = _build_peer_plan(service, "plan_dag_analysis")
+    _, workflow_plan = _build_peer_plan(service, "plan_workflow_analysis")
+
+    dag_result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(service),
+    ).execute_plan(dag_plan, understanding=understanding)
+    workflow_result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(service),
+        execution_mode="workflow",
+    ).execute_plan(workflow_plan, understanding=understanding)
+
+    assert dag_result.status == RuntimeExecutionStatus.PARTIAL
+    assert dag_result.failed_count == 0
+    assert dag_result.blocked_count == 0
+    assert dag_result.unavailable_count > 0
+    _assert_result_accounting(dag_result)
+    _assert_result_accounting(workflow_result)
+
+    dag_analysis = dag_result.analysis_result
+    workflow_analysis = workflow_result.analysis_result
+    assert dag_analysis.comparisons
+    assert dag_analysis.risk_signals
+    assert dag_analysis.anomalies
+    assert dag_analysis.findings
+    assert dag_result.metadata["comparison_count"] == len(
+        dag_analysis.comparisons
+    )
+    assert dag_result.metadata["risk_signal_count"] == len(
+        dag_analysis.risk_signals
+    )
+    assert dag_result.metadata["anomaly_count"] == len(dag_analysis.anomalies)
+    assert dag_result.metadata["finding_count"] == len(dag_analysis.findings)
+
+    assert sorted(
+        (item.period, item.metric_id, item.leader_name, item.laggard_name)
+        for item in dag_analysis.comparisons
+    ) == sorted(
+        (item.period, item.metric_id, item.leader_name, item.laggard_name)
+        for item in workflow_analysis.comparisons
+    )
+    assert sorted(
+        (item.company_name, item.period, item.metric_id, item.message)
+        for item in dag_analysis.risk_signals
+    ) == sorted(
+        (item.company_name, item.period, item.metric_id, item.message)
+        for item in workflow_analysis.risk_signals
+    )
+    assert sorted(
+        (item.company_name, item.period, item.metric_id, item.message)
+        for item in dag_analysis.anomalies
+    ) == sorted(
+        (item.company_name, item.period, item.metric_id, item.message)
+        for item in workflow_analysis.anomalies
+    )
+    assert sorted(
+        (item.finding_type, tuple(item.periods), item.metric_id, item.statement)
+        for item in dag_analysis.findings
+    ) == sorted(
+        (item.finding_type, tuple(item.periods), item.metric_id, item.statement)
+        for item in workflow_analysis.findings
+    )
+    assert "## 同业比较" in dag_result.report_markdown
+    assert "## 核心发现" in dag_result.report_markdown
+    assert "## 风险信号" in dag_result.report_markdown

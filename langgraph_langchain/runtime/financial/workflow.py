@@ -230,6 +230,30 @@ class FinancialAnalysisWorkflow:
                     observations.append(observation)
                     source_ids.extend(metric_source_ids)
 
+        return self.build_analysis_result(
+            query=query,
+            task_type=task_type,
+            metrics=metrics,
+            observations=observations,
+            calculations=calculations,
+            verifications=verifications,
+            evidence=evidence,
+            source_ids=source_ids,
+        )
+
+    def build_analysis_result(
+        self,
+        *,
+        query: FinancialQuery,
+        task_type: str,
+        metrics: list[str],
+        observations: list[FinancialObservation],
+        calculations: list[FinancialCalculation],
+        verifications: list[FinancialVerification],
+        evidence: list[FinancialEvidence],
+        source_ids: list[str],
+    ) -> FinancialAnalysisResult:
+        """Build the shared analysis and report layers from verified task outputs."""
         risk_signals: list[FinancialRiskSignal] = self.risk_detector.detect(observations)
         comparisons: list[FinancialComparison] = (
             self._build_comparisons(observations)
