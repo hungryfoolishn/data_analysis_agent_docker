@@ -485,7 +485,7 @@ V10.3.1 状态：Task-level Financial Execution Adapter 完成
 
 ## V10.3.2 代码变更
 
-### 1. 平均余额输入契约验收
+### 1. 平均余额输入契约与黄金值验收
 
 复核 `TaskLevelFinancialExecutor` 后确认：非增长率任务调用 `compute_metric()` 时已传入：
 
@@ -493,7 +493,16 @@ V10.3.1 状态：Task-level Financial Execution Adapter 完成
 previous_balance=previous_balance
 ```
 
-本阶段补充显式测试，覆盖：
+本阶段补充显式测试，并使用 2022/2023 两期明显不同的资产负债表数据：
+
+```text
+2022 total_assets=400, 2023 total_assets=500
+2022 total_equity=200, 2023 total_equity=300
+2022 accounts_receivable=10, 2023 accounts_receivable=30
+2022 inventory=20, 2023 inventory=40
+```
+
+黄金值测试覆盖：
 
 ```text
 ROE
@@ -503,7 +512,15 @@ ROA
 总资产周转率
 ```
 
-测试断言当期分母、上一期分母、平均分母、计算结果和验证结果。缺少上一期资产负债表时，平均余额指标保持 `UNAVAILABLE`，原因为：
+测试断言当期分母、上一期分母、平均分母、手工计算的预期结果和验证结果。例如 ROE 使用：
+
+```text
+net_profit = 25
+average(total_equity_2022, total_equity_2023) = 250
+expected ROE = 25 / 250 * 100 = 10
+```
+
+缺少上一期资产负债表时，平均余额指标保持 `UNAVAILABLE`，原因为：
 
 ```text
 average_balance_previous_period_missing
@@ -529,7 +546,7 @@ growth_previous_period_zero
 
 测试覆盖当前期字段缺失、当前期非有限值、上一期字段缺失、上一期非有限值和上一期基础值为零。
 
-### 3. 全指标回归矩阵
+### 3. 全指标回归矩阵与核心黄金值
 
 新增测试遍历 `financial_metric_registry.list_metrics()` 中的全部当前支持指标，并对比：
 
@@ -551,7 +568,23 @@ verification.actual_value
 
 该矩阵覆盖基础指标、增长率、利润率、平均余额指标、偿债能力、现金流和派生现金流指标。
 
-### 4. 共享分析与报告层
+同时补充少量独立黄金值测试，直接断言：
+
+```text
+收入增长率
+毛利率
+净利率
+自由现金流
+ROE
+ROA
+应收账款周转率
+存货周转率
+总资产周转率
+```
+
+这些黄金值用于避免 DAG 与旧工作流同时复用同一计算引擎时出现同源错误。
+
+### 4. 共享分析与报告层及证据链校验
 
 `FinancialAnalysisWorkflow` 新增：
 
@@ -578,6 +611,15 @@ report_markdown
 - Evidence-backed Finding
 - 异常信号对应的分析结论
 
+测试还校验每个 Finding 的 Evidence 引用：
+
+- Evidence 必须存在。
+- Evidence 必须标记为 `verified`。
+- Evidence 必须关联 Calculation。
+- Evidence 必须关联 Verification。
+- Verification 必须通过。
+- Verification 的 Calculation 引用必须与 Evidence 一致。
+
 `RuntimeExecutionResult.metadata` 同步记录：
 
 ```text
@@ -586,6 +628,54 @@ comparison_count
 risk_signal_count
 anomaly_count
 ```
+
+
+## V10.3.2.1 季度与半年度期间兼容性
+
+### 问题
+
+DAG 与旧批量工作流在生成 `FinancialQuery` 时都曾使用：
+
+```python
+years = [int(task.period) for task in plan.tasks]
+```
+
+该写法只支持 `2023`，不能解析 `2023Q1`、`2023Q4`、`2023H1`、`2023H2`。
+
+### 修复
+
+统一新增：
+
+```python
+_years_from_tasks(plan.tasks)
+```
+
+内部使用项目既有 `PeriodNormalizer.parse(task.period).year` 提取财务年度，不再把完整期间字符串直接转换为整数。
+
+该修复同时覆盖：
+
+- DAG 聚合路径 `_build_task_analysis_result`
+- 旧批量工作流路径 `_execute_plan_with_workflow`
+
+### 测试
+
+新增季度与半年度聚合测试，覆盖：
+
+```text
+2023Q1
+2023Q4
+2023H1
+2023H2
+```
+
+测试使用同一份多期间数据分别执行 DAG 与旧工作流，并断言：
+
+- 任务执行成功。
+- `FinancialQuery.start_year == 2023`。
+- `FinancialQuery.end_year == 2023`。
+- 四个目标期间的观察值正确。
+- 旧工作流可额外计算计划外的 2023Q3 数据，不影响任务映射。
+- 季度和半年度任务不会因期间字符串转换失败而中断。
 
 ## V10.3.2 测试
 
@@ -598,7 +688,7 @@ PYTHONPATH=. pytest tests/financial_agent/test_task_executor.py -q
 实际结果：
 
 ```text
-14 passed in 2.56s
+17 passed in 3.49s
 ```
 
 ### V10.3.2 联合定向回归
@@ -616,7 +706,7 @@ PYTHONPATH=. pytest \
 实际结果：
 
 ```text
-66 passed in 3.58s
+69 passed in 2.59s
 ```
 
 ### V9.3 工作流兼容性回归
@@ -634,7 +724,7 @@ PYTHONPATH=. pytest \
 实际结果：
 
 ```text
-60 passed in 3.32s
+60 passed in 3.34s
 ```
 
 ### 全量回归
@@ -646,7 +736,7 @@ PYTHONPATH=. pytest -q
 实际结果：
 
 ```text
-890 passed, 11 warnings, 4 subtests passed in 207.43s (0:03:27)
+893 passed, 11 warnings, 4 subtests passed in 219.18s (0:03:39)
 ```
 
 ## V10.3.2 验收结论
@@ -657,8 +747,8 @@ V10.3.2 状态：财务正确性与报告兼容性收尾完成
 增长率状态传播：CALCULATED / UNAVAILABLE / INVALID 显式区分
 全指标对照：DAG 与旧工作流结果、公式、输入、验证一致
 分析报告层：DAG 复用旧工作流共享构建逻辑
-任务级测试：14 / 14 passed
-联合定向回归：66 passed
+任务级测试：17 / 17 passed
+联合定向回归：69 passed
 V9.3 工作流回归：60 passed
-全量回归：890 passed
+全量回归：893 passed
 ```

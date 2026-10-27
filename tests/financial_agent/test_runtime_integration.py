@@ -44,7 +44,7 @@ def _income(period: str, **overrides) -> IncomeStatement:
     values = {
         "company_id": "600519",
         "period": period,
-        "revenue": 100.0 + int(period),
+        "revenue": 100.0 + int(period[:4]),
         "cost_of_revenue": 30.0,
         "gross_profit": 70.0,
         "operating_profit": 40.0,
@@ -57,20 +57,65 @@ def _income(period: str, **overrides) -> IncomeStatement:
 
 
 def _balance(period: str) -> BalanceSheetStatement:
+    values_by_period = {
+        "2021": {
+            "total_assets": 350.0,
+            "total_liabilities": 150.0,
+            "total_equity": 175.0,
+            "cash": 120.0,
+            "accounts_receivable": 7.0,
+            "inventory": 14.0,
+            "fixed_assets": 90.0,
+            "short_term_debt": 40.0,
+            "long_term_debt": 40.0,
+            "current_assets": 180.0,
+            "current_liabilities": 90.0,
+        },
+        "2022": {
+            "total_assets": 400.0,
+            "total_liabilities": 175.0,
+            "total_equity": 200.0,
+            "cash": 130.0,
+            "accounts_receivable": 10.0,
+            "inventory": 20.0,
+            "fixed_assets": 95.0,
+            "short_term_debt": 45.0,
+            "long_term_debt": 45.0,
+            "current_assets": 190.0,
+            "current_liabilities": 95.0,
+        },
+        "2023": {
+            "total_assets": 500.0,
+            "total_liabilities": 200.0,
+            "total_equity": 300.0,
+            "cash": 150.0,
+            "accounts_receivable": 30.0,
+            "inventory": 40.0,
+            "fixed_assets": 100.0,
+            "short_term_debt": 50.0,
+            "long_term_debt": 50.0,
+            "current_assets": 200.0,
+            "current_liabilities": 100.0,
+        },
+        "2024": {
+            "total_assets": 600.0,
+            "total_liabilities": 225.0,
+            "total_equity": 400.0,
+            "cash": 170.0,
+            "accounts_receivable": 40.0,
+            "inventory": 50.0,
+            "fixed_assets": 105.0,
+            "short_term_debt": 55.0,
+            "long_term_debt": 55.0,
+            "current_assets": 210.0,
+            "current_liabilities": 105.0,
+        },
+    }
+    values = values_by_period.get(period, values_by_period["2023"])
     return BalanceSheetStatement(
         company_id="600519",
         period=period,
-        total_assets=500.0,
-        total_liabilities=200.0,
-        total_equity=300.0,
-        cash=150.0,
-        accounts_receivable=20.0,
-        inventory=30.0,
-        fixed_assets=100.0,
-        short_term_debt=50.0,
-        long_term_debt=50.0,
-        current_assets=200.0,
-        current_liabilities=100.0,
+        **values,
         source_id=f"balance_{period}",
     )
 
@@ -102,6 +147,29 @@ def _service(*, income_overrides=None, cash_overrides=None) -> FinancialDataServ
         cash_flows=[
             _cash(period, **cash_overrides.get(period, {}))
             for period in PERIODS
+        ],
+    )
+
+
+def _service_for_periods(
+    periods,
+    *,
+    income_overrides=None,
+    cash_overrides=None,
+) -> FinancialDataService:
+    company = _company()
+    income_overrides = income_overrides or {}
+    cash_overrides = cash_overrides or {}
+    return FinancialDataService(
+        companies=[company],
+        income_statements=[
+            _income(period, **income_overrides.get(period, {}))
+            for period in periods
+        ],
+        balance_sheets=[_balance(period) for period in periods],
+        cash_flows=[
+            _cash(period, **cash_overrides.get(period, {}))
+            for period in periods
         ],
     )
 

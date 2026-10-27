@@ -35,6 +35,7 @@ from test_runtime_integration import (
     _company,
     _income,
     _service,
+    _service_for_periods,
     _understanding,
 )
 
@@ -331,34 +332,101 @@ def _metric_task(index: int, definition, *, dependencies=()):
     )
 
 
-def test_average_balance_metric_uses_previous_period_balance():
+def test_average_balance_golden_values_use_distinct_periods():
     workflow = FinancialAnalysisWorkflow(_service())
-    task = ExecutionTask(
-        task_id="exec_roe_average",
-        tool_id="financial_metric_engine",
-        tool_version="v10.3.2",
-        company_id="600519",
-        company_name="贵州茅台",
-        period="2023",
-        metric_id="roe",
-        metric_name="净资产收益率",
-    )
-    executor = TaskLevelFinancialExecutor(workflow, TaskOutputStore())
-    outcome = executor(task)
-
-    assert outcome.status == ExecutionStatus.SUCCEEDED
-    calculation = outcome.output.calculation
-    assert calculation.inputs == {
-        "numerator": 25.0,
-        "current_denominator": 300.0,
-        "previous_denominator": 300.0,
-        "average_denominator": 300.0,
+    expected = {
+        "roe": {
+            "numerator": 25.0,
+            "current_denominator": 300.0,
+            "previous_denominator": 200.0,
+            "average_denominator": 250.0,
+            "result": 10.0,
+        },
+        "roa": {
+            "numerator": 25.0,
+            "current_denominator": 500.0,
+            "previous_denominator": 400.0,
+            "average_denominator": 450.0,
+            "result": 5.555556,
+        },
+        "receivable_turnover": {
+            "numerator": 2123.0,
+            "current_denominator": 30.0,
+            "previous_denominator": 10.0,
+            "average_denominator": 20.0,
+            "result": 106.15,
+        },
+        "inventory_turnover": {
+            "numerator": 30.0,
+            "current_denominator": 40.0,
+            "previous_denominator": 20.0,
+            "average_denominator": 30.0,
+            "result": 1.0,
+        },
+        "asset_turnover": {
+            "numerator": 2123.0,
+            "current_denominator": 500.0,
+            "previous_denominator": 400.0,
+            "average_denominator": 450.0,
+            "result": 4.717778,
+        },
     }
-    assert calculation.result == pytest.approx(8.333333)
-    assert outcome.output.verification.passed is True
-    assert outcome.output.verification.actual_value == pytest.approx(
-        calculation.result
-    )
+
+    for metric_id, expected_values in expected.items():
+        definition = financial_metric_registry.get(metric_id)
+        task = _metric_task(1, definition)
+        outcome = TaskLevelFinancialExecutor(
+            workflow,
+            TaskOutputStore(),
+        )(task)
+
+        assert outcome.status == ExecutionStatus.SUCCEEDED
+        calculation = outcome.output.calculation
+        assert calculation.inputs == {
+            key: expected_values[key]
+            for key in (
+                "numerator",
+                "current_denominator",
+                "previous_denominator",
+                "average_denominator",
+            )
+        }
+        assert calculation.result == pytest.approx(expected_values["result"])
+        assert outcome.output.verification.passed is True
+        assert outcome.output.verification.actual_value == pytest.approx(
+            expected_values["result"]
+        )
+
+
+def test_core_financial_golden_values():
+    service = _service()
+    workflow = FinancialAnalysisWorkflow(service)
+    expected = {
+        "revenue_growth": 0.047125,
+        "gross_margin": 3.297223,
+        "net_margin": 1.177579,
+        "free_cash_flow": 23.0,
+    }
+    for metric_id, expected_value in expected.items():
+        definition = financial_metric_registry.get(metric_id)
+        task = _metric_task(2, definition)
+        outcome = TaskLevelFinancialExecutor(workflow, TaskOutputStore())(task)
+        assert outcome.status == ExecutionStatus.SUCCEEDED
+        assert outcome.output.calculation.result == pytest.approx(expected_value)
+        assert outcome.output.verification.passed is True
+
+    negative_service = _service(income_overrides={
+        "2022": {"revenue": 4000.0},
+        "2023": {"revenue": 2000.0},
+    })
+    negative_workflow = FinancialAnalysisWorkflow(negative_service)
+    definition = financial_metric_registry.get("revenue_growth")
+    negative_outcome = TaskLevelFinancialExecutor(
+        negative_workflow,
+        TaskOutputStore(),
+    )(_metric_task(3, definition))
+    assert negative_outcome.status == ExecutionStatus.SUCCEEDED
+    assert negative_outcome.output.calculation.result == pytest.approx(-50.0)
 
 
 def test_average_balance_metric_without_previous_balance_is_unavailable():
@@ -386,6 +454,28 @@ def test_average_balance_metric_without_previous_balance_is_unavailable():
 
     assert outcome.status == ExecutionStatus.UNAVAILABLE
     assert outcome.status_reason == "average_balance_previous_period_missing"
+    assert outcome.output is None
+
+
+def test_average_balance_denominator_zero_is_invalid():
+    service = type(_service())(
+        companies=[_company()],
+        income_statements=[_income(period) for period in PERIODS],
+        balance_sheets=[
+            _balance("2022").model_copy(update={"total_equity": -50.0}),
+            _balance("2023").model_copy(update={"total_equity": 50.0}),
+        ],
+        cash_flows=[_cash(period) for period in PERIODS],
+    )
+    definition = financial_metric_registry.get("roe")
+    task = _metric_task(4, definition)
+    outcome = TaskLevelFinancialExecutor(
+        FinancialAnalysisWorkflow(service),
+        TaskOutputStore(),
+    )(task)
+
+    assert outcome.status == ExecutionStatus.FAILED
+    assert outcome.status_reason == "average_denominator_zero"
     assert outcome.output is None
 
 
@@ -468,16 +558,25 @@ def test_task_level_dag_matches_workflow_for_all_supported_metrics():
         )
 
     expected_previous_denominator = {
-        "roe": 300.0,
-        "roa": 500.0,
+        "roe": 200.0,
+        "roa": 400.0,
+        "receivable_turnover": 10.0,
+        "inventory_turnover": 20.0,
+        "asset_turnover": 400.0,
+    }
+    expected_average_denominator = {
+        "roe": 250.0,
+        "roa": 450.0,
         "receivable_turnover": 20.0,
         "inventory_turnover": 30.0,
-        "asset_turnover": 500.0,
+        "asset_turnover": 450.0,
     }
     for metric_id, previous_denominator in expected_previous_denominator.items():
         calculation = dag_calculations[("600519", "2023", metric_id)]
         assert calculation.inputs["previous_denominator"] == previous_denominator
-        assert calculation.inputs["average_denominator"] == previous_denominator
+        assert calculation.inputs["average_denominator"] == (
+            expected_average_denominator[metric_id]
+        )
 
 
 def test_growth_direct_read_propagates_base_computation_status():
@@ -577,6 +676,90 @@ def test_growth_direct_read_preserves_current_and_previous_edge_status(
     assert outcome.output is None
 
 
+def test_quarter_and_half_year_periods_aggregate_without_error():
+    periods = [
+        "2022H2",
+        "2022Q4",
+        "2023Q1",
+        "2023Q3",
+        "2023Q4",
+        "2023H1",
+        "2023H2",
+    ]
+    service = _service_for_periods(periods, income_overrides={
+        "2022H2": {"revenue": 180.0},
+        "2022Q4": {"revenue": 90.0},
+        "2023Q1": {"revenue": 100.0},
+        "2023Q3": {"revenue": 105.0},
+        "2023Q4": {"revenue": 110.0},
+        "2023H1": {"revenue": 120.0},
+        "2023H2": {"revenue": 130.0},
+    })
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023年收入")
+
+    def _period_plan(plan_id: str):
+        return ExecutionPlan(
+            plan_id=plan_id,
+            query_id=f"query_{plan_id}",
+            tasks=[
+                ExecutionTask(
+                    task_id=f"exec_period_{index:04d}",
+                    tool_id="financial_metric_engine",
+                    tool_version="v10.3.2",
+                    company_id="600519",
+                    company_name="贵州茅台",
+                    period=period,
+                    metric_id="revenue",
+                    metric_name="营业收入",
+                )
+                for index, period in enumerate(
+                    ["2023Q1", "2023Q4", "2023H1", "2023H2"],
+                    start=1,
+                )
+            ],
+        )
+
+    dag_result = FinancialRuntimeExecutor(workflow).execute_plan(
+        _period_plan("plan_period_dag"),
+        understanding=understanding,
+    )
+    workflow_result = FinancialRuntimeExecutor(
+        workflow,
+        execution_mode="workflow",
+    ).execute_plan(
+        _period_plan("plan_period_workflow"),
+        understanding=understanding,
+    )
+
+    for result in (dag_result, workflow_result):
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+        assert result.succeeded_count == 4
+        assert result.failed_count == 0
+        assert result.blocked_count == 0
+        assert result.analysis_result.query.start_year == 2023
+        assert result.analysis_result.query.end_year == 2023
+        observations = {
+            item.period: item.value
+            for item in result.analysis_result.observations
+        }
+        expected_observations = {
+            "2023Q1": 100.0,
+            "2023Q4": 110.0,
+            "2023H1": 120.0,
+            "2023H2": 130.0,
+        }
+        assert all(
+            observations[period] == value
+            for period, value in expected_observations.items()
+        )
+        if result is dag_result:
+            assert observations == expected_observations
+        else:
+            assert "2023Q3" in observations
+            assert observations["2023Q3"] == 105.0
+
+
 def _peer_service():
     companies = [
         _company(),
@@ -629,6 +812,26 @@ def _build_peer_plan(service, plan_id: str):
         semantic_resolver=resolver,
     ).build(understanding, plan_id=plan_id)
     return understanding, plan
+
+
+def _assert_finding_evidence_chain(analysis):
+    evidence_by_id = {item.evidence_id: item for item in analysis.evidence}
+    verification_by_id = {
+        item.verification_id: item for item in analysis.verifications
+    }
+    calculation_by_id = {
+        item.calculation_id: item for item in analysis.calculations
+    }
+    assert analysis.findings
+    for finding in analysis.findings:
+        assert finding.evidence_ids
+        for evidence_id in finding.evidence_ids:
+            evidence = evidence_by_id[evidence_id]
+            assert evidence.verification_status == "verified"
+            assert evidence.calculation_id in calculation_by_id
+            verification = verification_by_id[evidence.verification_result_id]
+            assert verification.passed is True
+            assert verification.calculation_id == evidence.calculation_id
 
 
 def test_dag_mode_preserves_workflow_analysis_and_report_layers():
@@ -694,6 +897,8 @@ def test_dag_mode_preserves_workflow_analysis_and_report_layers():
         (item.finding_type, tuple(item.periods), item.metric_id, item.statement)
         for item in workflow_analysis.findings
     )
+    _assert_finding_evidence_chain(dag_analysis)
+    _assert_finding_evidence_chain(workflow_analysis)
     assert "## 同业比较" in dag_result.report_markdown
     assert "## 核心发现" in dag_result.report_markdown
     assert "## 风险信号" in dag_result.report_markdown

@@ -15,6 +15,7 @@ from langgraph_langchain.runtime.financial.models import (
     FinancialAnalysisResult,
     FinancialQuery,
 )
+from langgraph_langchain.runtime.financial.period import PeriodNormalizer
 
 from .execution_plan import ExecutionPlanBuilder
 from .execution_models import (
@@ -41,6 +42,15 @@ from .tool_execution import (
 
 
 WORKFLOW_TOOL_ID = "financial_workflow_runtime"
+_PERIOD_NORMALIZER = PeriodNormalizer()
+
+
+def _years_from_tasks(tasks) -> list[int]:
+    """Extract fiscal years for annual, quarterly, and half-year periods."""
+    return [
+        _PERIOD_NORMALIZER.parse(task.period).year
+        for task in tasks
+    ]
 
 
 class RuntimeIntegrationError(ValueError):
@@ -277,7 +287,7 @@ class FinancialRuntimeExecutor:
             for item in outputs
             for source_id in item.calculation.source_ids
         ))
-        years = [int(task.period) for task in plan.tasks]
+        years = _years_from_tasks(plan.tasks)
         task_type = (
             understanding.task_type
             or self.workflow.classifier.classify(understanding.raw_question)
@@ -333,7 +343,7 @@ class FinancialRuntimeExecutor:
         metric_ids = list(dict.fromkeys(
             task.metric_id for task in plan.tasks
         ))
-        years = [int(task.period) for task in plan.tasks]
+        years = _years_from_tasks(plan.tasks)
         query = FinancialQuery(
             question=understanding.raw_question,
             task_type=understanding.task_type,
