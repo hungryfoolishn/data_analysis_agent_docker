@@ -30,15 +30,28 @@ class ExecutionPlanBuilder:
         *,
         semantic_resolver: FinancialSemanticResolver,
         tool_version: str = "v9.3.0",
-        growth_comparison_type: PeriodComparisonType | str = (
-            PeriodComparisonType.YEAR_OVER_YEAR
-        ),
-        growth_period_basis: PeriodBasisType | str = PeriodBasisType.CUMULATIVE,
+        growth_comparison_type: PeriodComparisonType | str | None = None,
+        growth_period_basis: PeriodBasisType | str | None = None,
     ) -> None:
         self.semantic_resolver = semantic_resolver
         self.tool_version = tool_version
-        self.growth_comparison_type = PeriodComparisonType(growth_comparison_type)
-        self.growth_period_basis = PeriodBasisType(growth_period_basis)
+        self._growth_comparison_type_override = (
+            PeriodComparisonType(growth_comparison_type)
+            if growth_comparison_type is not None
+            else None
+        )
+        self._growth_period_basis_override = (
+            PeriodBasisType(growth_period_basis)
+            if growth_period_basis is not None
+            else None
+        )
+        self.growth_comparison_type = (
+            self._growth_comparison_type_override
+            or PeriodComparisonType.YEAR_OVER_YEAR
+        )
+        self.growth_period_basis = (
+            self._growth_period_basis_override or PeriodBasisType.CUMULATIVE
+        )
 
     def build(
         self,
@@ -48,6 +61,14 @@ class ExecutionPlanBuilder:
     ) -> ExecutionPlan:
         if not plan_id:
             raise ValueError("plan_id is required to build an execution plan")
+        self.growth_comparison_type = (
+            self._growth_comparison_type_override
+            or PeriodComparisonType(understanding.growth_comparison_type)
+        )
+        self.growth_period_basis = (
+            self._growth_period_basis_override
+            or PeriodBasisType(understanding.growth_period_basis)
+        )
         resolution: SemanticResolution = self.semantic_resolver.resolve(
             understanding,
             growth_comparison_type=self.growth_comparison_type,
@@ -111,28 +132,29 @@ class ExecutionPlanBuilder:
         }
         self._link_dependencies(tasks, task_id_by_key)
 
+        plan_metadata = {
+            "semantic_resolution": resolution.model_dump(mode="json"),
+            "resolved_company_count": len(resolution.companies.resolved),
+            "resolved_metric_count": len(resolution.metrics.resolved),
+            "selected_company_period_count": sum(
+                len(item.selected_periods)
+                for item in resolution.periods
+            ),
+            "missing_company_period_count": sum(
+                len(item.missing_periods)
+                for item in resolution.periods
+            ),
+            "tool_id": "financial_metric_engine",
+            "tool_version": self.tool_version,
+            "growth_comparison_type": self.growth_comparison_type.value,
+            "growth_period_basis": self.growth_period_basis.value,
+        }
         errors = self.validate(ExecutionPlan(
             plan_id=plan_id,
             query_id=understanding.query_id,
             tasks=tasks,
             diagnostics=list(dict.fromkeys(resolution.diagnostics)),
-            metadata={
-                "semantic_resolution": resolution.model_dump(mode="json"),
-                "resolved_company_count": len(resolution.companies.resolved),
-                "resolved_metric_count": len(resolution.metrics.resolved),
-                "selected_company_period_count": sum(
-                    len(item.selected_periods)
-                    for item in resolution.periods
-                ),
-                "missing_company_period_count": sum(
-                    len(item.missing_periods)
-                    for item in resolution.periods
-                ),
-                "tool_id": "financial_metric_engine",
-                "tool_version": self.tool_version,
-                "growth_comparison_type": self.growth_comparison_type.value,
-                "growth_period_basis": self.growth_period_basis.value,
-            },
+            metadata=plan_metadata,
         ))
         if errors:
             raise ValueError(
@@ -146,21 +168,7 @@ class ExecutionPlanBuilder:
             status=ExecutionPlanStatus.PENDING,
             tasks=tasks,
             diagnostics=list(dict.fromkeys(resolution.diagnostics)),
-            metadata={
-                "semantic_resolution": resolution.model_dump(mode="json"),
-                "resolved_company_count": len(resolution.companies.resolved),
-                "resolved_metric_count": len(resolution.metrics.resolved),
-                "selected_company_period_count": sum(
-                    len(item.selected_periods)
-                    for item in resolution.periods
-                ),
-                "missing_company_period_count": sum(
-                    len(item.missing_periods)
-                    for item in resolution.periods
-                ),
-                "tool_id": "financial_metric_engine",
-                "tool_version": self.tool_version,
-            },
+            metadata=plan_metadata,
         )
 
     def _make_task(

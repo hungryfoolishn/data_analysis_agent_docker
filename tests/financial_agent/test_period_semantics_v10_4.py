@@ -22,6 +22,10 @@ from langgraph_langchain.runtime.financial import (
     FinancialQuery,
     financial_metric_registry,
 )
+from langgraph_langchain.runtime.financial.period import (
+    PeriodBasisType,
+    PeriodComparisonType,
+)
 from langgraph_langchain.runtime.financial_agent import (
     ExecutionPlanBuilder,
     ExecutionStatus,
@@ -60,6 +64,12 @@ _QUARTER_BALANCES = {
         "cash": 110.0, "accounts_receivable": 7.0, "inventory": 14.0,
         "fixed_assets": 90.0, "short_term_debt": 40.0, "long_term_debt": 40.0,
         "current_assets": 170.0, "current_liabilities": 85.0,
+    },
+    "2022Q2": {
+        "total_assets": 380.0, "total_liabilities": 160.0, "total_equity": 190.0,
+        "cash": 125.0, "accounts_receivable": 8.0, "inventory": 15.0,
+        "fixed_assets": 92.0, "short_term_debt": 42.0, "long_term_debt": 42.0,
+        "current_assets": 185.0, "current_liabilities": 92.0,
     },
     "2022Q4": {
         "total_assets": 400.0, "total_liabilities": 200.0, "total_equity": 200.0,
@@ -152,6 +162,165 @@ def _metric_task(task_number: int, metric_id: str, period: str) -> ExecutionTask
         metric_id=metric_id,
         metric_name=definition.name,
     )
+
+
+_GROWTH_INTENT_REVENUE = {
+    "2022Q1": 80.0,
+    "2022Q2": 180.0,
+    "2023Q1": 100.0,
+    "2023Q2": 220.0,
+}
+
+
+def _growth_intent_service() -> FinancialDataService:
+    return FinancialDataService(
+        companies=[_company()],
+        income_statements=[
+            _income(
+                period,
+                revenue=revenue,
+                cost_of_revenue=revenue * 0.3,
+                gross_profit=revenue * 0.7,
+                operating_profit=revenue * 0.2,
+                net_profit=revenue * 0.2,
+                net_profit_attributable=revenue * 0.19,
+            )
+            for period, revenue in _GROWTH_INTENT_REVENUE.items()
+        ],
+        balance_sheets=[_balance_for(period) for period in _GROWTH_INTENT_REVENUE],
+        cash_flows=[_cash(period) for period in _GROWTH_INTENT_REVENUE],
+    )
+
+
+def test_growth_intent_maps_natural_language_to_period_basis():
+    builder = FinancialTaskUnderstandingBuilder(["贵州茅台"])
+    expected = {
+        "分析贵州茅台 2023Q2 收入同比增长率": (
+            PeriodComparisonType.YEAR_OVER_YEAR,
+            PeriodBasisType.SINGLE_PERIOD,
+        ),
+        "分析贵州茅台 2023Q2 收入环比增长率": (
+            PeriodComparisonType.SEQUENTIAL,
+            PeriodBasisType.SINGLE_PERIOD,
+        ),
+        "分析贵州茅台 2023Q2 累计收入同比增长率": (
+            PeriodComparisonType.YEAR_OVER_YEAR,
+            PeriodBasisType.CUMULATIVE,
+        ),
+    }
+    for question, (comparison_type, period_basis) in expected.items():
+        understanding = builder.build(question)
+        assert understanding.growth_comparison_type == comparison_type
+        assert understanding.growth_period_basis == period_basis
+
+
+def test_growth_intent_end_to_end_uses_auditable_comparison_contract():
+    service = _growth_intent_service()
+    expected = {
+        "分析贵州茅台 2023Q2 收入同比增长率": {
+            "comparison_type": PeriodComparisonType.YEAR_OVER_YEAR,
+            "period_basis": PeriodBasisType.SINGLE_PERIOD,
+            "previous_period": "2022Q2",
+            "result": 20.0,
+            "formula_label": "同比/单期",
+            "source_ids": {
+                "income_2023Q2",
+                "income_2023Q1",
+                "income_2022Q2",
+                "income_2022Q1",
+            },
+        },
+        "分析贵州茅台 2023Q2 收入环比增长率": {
+            "comparison_type": PeriodComparisonType.SEQUENTIAL,
+            "period_basis": PeriodBasisType.SINGLE_PERIOD,
+            "previous_period": "2023Q1",
+            "result": 20.0,
+            "formula_label": "环比/单期",
+            "source_ids": {
+                "income_2023Q2",
+                "income_2023Q1",
+            },
+        },
+        "分析贵州茅台 2023Q2 累计收入同比增长率": {
+            "comparison_type": PeriodComparisonType.YEAR_OVER_YEAR,
+            "period_basis": PeriodBasisType.CUMULATIVE,
+            "previous_period": "2022Q2",
+            "result": 22.222222,
+            "formula_label": "同比/累计",
+            "source_ids": {
+                "income_2023Q2",
+                "income_2022Q2",
+            },
+        },
+    }
+
+    for question, expected_values in expected.items():
+        understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+            question
+        )
+        assert understanding.growth_comparison_type == expected_values[
+            "comparison_type"
+        ]
+        assert understanding.growth_period_basis == expected_values["period_basis"]
+
+        plan = ExecutionPlanBuilder(
+            semantic_resolver=FinancialSemanticResolver(service),
+        ).build(understanding, plan_id=f"plan_{understanding.query_id}")
+
+        assert plan.metadata["growth_comparison_type"] == expected_values[
+            "comparison_type"
+        ].value
+        assert plan.metadata["growth_period_basis"] == expected_values[
+            "period_basis"
+        ].value
+
+        growth_task = next(
+            task for task in plan.tasks if task.metric_id == "revenue_growth"
+        )
+        assert growth_task.inputs["previous_period"] == expected_values[
+            "previous_period"
+        ]
+        assert growth_task.inputs["growth_comparison_type"] == expected_values[
+            "comparison_type"
+        ].value
+        assert growth_task.inputs["growth_period_basis"] == expected_values[
+            "period_basis"
+        ].value
+
+        result = FinancialRuntimeExecutor(
+            FinancialAnalysisWorkflow(service),
+        ).execute_plan(plan, understanding=understanding)
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+
+        growth_result = next(
+            item for item in result.task_results
+            if item.metric_id == "revenue_growth"
+        )
+        assert growth_result.status == ExecutionStatus.SUCCEEDED
+        assert growth_result.metadata["growth_comparison_type"] == expected_values[
+            "comparison_type"
+        ].value
+        assert growth_result.metadata["growth_period_basis"] == expected_values[
+            "period_basis"
+        ].value
+        assert growth_result.metadata["comparison_period"] == expected_values[
+            "previous_period"
+        ]
+
+        calculation = next(
+            item for item in result.analysis_result.calculations
+            if item.metric_id == "revenue_growth"
+        )
+        assert calculation.result == pytest.approx(expected_values["result"])
+        assert expected_values["formula_label"] in calculation.formula
+        assert expected_values["source_ids"].issubset(set(calculation.source_ids))
+
+        evidence = next(
+            item for item in result.analysis_result.evidence
+            if item.metric_id == "revenue_growth"
+        )
+        assert evidence.formula == calculation.formula
+        assert evidence.source_ids == calculation.source_ids
 
 
 def test_quarterly_average_balance_golden_values():

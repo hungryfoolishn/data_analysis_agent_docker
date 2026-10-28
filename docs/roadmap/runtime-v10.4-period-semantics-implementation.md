@@ -107,6 +107,107 @@ PYTHONPATH=. pytest -q
 # 见全量回归记录
 ```
 
+
+## 阶段 2：增长率口径端到端闭环
+
+### 目标
+
+把自然语言中的增长率意图贯通到执行计划、任务输入、计算公式和 Evidence，避免“用户说环比，系统跑同比累计”。
+
+### 自然语言口径解析
+
+`FinancialTaskUnderstanding` 新增：
+
+```text
+growth_comparison_type
+growth_period_basis
+```
+
+`FinancialTaskUnderstandingBuilder` 显式识别：
+
+| 用户表达 | comparison_type | period_basis |
+| --- | --- | --- |
+| 同比 + 显式季度/半年度 | `year_over_year` | `single_period` |
+| 同比 + 年度，或未说明基础 | `year_over_year` | `cumulative` |
+| 环比 + 显式季度/半年度 | `sequential` | `single_period` |
+| 累计同比 / YTD YoY | `year_over_year` | `cumulative` |
+| 累计环比 / 相邻报告期 | `sequential` | `cumulative` |
+
+### 执行计划契约
+
+`ExecutionPlanBuilder` 优先使用理解结果中的口径；显式构造参数仍可覆盖自然语言意图。
+
+最终返回的 `ExecutionPlan.metadata` 现在保留：
+
+```text
+growth_comparison_type
+growth_period_basis
+```
+
+增长率任务的 `inputs` 同样保留这两个字段和：
+
+```text
+previous_period
+```
+
+### 端到端审计
+
+新增测试覆盖三类问题：
+
+1. `2023Q2 收入同比增长率`
+   - `year_over_year + single_period`
+   - 基期 `2022Q2`
+   - 单期收入 `120` 对 `100`
+   - 增长率 `20%`
+
+2. `2023Q2 收入环比增长率`
+   - `sequential + single_period`
+   - 基期 `2023Q1`
+   - 增长率 `20%`
+
+3. `2023Q2 累计收入同比增长率`
+   - `year_over_year + cumulative`
+   - 基期 `2022Q2`
+   - 累计收入 `220` 对 `180`
+   - 增长率 `22.222222%`
+
+测试同时验证：
+
+- `ExecutionPlan.metadata`
+- `ExecutionTask.inputs`
+- `RuntimeTaskResult.metadata`
+- `FinancialCalculation.formula`
+- `FinancialEvidence.formula`
+- `FinancialCalculation.source_ids`
+- `FinancialEvidence.source_ids`
+
+
+### 阶段 2 回归结果
+
+```bash
+PYTHONPATH=. pytest \
+  tests/financial_agent/test_period_semantics_v10_4.py \
+  tests/financial_agent/test_task_executor.py \
+  tests/financial_agent/test_scheduler.py \
+  tests/financial_agent/test_execution_plan.py \
+  tests/financial_agent/test_runtime_integration.py \
+  tests/financial_agent/test_tool_execution.py \
+  -q
+# 88 passed
+
+PYTHONPATH=. pytest \
+  tests/financial/test_runtime_v9_semantics.py \
+  tests/financial/test_runtime_v9_period_hardening.py \
+  tests/financial/test_runtime_v9.py \
+  tests/financial/test_runtime_v9_hardening.py \
+  tests/financial/test_runtime_v9_golden.py \
+  -q
+# 60 passed
+
+PYTHONPATH=. pytest -q
+# 912 passed, 11 warnings, 4 subtests passed
+```
+
 ## 边界与后续（V10.4 阶段 2+）
 
 - 季度利润表仍按累计值口径读取；`growth_period_basis=single_period` 时

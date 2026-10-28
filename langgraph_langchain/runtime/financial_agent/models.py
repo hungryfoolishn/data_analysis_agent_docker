@@ -7,6 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from langgraph_langchain.runtime.financial.period import (
+    PeriodBasisType,
+    PeriodComparisonType,
+)
+
 
 class FinancialPlanTaskType(str, Enum):
     RESOLVE_COMPANIES = "RESOLVE_COMPANIES"
@@ -106,6 +111,10 @@ class FinancialTaskUnderstanding(BaseModel):
     objectives: list[str] = Field(default_factory=list)
     required_metrics: list[str] = Field(default_factory=list)
     comparison_enabled: bool = False
+    growth_comparison_type: PeriodComparisonType = (
+        PeriodComparisonType.YEAR_OVER_YEAR
+    )
+    growth_period_basis: PeriodBasisType = PeriodBasisType.CUMULATIVE
     ambiguities: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
     planning_readiness: PlanningReadiness = PlanningReadiness.NEEDS_CLARIFICATION

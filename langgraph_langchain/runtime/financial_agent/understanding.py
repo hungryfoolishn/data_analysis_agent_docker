@@ -7,7 +7,12 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from langgraph_langchain.runtime.financial.period import PeriodNormalizer
+from langgraph_langchain.runtime.financial.period import (
+    PeriodBasisType,
+    PeriodComparisonType,
+    PeriodNormalizer,
+    PeriodType,
+)
 
 from .models import (
     CompanyResolution,
@@ -136,6 +141,9 @@ class FinancialTaskUnderstandingBuilder:
         companies = self._resolve_companies(raw_question)
         objectives = self._extract_objectives(text)
         period_range, ambiguities = self._extract_period_range(raw_question)
+        growth_comparison_type, growth_period_basis = (
+            self._extract_growth_semantics(raw_question, period_range)
+        )
         comparison_enabled = "peer_comparison" in objectives and len(companies) >= 2
         task_type = self._infer_task_type(objectives)
 
@@ -187,6 +195,8 @@ class FinancialTaskUnderstandingBuilder:
             objectives=objectives,
             required_metrics=required_metrics,
             comparison_enabled=comparison_enabled,
+            growth_comparison_type=growth_comparison_type,
+            growth_period_basis=growth_period_basis,
             ambiguities=ambiguities,
             missing_information=missing_information,
             planning_readiness=planning_readiness,
@@ -243,6 +253,73 @@ class FinancialTaskUnderstandingBuilder:
                 objectives.append("comprehensive")
 
         return objectives
+
+    def _extract_growth_semantics(
+        self,
+        question: str,
+        period_range: PeriodResolution | None,
+    ) -> tuple[PeriodComparisonType, PeriodBasisType]:
+        """Map explicit user wording to comparison type and source basis.
+
+        The period resolver owns dates; this method owns financial comparison
+        semantics.  Natural-language intent must survive all the way into the
+        execution plan instead of being replaced by a generic default.
+        """
+        text = question.casefold()
+        has_yoy = (
+            "同比" in text
+            or re.search(r"\b(?:yoy|year[-_ ]over[-_ ]year)\b", text) is not None
+        )
+        has_qoq = (
+            "环比" in text
+            or "相邻期间" in text
+            or re.search(r"\b(?:qoq|quarter[-_ ]over[-_ ]quarter|sequential)\b", text)
+            is not None
+        )
+        has_cumulative_yoy = (
+            ("累计" in text and "同比" in text)
+            or "年初至今同比" in text
+            or re.search(r"\b(?:ytd[_ -]?yoy|year[-_ ]to[-_ ]date[_ -]?yoy)\b", text)
+            is not None
+        )
+        has_sequential_cumulative = (
+            ("累计" in text and ("环比" in text or "上一报告期" in text))
+            or re.search(
+                r"\b(?:sequential[_ -]?cumulative|cumulative[_ -]?qoq)\b",
+                text,
+            )
+            is not None
+        )
+
+        has_subannual_period = bool(
+            period_range
+            and period_range.canonical_periods
+            and any(
+                self._is_subannual_period(period)
+                for period in period_range.canonical_periods
+            )
+        )
+
+        if has_cumulative_yoy or has_sequential_cumulative:
+            if has_cumulative_yoy:
+                return PeriodComparisonType.YEAR_OVER_YEAR, PeriodBasisType.CUMULATIVE
+            return PeriodComparisonType.SEQUENTIAL, PeriodBasisType.CUMULATIVE
+        if has_qoq:
+            if has_subannual_period:
+                return PeriodComparisonType.SEQUENTIAL, PeriodBasisType.SINGLE_PERIOD
+            return PeriodComparisonType.SEQUENTIAL, PeriodBasisType.CUMULATIVE
+        if has_yoy:
+            if has_subannual_period:
+                return PeriodComparisonType.YEAR_OVER_YEAR, PeriodBasisType.SINGLE_PERIOD
+            return PeriodComparisonType.YEAR_OVER_YEAR, PeriodBasisType.CUMULATIVE
+        return PeriodComparisonType.YEAR_OVER_YEAR, PeriodBasisType.CUMULATIVE
+
+    @staticmethod
+    def _is_subannual_period(period: str) -> bool:
+        try:
+            return PeriodNormalizer().parse(period).period_type != PeriodType.FY
+        except ValueError:
+            return False
 
     def _extract_period_range(
         self,
