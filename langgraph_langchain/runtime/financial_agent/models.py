@@ -82,6 +82,7 @@ class PeriodResolution(BaseModel):
     start_year: int
     end_year: int
     period_type: str = "ANNUAL"
+    canonical_periods: list[str] = Field(default_factory=list)
 
 
 class FinancialToolSpec(BaseModel):

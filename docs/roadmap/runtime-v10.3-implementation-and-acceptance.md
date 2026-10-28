@@ -838,6 +838,98 @@ reason = unsupported_growth_period:ttm
 
 同一公司、同一规范期间存在重复收入报表时，`FinancialDataService` 初始化直接失败，避免冲突版本静默进入计算。
 
+
+## V10.4 财务期间语义与审计性（阶段 1）
+
+### 结论
+
+本阶段聚焦季度 / 半年度财务口径的正确性验收，不新增 Agent 或调度器能力。
+
+### 显式口径映射
+
+实现继续使用两个正交契约，而不是让 `FinancialPeriod.previous()` 决定所有业务含义：
+
+```text
+growth_comparison_type + growth_period_basis
+```
+
+业务口径映射如下：
+
+```text
+yoy             = year_over_year + cumulative
+qoq             = sequential     + single_period
+ytd_yoy         = year_over_year + cumulative
+sequential_period = sequential   + cumulative
+```
+
+其中：
+
+- `year_over_year + single_period` 表示用累计报表推导单期值后的同比；
+- `sequential + single_period` 表示用累计报表推导单期值后的环比；
+- `sequential + cumulative` 是相邻累计期间比较，必须由调用方显式选择。
+
+### 季度资产负债表夹具
+
+测试夹具为年度和季度提供独立数值，季度值不再回退到年度值：
+
+```text
+2022Q4 total_assets = 400, total_equity = 200
+2023Q1 total_assets = 500, total_equity = 300
+2023Q2 total_assets = 650, total_equity = 350
+```
+
+### 新增验收测试
+
+1. 季度平均余额指标独立黄金值：
+
+   - ROE
+   - ROA
+   - 应收账款周转率
+   - 存货周转率
+   - 总资产周转率
+
+   分别覆盖 2023Q1 和 2023Q2，并断言：
+
+   ```text
+   numerator
+   current_denominator
+   previous_denominator
+   average_denominator
+   result
+   verification.actual_value
+   ```
+
+2. 年度、季度、半年度同存时不会互相污染：
+
+   - `2023`
+   - `2023Q1`
+   - `2023Q2`
+   - `2023H1`
+
+   测试断言 Observation、Calculation、Evidence 都按原始期间精确映射。
+
+3. 明确子年度请求优先于裸年份解析：
+
+   - `2023Q1` 不再退化为年度 `2023`；
+   - `2023H1` 不再退化为年度 `2023`；
+   - 同一年度的年度、季度、半年度数据按规范化期间精确筛选；
+   - 旧批量工作流不会把请求外的 `2023Q3` 混入报告；
+   - 端到端测试覆盖自然语言 `2023Q1` 请求到精确季度计划、执行、验证和 Evidence 的完整链路。
+
+4. 新增独立测试文件：
+
+   ```text
+   tests/financial_agent/test_period_semantics_v10_4.py
+   ```
+
+   覆盖：
+
+   - 季度平均余额黄金值；
+   - 显式 FinancialQuery.periods 精确筛选；
+   - 裸年份查询的向后兼容；
+   - `2023Q1` 问题到精确计划的语义解析；
+   - DAG 端到端执行期间与证据链一致性。
+
 ## V10.3.2 测试
 
 ### 任务级财务正确性测试
@@ -849,7 +941,7 @@ PYTHONPATH=. pytest tests/financial_agent/test_task_executor.py -q
 实际结果：
 
 ```text
-27 passed in 2.15s
+29 passed in 2.28s
 ```
 
 ### V10.3.2 联合定向回归
@@ -867,7 +959,7 @@ PYTHONPATH=. pytest \
 实际结果：
 
 ```text
-79 passed in 2.74s
+81 passed in 2.60s
 ```
 
 ### V9.3 工作流兼容性回归
@@ -897,7 +989,7 @@ PYTHONPATH=. pytest -q
 实际结果：
 
 ```text
-903 passed, 11 warnings, 4 subtests passed in 223.16s (0:03:43)
+910 passed, 11 warnings, 4 subtests passed in 286.65s (0:04:46)
 ```
 
 ## V10.3.2 验收结论
@@ -908,8 +1000,8 @@ V10.3.2 状态：财务正确性与报告兼容性收尾完成
 增长率状态传播：CALCULATED / UNAVAILABLE / INVALID 显式区分
 全指标对照：DAG 与旧工作流结果、公式、输入、验证一致
 分析报告层：DAG 复用旧工作流共享构建逻辑
-任务级测试：27 / 27 passed
-联合定向回归：79 passed
+任务级测试：34 / 34 passed
+联合定向回归：86 passed
 V9.3 工作流回归：60 passed
-全量回归：903 passed
+全量回归：910 passed
 ```

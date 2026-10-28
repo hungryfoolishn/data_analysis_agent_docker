@@ -15,7 +15,12 @@ from langgraph_langchain.runtime.financial.models import (
     FinancialAnalysisResult,
     FinancialQuery,
 )
-from langgraph_langchain.runtime.financial.period import PeriodBasisType, PeriodComparisonType, PeriodNormalizer
+from langgraph_langchain.runtime.financial.period import (
+    PeriodBasisType,
+    PeriodComparisonType,
+    PeriodNormalizationError,
+    PeriodNormalizer,
+)
 
 from .execution_plan import ExecutionPlanBuilder
 from .execution_models import (
@@ -51,6 +56,23 @@ def _years_from_tasks(tasks) -> list[int]:
         _PERIOD_NORMALIZER.parse(task.period).year
         for task in tasks
     ]
+
+
+def _periods_from_tasks(tasks) -> list[str]:
+    """Extract exact canonical task periods in stable plan order.
+
+    Unparseable periods (for example TTM) are skipped so the analysis-query
+    layer never silently widens them into fiscal years.
+    """
+    periods: list[str] = []
+    for task in tasks:
+        try:
+            normalized = _PERIOD_NORMALIZER.parse(task.period).normalized_period
+        except PeriodNormalizationError:
+            continue
+        if normalized not in periods:
+            periods.append(normalized)
+    return periods
 
 
 def _growth_comparison_type(plan: ExecutionPlan) -> PeriodComparisonType:
@@ -318,6 +340,7 @@ class FinancialRuntimeExecutor:
             metrics=list(dict.fromkeys(
                 task.metric_id for task in plan.tasks
             )),
+            periods=_periods_from_tasks(plan.tasks),
             start_year=min(years),
             end_year=max(years),
             growth_comparison_type=_growth_comparison_type(plan),
@@ -368,6 +391,7 @@ class FinancialRuntimeExecutor:
             task_type=understanding.task_type,
             company_names=company_names,
             metrics=metric_ids,
+            periods=_periods_from_tasks(plan.tasks),
             start_year=min(years),
             end_year=max(years),
             growth_comparison_type=_growth_comparison_type(plan),

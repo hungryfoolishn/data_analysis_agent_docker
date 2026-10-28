@@ -313,14 +313,14 @@ _AVERAGE_BALANCE_METRICS = {
 }
 
 
-def _metric_task(index: int, definition, *, dependencies=()):
+def _metric_task(index: int, definition, *, dependencies=(), period="2023"):
     return ExecutionTask(
         task_id=f"exec_metric_{index:04d}",
         tool_id="financial_metric_engine",
         tool_version="v10.3.2",
         company_id="600519",
         company_name="贵州茅台",
-        period="2023",
+        period=period,
         metric_id=definition.metric_id,
         metric_name=definition.name,
         dependencies=list(dependencies),
@@ -754,11 +754,7 @@ def test_quarter_and_half_year_periods_aggregate_without_error():
             observations[period] == value
             for period, value in expected_observations.items()
         )
-        if result is dag_result:
-            assert observations == expected_observations
-        else:
-            assert "2023Q3" in observations
-            assert observations["2023Q3"] == 105.0
+        assert observations == expected_observations
 
 
 def _growth_comparison_plan(
@@ -811,6 +807,165 @@ def _growth_comparison_plan(
             "growth_period_basis": period_basis.value,
         },
     )
+
+
+def test_quarterly_average_balance_metrics_use_distinct_period_balances():
+    service = _service_for_periods(["2022Q4", "2023Q1", "2023Q2"])
+    workflow = FinancialAnalysisWorkflow(service)
+    expected = {
+        ("2023Q1", "roe"): {
+            "numerator": 25.0,
+            "current_denominator": 300.0,
+            "previous_denominator": 200.0,
+            "average_denominator": 250.0,
+            "result": 10.0,
+        },
+        ("2023Q1", "roa"): {
+            "numerator": 25.0,
+            "current_denominator": 500.0,
+            "previous_denominator": 400.0,
+            "average_denominator": 450.0,
+            "result": 5.555556,
+        },
+        ("2023Q1", "receivable_turnover"): {
+            "numerator": 2123.0,
+            "current_denominator": 30.0,
+            "previous_denominator": 10.0,
+            "average_denominator": 20.0,
+            "result": 106.15,
+        },
+        ("2023Q1", "inventory_turnover"): {
+            "numerator": 30.0,
+            "current_denominator": 40.0,
+            "previous_denominator": 20.0,
+            "average_denominator": 30.0,
+            "result": 1.0,
+        },
+        ("2023Q1", "asset_turnover"): {
+            "numerator": 2123.0,
+            "current_denominator": 500.0,
+            "previous_denominator": 400.0,
+            "average_denominator": 450.0,
+            "result": 4.717778,
+        },
+        ("2023Q2", "roe"): {
+            "numerator": 25.0,
+            "current_denominator": 350.0,
+            "previous_denominator": 300.0,
+            "average_denominator": 325.0,
+            "result": 7.692308,
+        },
+        ("2023Q2", "roa"): {
+            "numerator": 25.0,
+            "current_denominator": 650.0,
+            "previous_denominator": 500.0,
+            "average_denominator": 575.0,
+            "result": 4.347826,
+        },
+        ("2023Q2", "receivable_turnover"): {
+            "numerator": 2123.0,
+            "current_denominator": 40.0,
+            "previous_denominator": 30.0,
+            "average_denominator": 35.0,
+            "result": 60.657143,
+        },
+        ("2023Q2", "inventory_turnover"): {
+            "numerator": 30.0,
+            "current_denominator": 50.0,
+            "previous_denominator": 40.0,
+            "average_denominator": 45.0,
+            "result": 0.666667,
+        },
+        ("2023Q2", "asset_turnover"): {
+            "numerator": 2123.0,
+            "current_denominator": 650.0,
+            "previous_denominator": 500.0,
+            "average_denominator": 575.0,
+            "result": 3.692174,
+        },
+    }
+
+    for index, ((period, metric_id), expected_values) in enumerate(
+        expected.items(),
+        start=1,
+    ):
+        definition = financial_metric_registry.get(metric_id)
+        task = _metric_task(index, definition, period=period)
+        outcome = TaskLevelFinancialExecutor(workflow, TaskOutputStore())(task)
+
+        assert outcome.status == ExecutionStatus.SUCCEEDED
+        calculation = outcome.output.calculation
+        assert calculation.inputs == {
+            key: expected_values[key]
+            for key in (
+                "numerator",
+                "current_denominator",
+                "previous_denominator",
+                "average_denominator",
+            )
+        }
+        assert calculation.result == pytest.approx(expected_values["result"])
+        assert outcome.output.verification.passed is True
+        assert outcome.output.verification.actual_value == pytest.approx(
+            expected_values["result"]
+        )
+
+
+def test_annual_quarter_and_half_year_periods_are_kept_distinct():
+    periods = ["2023", "2023Q1", "2023Q2", "2023H1"]
+    service = _service_for_periods(periods, income_overrides={
+        "2023": {"revenue": 1200.0},
+        "2023Q1": {"revenue": 100.0},
+        "2023Q2": {"revenue": 220.0},
+        "2023H1": {"revenue": 320.0},
+    })
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023年收入")
+
+    def _mixed_period_plan(plan_id: str):
+        return ExecutionPlan(
+            plan_id=plan_id,
+            query_id=f"query_{plan_id}",
+            tasks=[
+                _metric_task(index, financial_metric_registry.get("revenue"), period=period)
+                for index, period in enumerate(periods, start=1)
+            ],
+        )
+
+    dag_result = FinancialRuntimeExecutor(workflow).execute_plan(
+        _mixed_period_plan("plan_mixed_period_dag"),
+        understanding=understanding,
+    )
+    workflow_result = FinancialRuntimeExecutor(
+        workflow,
+        execution_mode="workflow",
+    ).execute_plan(_mixed_period_plan("plan_mixed_period_workflow"), understanding=understanding)
+
+    expected_observations = {
+        "2023": 1200.0,
+        "2023Q1": 100.0,
+        "2023Q2": 220.0,
+        "2023H1": 320.0,
+    }
+    for result in (dag_result, workflow_result):
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+        assert result.succeeded_count == len(periods)
+        assert result.analysis_result.query.start_year == 2023
+        assert result.analysis_result.query.end_year == 2023
+        observations = {
+            item.period: item.value
+            for item in result.analysis_result.observations
+        }
+        assert observations == expected_observations
+        calculations = {
+            item.period: item.result
+            for item in result.analysis_result.calculations
+        }
+        assert calculations == expected_observations
+        evidence_periods = {
+            item.period for item in result.analysis_result.evidence
+        }
+        assert evidence_periods == set(periods)
 
 
 def test_quarterly_growth_defaults_to_year_over_year_across_execution_modes():

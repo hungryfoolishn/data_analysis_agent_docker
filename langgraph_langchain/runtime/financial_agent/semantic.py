@@ -258,24 +258,45 @@ class FinancialSemanticResolver:
         start_year = understanding.period_range.start_year
         end_year = understanding.period_range.end_year
         requested_years = list(range(start_year, end_year + 1))
+        requested_explicit_periods = list(
+            understanding.period_range.canonical_periods
+        )
 
         coverage: list[PeriodCoverage] = []
         for company in companies:
-            available_annual = [
-                period
-                for period in self.data_service.periods_for(company.company_id)
-                if self.period_normalizer.parse(period).period_type.value == "FY"
-            ]
-            available_years = {int(period) for period in available_annual}
-            selected = [
-                str(year) for year in requested_years if year in available_years
-            ]
-            missing = [
-                str(year)
-                for year in requested_years
-                if year not in available_years
-            ]
-            if not available_annual:
+            available_periods = list(
+                self.data_service.periods_for(company.company_id)
+            )
+            if requested_explicit_periods:
+                # Explicit quarter/half-year questions must resolve against
+                # the exact canonical periods, never against fiscal years.
+                selected = [
+                    period
+                    for period in requested_explicit_periods
+                    if period in available_periods
+                ]
+                missing = [
+                    period
+                    for period in requested_explicit_periods
+                    if period not in available_periods
+                ]
+                available_for_coverage = available_periods
+            else:
+                available_for_coverage = [
+                    period
+                    for period in available_periods
+                    if self.period_normalizer.parse(period).period_type.value == "FY"
+                ]
+                available_years = {int(period) for period in available_for_coverage}
+                selected = [
+                    str(year) for year in requested_years if year in available_years
+                ]
+                missing = [
+                    str(year)
+                    for year in requested_years
+                    if year not in available_years
+                ]
+            if not available_for_coverage:
                 status = "NO_AVAILABLE_PERIODS"
             elif not selected:
                 status = "NO_MATCHING_PERIODS"
@@ -288,7 +309,7 @@ class FinancialSemanticResolver:
                 company_name=company.company_name,
                 requested_start_year=start_year,
                 requested_end_year=end_year,
-                available_periods=available_annual,
+                available_periods=available_for_coverage,
                 selected_periods=selected,
                 missing_periods=missing,
                 status=status,

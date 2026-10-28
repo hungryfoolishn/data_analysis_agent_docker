@@ -7,6 +7,8 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from langgraph_langchain.runtime.financial.period import PeriodNormalizer
+
 from .models import (
     CompanyResolution,
     FinancialTaskUnderstanding,
@@ -20,7 +22,7 @@ _OBJECTIVE_PATTERNS = {
     "profit_trend": ("利润", "profit"),
     "profitability": (
         "盈利能力", "毛利率", "净利率", "利润率", "roe", "roa",
-        "profitability", "margin",
+        "净资产收益率", "总资产收益率", "profitability", "margin",
     ),
     "cashflow": (
         "现金流", "自由现金流", "经营现金流", "cash flow", "ocf", "fcf",
@@ -246,6 +248,10 @@ class FinancialTaskUnderstandingBuilder:
         self,
         question: str,
     ) -> tuple[PeriodResolution | None, list[str]]:
+        explicit_periods = self._extract_explicit_periods(question)
+        if explicit_periods is not None:
+            return explicit_periods
+
         years = [
             int(item)
             for item in re.findall(r"(?<!\d)(20\d{2})(?!\d)", question)
@@ -286,6 +292,44 @@ class FinancialTaskUnderstandingBuilder:
                 ), ["relative_period_resolved_with_reference_year"]
 
         return None, []
+
+    def _extract_explicit_periods(
+        self,
+        question: str,
+    ) -> tuple[PeriodResolution | None, list[str]]:
+        """Parse explicit quarter and half-year tokens such as 2023Q1.
+
+        Explicit sub-annual periods must win over the bare year scan so that
+        "2023Q1" never silently degrades into annual fiscal year 2023.
+        """
+        tokens = re.findall(
+            r"(?<!\d)(20\d{2})[- ]?([Qq][1-4]|[Hh][12])(?!\d)",
+            question,
+        )
+        if not tokens:
+            return None
+
+        normalizer = PeriodNormalizer()
+        canonical_periods: list[str] = []
+        years: list[int] = []
+        for raw_year, raw_token in tokens:
+            year = int(raw_year)
+            years.append(year)
+            canonical = normalizer.normalize(f"{year}{raw_token.upper()}")
+            if canonical not in canonical_periods:
+                canonical_periods.append(canonical)
+        if all(period[-2] == "Q" for period in canonical_periods):
+            period_type = "QUARTERLY"
+        elif all(period[-2] == "H" for period in canonical_periods):
+            period_type = "HALF_YEARLY"
+        else:
+            period_type = "MIXED"
+        return PeriodResolution(
+            start_year=min(years),
+            end_year=max(years),
+            period_type=period_type,
+            canonical_periods=canonical_periods,
+        ), []
 
     @staticmethod
     def _infer_task_type(objectives: list[str]) -> str:

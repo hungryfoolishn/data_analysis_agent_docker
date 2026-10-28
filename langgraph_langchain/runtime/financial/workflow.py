@@ -131,20 +131,34 @@ class FinancialAnalysisWorkflow:
         for company_name in company_names:
             company = self.data_service.resolve_company(company_name)
             periods = self.data_service.periods_for(company.company_id)
-            selected = [
-                period
-                for period in periods
-                if (
-                    query.start_year is None
-                    or self._period_normalizer.parse(period).year >= query.start_year
-                )
-                and (
-                    query.end_year is None
-                    or self._period_normalizer.parse(period).year <= query.end_year
-                )
-            ]
-            if not selected:
-                selected = periods[-min(5, len(periods)):]
+            if query.periods:
+                # Explicit task periods must select exactly the requested
+                # canonical periods: quarter, half-year, and annual data for
+                # the same fiscal year must never be mixed into one query.
+                explicit_periods = {
+                    self._period_normalizer.normalize(period)
+                    for period in query.periods
+                }
+                selected = [
+                    period
+                    for period in periods
+                    if period in explicit_periods
+                ]
+            else:
+                selected = [
+                    period
+                    for period in periods
+                    if (
+                        query.start_year is None
+                        or self._period_normalizer.parse(period).year >= query.start_year
+                    )
+                    and (
+                        query.end_year is None
+                        or self._period_normalizer.parse(period).year <= query.end_year
+                    )
+                ]
+                if not selected:
+                    selected = periods[-min(5, len(periods)):]
 
             for period in selected:
                 previous_period = self.data_service.previous_period(

@@ -113,6 +113,7 @@ class FinancialQuery(BaseModel):
     task_type: Optional[str] = None
     company_names: list[str] = Field(default_factory=list)
     metrics: list[str] = Field(default_factory=list)
+    periods: list[str] = Field(default_factory=list)
     start_year: Optional[int] = None
     end_year: Optional[int] = None
     growth_comparison_type: PeriodComparisonType = (

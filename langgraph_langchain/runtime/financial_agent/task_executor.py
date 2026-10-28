@@ -543,7 +543,6 @@ class TaskLevelFinancialExecutor:
         )
 
     @staticmethod
-    @staticmethod
     def _comparison_formula(
         formula: str,
         comparison_type: PeriodComparisonType,
