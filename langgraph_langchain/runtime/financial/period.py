@@ -23,6 +23,20 @@ class PeriodNormalizationError(ValueError):
     """Raised when a financial period cannot be normalized safely."""
 
 
+class PeriodComparisonType(str, Enum):
+    """Explicit growth comparison semantics for financial periods."""
+
+    SEQUENTIAL = "sequential"
+    YEAR_OVER_YEAR = "year_over_year"
+
+
+class PeriodBasisType(str, Enum):
+    """Whether source financial statements are cumulative or single-period."""
+
+    CUMULATIVE = "cumulative"
+    SINGLE_PERIOD = "single_period"
+
+
 @dataclass(frozen=True, order=False)
 class FinancialPeriod:
     raw_period: str
@@ -116,6 +130,40 @@ class FinancialPeriod:
                 end_date=date(self.year - 1, 12, 31),
             )
         raise PeriodNormalizationError("TTM previous period is not supported in V9.3")
+
+    def comparison_period(
+        self,
+        comparison_type: PeriodComparisonType | str,
+    ) -> "FinancialPeriod":
+        """Return the baseline period for an explicit comparison contract."""
+        normalized = PeriodComparisonType(comparison_type)
+        if normalized == PeriodComparisonType.YEAR_OVER_YEAR:
+            if self.period_type == PeriodType.TTM:
+                raise PeriodNormalizationError(
+                    "TTM year-over-year comparison is not supported in V9.3"
+                )
+            if self.period_type == PeriodType.FY:
+                return self.previous()
+            return FinancialPeriod(
+                raw_period=f"{self.year - 1}{self.period_type.value}",
+                year=self.year - 1,
+                period_type=self.period_type,
+                start_date=date(
+                    self.year - 1,
+                    self.start_date.month,
+                    self.start_date.day,
+                ),
+                end_date=date(
+                    self.year - 1,
+                    self.end_date.month,
+                    self.end_date.day,
+                ),
+            )
+        return self.previous()
+
+    def same_period_previous(self) -> "FinancialPeriod":
+        """Return the same fiscal period in the preceding year."""
+        return self.comparison_period(PeriodComparisonType.YEAR_OVER_YEAR)
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, FinancialPeriod):

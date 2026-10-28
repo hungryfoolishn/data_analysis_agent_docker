@@ -11,6 +11,7 @@ from langgraph_langchain.runtime.financial import (
     financial_metric_registry,
 )
 from langgraph_langchain.runtime.financial.models import Company, FinancialVerification
+from langgraph_langchain.runtime.financial.period import PeriodBasisType, PeriodComparisonType
 from langgraph_langchain.runtime.financial_agent import (
     DeterministicDAGScheduler,
     ExecutionPlan,
@@ -758,6 +759,404 @@ def test_quarter_and_half_year_periods_aggregate_without_error():
         else:
             assert "2023Q3" in observations
             assert observations["2023Q3"] == 105.0
+
+
+def _growth_comparison_plan(
+    plan_id: str,
+    *,
+    period: str,
+    previous_period: str,
+    comparison_type: PeriodComparisonType,
+    current_revenue: float = 120.0,
+    previous_revenue: float = 100.0,
+    period_basis: PeriodBasisType = PeriodBasisType.CUMULATIVE,
+):
+    current = ExecutionTask(
+        task_id=f"{plan_id}_revenue",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period=period,
+        metric_id="revenue",
+        metric_name="营业收入",
+    )
+    growth = ExecutionTask(
+        task_id=f"{plan_id}_revenue_growth",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period=period,
+        metric_id="revenue_growth",
+        metric_name="收入增长率",
+        dependencies=[current.task_id],
+        inputs={
+            "previous_period": previous_period,
+            "growth_comparison_type": comparison_type.value,
+            "growth_period_basis": period_basis.value,
+        },
+        metadata={
+            "previous_period": previous_period,
+            "growth_comparison_type": comparison_type.value,
+            "growth_period_basis": period_basis.value,
+        },
+    )
+    return ExecutionPlan(
+        plan_id=plan_id,
+        query_id=f"query_{plan_id}",
+        tasks=[current, growth],
+        metadata={
+            "growth_comparison_type": comparison_type.value,
+            "growth_period_basis": period_basis.value,
+        },
+    )
+
+
+def test_quarterly_growth_defaults_to_year_over_year_across_execution_modes():
+    service = _service_for_periods(["2022Q1", "2023Q1"], income_overrides={
+        "2022Q1": {"revenue": 100.0},
+        "2023Q1": {"revenue": 120.0},
+    })
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023Q1收入增长率")
+    dag_plan = _growth_comparison_plan(
+        "plan_quarter_yoy_dag",
+        period="2023Q1",
+        previous_period="2022Q1",
+        comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+    )
+    workflow_plan = _growth_comparison_plan(
+        "plan_quarter_yoy_workflow",
+        period="2023Q1",
+        previous_period="2022Q1",
+        comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+    )
+
+    dag_result = FinancialRuntimeExecutor(workflow).execute_plan(
+        dag_plan,
+        understanding=understanding,
+    )
+    workflow_result = FinancialRuntimeExecutor(
+        workflow,
+        execution_mode="workflow",
+    ).execute_plan(workflow_plan, understanding=understanding)
+
+    for result in (dag_result, workflow_result):
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+        growth = _result_by_key(result)[("600519", "2023Q1", "revenue_growth")]
+        assert growth.status == ExecutionStatus.SUCCEEDED
+        assert growth.metadata["growth_comparison_type"] == "year_over_year"
+        calculation = _analysis_by_key(result.analysis_result)[
+            ("600519", "2023Q1", "revenue_growth")
+        ]
+        assert calculation.result == pytest.approx(20.0)
+        assert "同比" in calculation.formula
+        assert "环比" not in calculation.formula
+
+
+def test_sequential_quarterly_growth_uses_previous_quarter():
+    service = _service_for_periods(["2023Q1", "2023Q2"], income_overrides={
+        "2023Q1": {"revenue": 100.0},
+        "2023Q2": {"revenue": 120.0},
+    })
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023Q2收入环比增长率")
+    dag_plan = _growth_comparison_plan(
+        "plan_quarter_seq_dag",
+        period="2023Q2",
+        previous_period="2023Q1",
+        comparison_type=PeriodComparisonType.SEQUENTIAL,
+    )
+    workflow_plan = _growth_comparison_plan(
+        "plan_quarter_seq_workflow",
+        period="2023Q2",
+        previous_period="2023Q1",
+        comparison_type=PeriodComparisonType.SEQUENTIAL,
+    )
+
+    dag_result = FinancialRuntimeExecutor(workflow).execute_plan(
+        dag_plan,
+        understanding=understanding,
+    )
+    workflow_result = FinancialRuntimeExecutor(
+        workflow,
+        execution_mode="workflow",
+    ).execute_plan(workflow_plan, understanding=understanding)
+
+    for result in (dag_result, workflow_result):
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+        growth = _result_by_key(result)[("600519", "2023Q2", "revenue_growth")]
+        assert growth.status == ExecutionStatus.SUCCEEDED
+        assert growth.metadata["growth_comparison_type"] == "sequential"
+        calculation = _analysis_by_key(result.analysis_result)[
+            ("600519", "2023Q2", "revenue_growth")
+        ]
+        assert calculation.result == pytest.approx(20.0)
+        assert "环比" in calculation.formula
+        assert "同比" not in calculation.formula
+
+
+def test_half_year_growth_defaults_to_year_over_year():
+    service = _service_for_periods(["2022H1", "2023H1"], income_overrides={
+        "2022H1": {"revenue": 100.0},
+        "2023H1": {"revenue": 120.0},
+    })
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023H1收入增长率")
+    plan = _growth_comparison_plan(
+        "plan_half_year_yoy",
+        period="2023H1",
+        previous_period="2022H1",
+        comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+    )
+    result = FinancialRuntimeExecutor(workflow).execute_plan(
+        plan,
+        understanding=understanding,
+    )
+
+    assert result.status == RuntimeExecutionStatus.SUCCEEDED
+    growth = _result_by_key(result)[("600519", "2023H1", "revenue_growth")]
+    assert growth.status == ExecutionStatus.SUCCEEDED
+    assert growth.metadata["growth_comparison_type"] == "year_over_year"
+    calculation = _analysis_by_key(result.analysis_result)[
+        ("600519", "2023H1", "revenue_growth")
+    ]
+    assert calculation.result == pytest.approx(20.0)
+    assert "同比" in calculation.formula
+
+
+def test_missing_year_over_year_base_period_is_unavailable():
+    service = _service_for_periods(["2023Q1"], income_overrides={
+        "2023Q1": {"revenue": 120.0},
+    })
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023Q1收入增长率")
+    plan = _growth_comparison_plan(
+        "plan_quarter_yoy_missing",
+        period="2023Q1",
+        previous_period="2022Q1",
+        comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+    )
+    result = FinancialRuntimeExecutor(workflow).execute_plan(
+        plan,
+        understanding=understanding,
+    )
+
+    assert result.status == RuntimeExecutionStatus.PARTIAL
+    growth = _result_by_key(result)[("600519", "2023Q1", "revenue_growth")]
+    assert growth.status == ExecutionStatus.UNAVAILABLE
+    assert growth.verification_id is None
+    assert growth.evidence_id is None
+    assert result.analysis_result.observations
+    assert result.analysis_result.report_markdown is not None
+
+
+def test_single_period_qoq_converts_cumulative_quarter_statements():
+    service = _service_for_periods(["2023Q1", "2023Q2"], income_overrides={
+        "2023Q1": {"revenue": 100.0},
+        "2023Q2": {"revenue": 220.0},
+    })
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023Q2收入环比增长率")
+    dag_plan = _growth_comparison_plan(
+        "plan_cumulative_qoq_dag",
+        period="2023Q2",
+        previous_period="2023Q1",
+        comparison_type=PeriodComparisonType.SEQUENTIAL,
+        period_basis=PeriodBasisType.SINGLE_PERIOD,
+    )
+    workflow_plan = _growth_comparison_plan(
+        "plan_cumulative_qoq_workflow",
+        period="2023Q2",
+        previous_period="2023Q1",
+        comparison_type=PeriodComparisonType.SEQUENTIAL,
+        period_basis=PeriodBasisType.SINGLE_PERIOD,
+    )
+
+    dag_result = FinancialRuntimeExecutor(workflow).execute_plan(
+        dag_plan,
+        understanding=understanding,
+    )
+    workflow_result = FinancialRuntimeExecutor(
+        workflow,
+        execution_mode="workflow",
+    ).execute_plan(workflow_plan, understanding=understanding)
+
+    expected_source_ids = {"income_2023Q2", "income_2023Q1"}
+    for result in (dag_result, workflow_result):
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+        growth = _result_by_key(result)[("600519", "2023Q2", "revenue_growth")]
+        assert growth.status == ExecutionStatus.SUCCEEDED
+        assert growth.metadata["growth_period_basis"] == "single_period"
+        calculation = _analysis_by_key(result.analysis_result)[
+            ("600519", "2023Q2", "revenue_growth")
+        ]
+        assert calculation.result == pytest.approx(20.0)
+        assert calculation.inputs == {"current": 120.0, "previous": 100.0}
+        assert "环比/单期" in calculation.formula
+        assert expected_source_ids.issubset(set(calculation.source_ids))
+
+
+def test_single_period_yoy_converts_prior_year_same_quarter():
+    service = _service_for_periods(
+        ["2022Q1", "2022Q2", "2023Q1", "2023Q2"],
+        income_overrides={
+            "2022Q1": {"revenue": 80.0},
+            "2022Q2": {"revenue": 180.0},
+            "2023Q1": {"revenue": 100.0},
+            "2023Q2": {"revenue": 220.0},
+        },
+    )
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023Q2收入同比增长率")
+    dag_plan = _growth_comparison_plan(
+        "plan_single_yoy_dag",
+        period="2023Q2",
+        previous_period="2022Q2",
+        comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+        period_basis=PeriodBasisType.SINGLE_PERIOD,
+    )
+    workflow_plan = _growth_comparison_plan(
+        "plan_single_yoy_workflow",
+        period="2023Q2",
+        previous_period="2022Q2",
+        comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+        period_basis=PeriodBasisType.SINGLE_PERIOD,
+    )
+
+    dag_result = FinancialRuntimeExecutor(workflow).execute_plan(
+        dag_plan,
+        understanding=understanding,
+    )
+    workflow_result = FinancialRuntimeExecutor(
+        workflow,
+        execution_mode="workflow",
+    ).execute_plan(workflow_plan, understanding=understanding)
+
+    expected_source_ids = {
+        "income_2023Q2",
+        "income_2023Q1",
+        "income_2022Q2",
+        "income_2022Q1",
+    }
+    for result in (dag_result, workflow_result):
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+        growth = _result_by_key(result)[("600519", "2023Q2", "revenue_growth")]
+        assert growth.status == ExecutionStatus.SUCCEEDED
+        calculation = _analysis_by_key(result.analysis_result)[
+            ("600519", "2023Q2", "revenue_growth")
+        ]
+        assert calculation.result == pytest.approx(20.0)
+        assert calculation.inputs == {"current": 120.0, "previous": 100.0}
+        assert "同比/单期" in calculation.formula
+        assert expected_source_ids.issubset(set(calculation.source_ids))
+
+
+def test_cumulative_yoy_uses_ytd_values_directly():
+    service = _service_for_periods(
+        ["2022Q2", "2023Q2"],
+        income_overrides={
+            "2022Q2": {"revenue": 180.0},
+            "2023Q2": {"revenue": 220.0},
+        },
+    )
+    workflow = FinancialAnalysisWorkflow(service)
+    understanding = _understanding("分析贵州茅台 2023Q2累计收入同比增长率")
+    plan = _growth_comparison_plan(
+        "plan_cumulative_yoy",
+        period="2023Q2",
+        previous_period="2022Q2",
+        comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+        current_revenue=220.0,
+        previous_revenue=180.0,
+        period_basis=PeriodBasisType.CUMULATIVE,
+    )
+    result = FinancialRuntimeExecutor(workflow).execute_plan(
+        plan,
+        understanding=understanding,
+    )
+
+    assert result.status == RuntimeExecutionStatus.SUCCEEDED
+    growth = _result_by_key(result)[("600519", "2023Q2", "revenue_growth")]
+    assert growth.status == ExecutionStatus.SUCCEEDED
+    assert growth.metadata["growth_period_basis"] == "cumulative"
+    calculation = _analysis_by_key(result.analysis_result)[
+        ("600519", "2023Q2", "revenue_growth")
+    ]
+    assert calculation.result == pytest.approx(22.222222)
+    assert calculation.inputs == {"current": 220.0, "previous": 180.0}
+    assert "同比/累计" in calculation.formula
+    assert {"income_2023Q2", "income_2022Q2"}.issubset(
+        set(calculation.source_ids)
+    )
+
+
+def test_ttm_growth_returns_structured_unavailable():
+    service = _service()
+    task = ExecutionTask(
+        task_id="exec_ttm_growth",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023TTM",
+        metric_id="revenue_growth",
+        metric_name="收入增长率",
+        inputs={
+            "growth_comparison_type": "year_over_year",
+            "growth_period_basis": "cumulative",
+        },
+    )
+    outcome = TaskLevelFinancialExecutor(
+        FinancialAnalysisWorkflow(service),
+        TaskOutputStore(),
+    )(task)
+
+    assert outcome.status == ExecutionStatus.UNAVAILABLE
+    assert outcome.status_reason == "unsupported_growth_period:ttm"
+    assert outcome.output is None
+
+
+def test_cumulative_non_first_quarter_eps_growth_is_unavailable():
+    service = _service_for_periods(["2023Q1", "2023Q2"], income_overrides={
+        "2023Q1": {"revenue": 100.0, "eps": 1.0},
+        "2023Q2": {"revenue": 220.0, "eps": 2.0},
+    })
+    task = ExecutionTask(
+        task_id="exec_eps_growth_single_period",
+        tool_id="financial_metric_engine",
+        tool_version="v10.3.2",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023Q2",
+        metric_id="eps_growth",
+        metric_name="EPS增长率",
+        dependencies=[],
+        inputs={
+            "previous_period": "2022Q2",
+            "growth_comparison_type": "year_over_year",
+            "growth_period_basis": "single_period",
+        },
+    )
+    outcome = TaskLevelFinancialExecutor(
+        FinancialAnalysisWorkflow(service),
+        TaskOutputStore(),
+    )(task)
+
+    assert outcome.status == ExecutionStatus.UNAVAILABLE
+    assert outcome.output is None
+
+
+def test_duplicate_statements_for_same_period_are_rejected():
+    duplicate = _income("2023")
+    with pytest.raises(ValueError, match="Duplicate income canonical period"):
+        FinancialDataService(
+            companies=[_company()],
+            income_statements=[_income("2023"), duplicate],
+            balance_sheets=[_balance("2023")],
+            cash_flows=[_cash("2023")],
+        )
 
 
 def _peer_service():

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from langgraph_langchain.runtime.financial.period import PeriodBasisType, PeriodComparisonType
+
 from .execution_models import (
     ExecutionPlan,
     ExecutionPlanStatus,
@@ -28,9 +30,15 @@ class ExecutionPlanBuilder:
         *,
         semantic_resolver: FinancialSemanticResolver,
         tool_version: str = "v9.3.0",
+        growth_comparison_type: PeriodComparisonType | str = (
+            PeriodComparisonType.YEAR_OVER_YEAR
+        ),
+        growth_period_basis: PeriodBasisType | str = PeriodBasisType.CUMULATIVE,
     ) -> None:
         self.semantic_resolver = semantic_resolver
         self.tool_version = tool_version
+        self.growth_comparison_type = PeriodComparisonType(growth_comparison_type)
+        self.growth_period_basis = PeriodBasisType(growth_period_basis)
 
     def build(
         self,
@@ -40,7 +48,10 @@ class ExecutionPlanBuilder:
     ) -> ExecutionPlan:
         if not plan_id:
             raise ValueError("plan_id is required to build an execution plan")
-        resolution: SemanticResolution = self.semantic_resolver.resolve(understanding)
+        resolution: SemanticResolution = self.semantic_resolver.resolve(
+            understanding,
+            growth_comparison_type=self.growth_comparison_type,
+        )
         fatal_blockers = [
             blocker for blocker in resolution.blockers
             if blocker != "SEMANTIC_DATA_NOT_AVAILABLE"
@@ -119,6 +130,8 @@ class ExecutionPlanBuilder:
                 ),
                 "tool_id": "financial_metric_engine",
                 "tool_version": self.tool_version,
+                "growth_comparison_type": self.growth_comparison_type.value,
+                "growth_period_basis": self.growth_period_basis.value,
             },
         ))
         if errors:
@@ -163,7 +176,16 @@ class ExecutionPlanBuilder:
         period: str,
     ) -> ExecutionTask:
         executable = coverage is not None and coverage.status == "AVAILABLE"
-        previous_period = self._previous_period(period_coverage, period)
+        comparison_type = (
+            self.growth_comparison_type
+            if metric.calculation_type == "growth"
+            else PeriodComparisonType.SEQUENTIAL
+        )
+        previous_period = self._previous_period(
+            period_coverage,
+            period,
+            comparison_type=comparison_type,
+        )
         missing_fields = list(coverage.missing_fields) if coverage else []
         base_metric_id = metric.metric_id.removesuffix("_growth")
         growth_input_contract = None
@@ -202,6 +224,16 @@ class ExecutionPlanBuilder:
                 "balance_policy": metric.balance_policy,
                 "previous_period": previous_period,
                 "growth_input_contract": growth_input_contract,
+                "growth_period_basis": (
+                    self.growth_period_basis.value
+                    if metric.calculation_type == "growth"
+                    else None
+                ),
+                "growth_comparison_type": (
+                    comparison_type.value
+                    if metric.calculation_type == "growth"
+                    else None
+                ),
                 "source_fields": metric.source_fields,
                 "coverage_status": (
                     coverage.status if coverage else "PERIOD_MISSING"
@@ -224,6 +256,16 @@ class ExecutionPlanBuilder:
                 "plan_id": plan_id,
                 "metric_id": metric.metric_id,
                 "previous_period": previous_period,
+                "growth_period_basis": (
+                    self.growth_period_basis.value
+                    if metric.calculation_type == "growth"
+                    else None
+                ),
+                "growth_comparison_type": (
+                    comparison_type.value
+                    if metric.calculation_type == "growth"
+                    else None
+                ),
                 "coverage_status": (
                     coverage.status if coverage else "PERIOD_MISSING"
                 ),
@@ -277,9 +319,11 @@ class ExecutionPlanBuilder:
         self,
         period_coverage: PeriodCoverage,
         period: str,
+        *,
+        comparison_type: PeriodComparisonType = PeriodComparisonType.SEQUENTIAL,
     ) -> str | None:
         parsed = self.semantic_resolver.period_normalizer.parse(period)
-        previous = parsed.previous()
+        previous = parsed.comparison_period(comparison_type)
         previous_period = previous.normalized_period
         if previous_period in set(period_coverage.available_periods):
             return previous_period

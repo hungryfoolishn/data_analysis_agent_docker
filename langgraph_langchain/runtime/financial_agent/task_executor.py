@@ -20,6 +20,19 @@ from langgraph_langchain.runtime.financial.metrics import (
     compute_metric,
     financial_metric_registry,
 )
+from langgraph_langchain.runtime.financial.period import (
+    PeriodBasisType,
+    PeriodComparisonType,
+    PeriodNormalizer,
+    PeriodNormalizationError,
+    PeriodType,
+)
+from langgraph_langchain.runtime.financial.period_basis import (
+    derive_single_period_cash_flow,
+    derive_single_period_income,
+    is_first_cumulative_period,
+    statement_source_ids,
+)
 from langgraph_langchain.runtime.financial.models import (
     FinancialCalculation,
     FinancialEvidence,
@@ -32,6 +45,7 @@ from .models import ExecutionStatus
 from .scheduler import TaskExecutionOutcome
 
 TASK_EXECUTION_ADAPTER_NAME = "financial_task_v10_3_1"
+_TASK_PERIOD_NORMALIZER = PeriodNormalizer()
 
 
 class TaskExecutionOutput(BaseModel):
@@ -124,11 +138,40 @@ class TaskLevelFinancialExecutor:
                 task,
                 f"unsupported financial metric: {task.metric_id}",
             )
+        try:
+            parsed_period = _TASK_PERIOD_NORMALIZER.parse(task.period)
+        except PeriodNormalizationError as exc:
+            reason = (
+                "unsupported_growth_period:ttm"
+                if "TTM" in str(exc).upper() or "LTM" in str(exc).upper()
+                else f"unsupported_period:{exc}"
+            )
+            return self._data_unavailable(task, reason)
+        if parsed_period.period_type == PeriodType.TTM:
+            return self._data_unavailable(
+                task,
+                "unsupported_growth_period:ttm",
+            )
         company = self.data_service.resolve_company(task.company_name)
-        previous_period = (
-            task.inputs.get("previous_period")
-            or self.data_service.previous_period(company.company_id, task.period)
+        comparison_type = PeriodComparisonType(
+            task.inputs.get("growth_comparison_type")
+            or PeriodComparisonType.YEAR_OVER_YEAR
         )
+        period_basis = PeriodBasisType(
+            task.inputs.get("growth_period_basis")
+            or PeriodBasisType.CUMULATIVE
+        )
+        previous_period = task.inputs.get("previous_period")
+        if previous_period is None:
+            previous_period = self.data_service.previous_period(
+                company.company_id,
+                task.period,
+                comparison_type=(
+                    comparison_type
+                    if definition.calculation_type == "growth"
+                    else PeriodComparisonType.SEQUENTIAL
+                ),
+            )
         income, balance, cash_flow, previous_income = self.data_service.statements(
             company.company_id,
             task.period,
@@ -138,17 +181,97 @@ class TaskLevelFinancialExecutor:
             company.company_id,
             task.period,
         )
+        conversion_source_ids: list[str] = []
 
         input_sources: dict[str, str] = {}
         if definition.calculation_type == "growth":
+            growth_income = income
+            growth_cash_flow = cash_flow
+            growth_previous_income = previous_income
+            if period_basis == PeriodBasisType.SINGLE_PERIOD:
+                current_predecessor_period = self.data_service.previous_period(
+                    company.company_id,
+                    task.period,
+                    comparison_type=PeriodComparisonType.SEQUENTIAL,
+                )
+                baseline_predecessor_period = (
+                    self.data_service.previous_period(
+                        company.company_id,
+                        previous_period,
+                        comparison_type=PeriodComparisonType.SEQUENTIAL,
+                    )
+                    if previous_period is not None
+                    else None
+                )
+                _, _, current_predecessor_cash_flow, current_predecessor_income = (
+                    self.data_service.statements(
+                        company.company_id,
+                        task.period,
+                        current_predecessor_period,
+                    )
+                )
+                _, _, baseline_cash_flow, baseline_income = (
+                    self.data_service.statements(
+                        company.company_id,
+                        previous_period,
+                        baseline_predecessor_period,
+                    )
+                    if previous_period is not None
+                    else (None, None, None, None)
+                )
+                current_is_first = is_first_cumulative_period(
+                    task.period,
+                    normalizer=_TASK_PERIOD_NORMALIZER,
+                )
+                baseline_is_first = (
+                    is_first_cumulative_period(
+                        previous_period,
+                        normalizer=_TASK_PERIOD_NORMALIZER,
+                    )
+                    if previous_period is not None
+                    else True
+                )
+                growth_income = derive_single_period_income(
+                    income,
+                    current_predecessor_income,
+                    is_first_period=current_is_first,
+                )
+                growth_cash_flow = derive_single_period_cash_flow(
+                    cash_flow,
+                    current_predecessor_cash_flow,
+                    is_first_period=current_is_first,
+                )
+                growth_previous_income = (
+                    derive_single_period_income(
+                        previous_income,
+                        baseline_income,
+                        is_first_period=baseline_is_first,
+                    )
+                    if previous_income is not None
+                    else None
+                )
+                conversion_source_ids = statement_source_ids(
+                    income,
+                    current_predecessor_income,
+                    previous_income,
+                    baseline_income,
+                )
             computation = self._compute_growth(
                 task,
                 definition=definition,
-                income=income,
+                income=growth_income,
                 balance=balance,
-                cash_flow=cash_flow,
-                previous_income=previous_income,
+                cash_flow=growth_cash_flow,
+                previous_income=growth_previous_income,
+                previous_period=previous_period,
+                comparison_type=comparison_type,
+                period_basis=period_basis,
                 input_sources=input_sources,
+            )
+            formula = self._comparison_formula(
+                definition.formula,
+                comparison_type,
+                period_basis,
             )
         else:
             computation = compute_metric(
@@ -160,6 +283,7 @@ class TaskLevelFinancialExecutor:
                 previous_balance=previous_balance,
             )
             input_sources["value"] = "data_service"
+            formula = definition.formula
 
         source_ids = self.workflow._source_ids_for_metric(
             definition,
@@ -169,12 +293,13 @@ class TaskLevelFinancialExecutor:
             previous_income=previous_income,
             previous_balance=previous_balance,
         )
+        source_ids = list(dict.fromkeys([*source_ids, *conversion_source_ids]))
         calculation = FinancialCalculation(
             metric_id=task.metric_id,
             company_id=company.company_id,
             company_name=company.company_name,
             period=task.period,
-            formula=definition.formula,
+            formula=formula,
             inputs=computation.inputs,
             result=computation.value,
             unit=definition.unit,
@@ -201,10 +326,22 @@ class TaskLevelFinancialExecutor:
         verification = self.verification_engine.verify(
             calculation=calculation,
             metric_id=task.metric_id,
-            income=income,
+            income=(
+                growth_income
+                if definition.calculation_type == "growth"
+                else income
+            ),
             balance=balance,
-            cash_flow=cash_flow,
-            previous_income=previous_income,
+            cash_flow=(
+                growth_cash_flow
+                if definition.calculation_type == "growth"
+                else cash_flow
+            ),
+            previous_income=(
+                growth_previous_income
+                if definition.calculation_type == "growth"
+                else previous_income
+            ),
             previous_balance=previous_balance,
         )
         if not verification.passed:
@@ -224,7 +361,7 @@ class TaskLevelFinancialExecutor:
             period=task.period,
             value=computation.value,
             unit=definition.unit,
-            formula=definition.formula,
+            formula=formula,
             fact=(
                 f"{company.company_name} {task.period} "
                 f"{definition.name}为{computation.value:,.4f}{definition.unit}"
@@ -279,6 +416,9 @@ class TaskLevelFinancialExecutor:
                 "verification_id": verification.verification_id,
                 "evidence_id": evidence.evidence_id,
                 "input_sources": input_sources,
+                "growth_comparison_type": comparison_type.value,
+                "growth_period_basis": period_basis.value,
+                "comparison_period": previous_period,
             },
             output=output,
         )
@@ -292,15 +432,24 @@ class TaskLevelFinancialExecutor:
         balance,
         cash_flow,
         previous_income,
+        previous_period: str | None,
+        comparison_type: PeriodComparisonType,
+        period_basis: PeriodBasisType,
         input_sources: dict[str, str],
     ) -> MetricComputation:
         base_metric_id = definition.growth_of or ""
-        dependency_outputs = {
-            (item.period, item.metric_id): item
-            for item in self.output_store.dependency_outputs(task)
-        }
+        # A cumulative base-metric task cannot be mixed with a single-period
+        # growth contract. In that case derive both sides from source
+        # statements so cumulative and single-period semantics stay explicit.
+        dependency_outputs = (
+            {}
+            if period_basis == PeriodBasisType.SINGLE_PERIOD
+            else {
+                (item.period, item.metric_id): item
+                for item in self.output_store.dependency_outputs(task)
+            }
+        )
         current_output = dependency_outputs.get((task.period, base_metric_id))
-        previous_period = task.inputs.get("previous_period")
         previous_output = (
             dependency_outputs.get((previous_period, base_metric_id))
             if previous_period is not None
@@ -392,6 +541,25 @@ class TaskLevelFinancialExecutor:
                 "previous": round(previous, 6),
             },
         )
+
+    @staticmethod
+    @staticmethod
+    def _comparison_formula(
+        formula: str,
+        comparison_type: PeriodComparisonType,
+        period_basis: PeriodBasisType = PeriodBasisType.CUMULATIVE,
+    ) -> str:
+        label = (
+            "同比"
+            if comparison_type == PeriodComparisonType.YEAR_OVER_YEAR
+            else "环比"
+        )
+        basis = (
+            "累计"
+            if period_basis == PeriodBasisType.CUMULATIVE
+            else "单期"
+        )
+        return f"{formula}（{label}/{basis}）"
 
     @staticmethod
     def _growth_base_status(

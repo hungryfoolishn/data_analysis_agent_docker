@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from langgraph_langchain.runtime.models import utc_now
+from .period import PeriodBasisType, PeriodComparisonType
 
 
 def _financial_id(prefix: str) -> str:
@@ -114,6 +115,10 @@ class FinancialQuery(BaseModel):
     metrics: list[str] = Field(default_factory=list)
     start_year: Optional[int] = None
     end_year: Optional[int] = None
+    growth_comparison_type: PeriodComparisonType = (
+        PeriodComparisonType.YEAR_OVER_YEAR
+    )
+    growth_period_basis: PeriodBasisType = PeriodBasisType.CUMULATIVE
 
 
 class FinancialObservation(BaseModel):

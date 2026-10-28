@@ -677,6 +677,167 @@ _years_from_tasks(plan.tasks)
 - 旧工作流可额外计算计划外的 2023Q3 数据，不影响任务映射。
 - 季度和半年度任务不会因期间字符串转换失败而中断。
 
+
+## V10.3.2.2 季度与半年度增长率比较口径
+
+### 问题
+
+`FinancialPeriod.previous()` 原本只表达相邻期间逻辑：
+
+```text
+2023Q1 -> 2022Q4
+2023Q2 -> 2023Q1
+2023H1 -> 2022H2
+2023H2 -> 2023H1
+```
+
+这适合环比，但不能自动等同于财务分析中常用的同比。若把所有增长率都交给 `previous()` 决定，会造成口径混淆。
+
+### 修复
+
+新增显式比较口径：
+
+```text
+sequential       环比
+year_over_year   同比
+```
+
+默认口径为：
+
+```text
+year_over_year
+```
+
+因此：
+
+```text
+2023Q1 同比 -> 2022Q1
+2023Q2 同比 -> 2022Q2
+2023H1 同比 -> 2022H1
+2023H2 同比 -> 2022H2
+2023Q2 环比 -> 2023Q1
+2023H2 环比 -> 2023H1
+```
+
+`FinancialDataService.previous_period()` 仍默认返回相邻期间，供通用数据和平均余额逻辑使用。增长率相关路径必须显式传入比较口径。
+
+### 契约位置
+
+`ExecutionPlanBuilder` 新增参数：
+
+```python
+growth_comparison_type
+```
+
+计划元数据会写入：
+
+```text
+growth_comparison_type
+```
+
+增长率任务输入也会写入同一字段。旧批量工作流通过 `FinancialQuery.growth_comparison_type` 使用同一契约。
+
+### 报告标识
+
+同比计算会标记：
+
+```text
+（同比）
+```
+
+环比计算会标记：
+
+```text
+（环比）
+```
+
+标记出现在 Calculation、Evidence 和 Observation 的 formula 字段中，避免报告中混用口径。
+
+### 测试
+
+新增测试覆盖：
+
+1. 2023Q1 对 2022Q1 的同比增长率，DAG 与 workflow 双路径一致。
+2. 2023Q2 对 2023Q1 的环比增长率，DAG 与 workflow 双路径一致。
+3. 2023H1 对 2022H1 的半年度同比增长率。
+4. 同比基期缺失时，增长率任务返回 `UNAVAILABLE`。
+
+
+## V10.3.3 财务口径、累计值转换与审计边界
+
+### 目标
+
+- 将增长率比较口径与期间解析进一步解耦。
+- 明确累计值和单期值的转换契约。
+- 增加独立黄金值测试，避免 DAG 与旧工作流同源错误互相掩盖。
+- 对 TTM 和非法期间返回结构化不可用，而不是运行时崩溃。
+- 增加重复报表的数据质量边界测试。
+
+### 新增契约
+
+`FinancialQuery` 和执行计划新增：
+
+```text
+growth_period_basis
+```
+
+取值：
+
+```text
+cumulative      累计值，默认
+single_period   单期值
+```
+
+结合增长率比较口径：
+
+```text
+year_over_year + cumulative   累计同比
+year_over_year + single_period  单期同比（自动从累计值推导）
+sequential     + single_period  单季环比（自动从累计值推导）
+```
+
+### 单期转换规则
+
+对于 Q2/Q3/Q4/H2 等非首期累计数据：
+
+```text
+single_period_current = current_cumulative - previous_cumulative
+```
+
+Q1/H1/FY 是年度或累计期的首期，直接使用当前累计值作为单期值。
+
+EPS 不会被简单相减推导，因为不同期间的加权股本可能不同。因此：
+
+```text
+EPS growth + single_period + 非首期 -> UNAVAILABLE
+```
+
+### 溯源
+
+单期转换涉及的所有原始报表 source_id 都会并入 Calculation.source_ids。例如 2023Q2 单季收入同比增长会同时保留：
+
+```text
+income_2023Q2
+income_2023Q1
+income_2022Q2
+income_2022Q1
+```
+
+### TTM 边界
+
+TTM / LTM 增长请求返回：
+
+```text
+status = UNAVAILABLE
+reason = unsupported_growth_period:ttm
+```
+
+不会伪造数值，也不会在计划执行过程中产生未处理异常。
+
+### 数据质量边界
+
+同一公司、同一规范期间存在重复收入报表时，`FinancialDataService` 初始化直接失败，避免冲突版本静默进入计算。
+
 ## V10.3.2 测试
 
 ### 任务级财务正确性测试
@@ -688,7 +849,7 @@ PYTHONPATH=. pytest tests/financial_agent/test_task_executor.py -q
 实际结果：
 
 ```text
-17 passed in 3.49s
+27 passed in 2.15s
 ```
 
 ### V10.3.2 联合定向回归
@@ -706,7 +867,7 @@ PYTHONPATH=. pytest \
 实际结果：
 
 ```text
-69 passed in 2.59s
+79 passed in 2.74s
 ```
 
 ### V9.3 工作流兼容性回归
@@ -736,7 +897,7 @@ PYTHONPATH=. pytest -q
 实际结果：
 
 ```text
-893 passed, 11 warnings, 4 subtests passed in 219.18s (0:03:39)
+903 passed, 11 warnings, 4 subtests passed in 223.16s (0:03:43)
 ```
 
 ## V10.3.2 验收结论
@@ -747,8 +908,8 @@ V10.3.2 状态：财务正确性与报告兼容性收尾完成
 增长率状态传播：CALCULATED / UNAVAILABLE / INVALID 显式区分
 全指标对照：DAG 与旧工作流结果、公式、输入、验证一致
 分析报告层：DAG 复用旧工作流共享构建逻辑
-任务级测试：17 / 17 passed
-联合定向回归：69 passed
+任务级测试：27 / 27 passed
+联合定向回归：79 passed
 V9.3 工作流回归：60 passed
-全量回归：893 passed
+全量回归：903 passed
 ```

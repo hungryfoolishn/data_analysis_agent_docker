@@ -15,7 +15,7 @@ from langgraph_langchain.runtime.financial.models import (
     FinancialAnalysisResult,
     FinancialQuery,
 )
-from langgraph_langchain.runtime.financial.period import PeriodNormalizer
+from langgraph_langchain.runtime.financial.period import PeriodBasisType, PeriodComparisonType, PeriodNormalizer
 
 from .execution_plan import ExecutionPlanBuilder
 from .execution_models import (
@@ -51,6 +51,23 @@ def _years_from_tasks(tasks) -> list[int]:
         _PERIOD_NORMALIZER.parse(task.period).year
         for task in tasks
     ]
+
+
+def _growth_comparison_type(plan: ExecutionPlan) -> PeriodComparisonType:
+    """Resolve the plan-level growth comparison contract."""
+    return PeriodComparisonType(
+        plan.metadata.get(
+            "growth_comparison_type",
+            PeriodComparisonType.YEAR_OVER_YEAR,
+        )
+    )
+
+
+def _growth_period_basis(plan: ExecutionPlan) -> PeriodBasisType:
+    """Resolve the plan-level source statement basis."""
+    return PeriodBasisType(
+        plan.metadata.get("growth_period_basis", PeriodBasisType.CUMULATIVE)
+    )
 
 
 class RuntimeIntegrationError(ValueError):
@@ -303,6 +320,8 @@ class FinancialRuntimeExecutor:
             )),
             start_year=min(years),
             end_year=max(years),
+            growth_comparison_type=_growth_comparison_type(plan),
+            growth_period_basis=_growth_period_basis(plan),
         )
         return self.workflow.build_analysis_result(
             query=query,
@@ -351,6 +370,8 @@ class FinancialRuntimeExecutor:
             metrics=metric_ids,
             start_year=min(years),
             end_year=max(years),
+            growth_comparison_type=_growth_comparison_type(plan),
+            growth_period_basis=_growth_period_basis(plan),
         )
 
         plan.status = ExecutionPlanStatus.RUNNING
@@ -463,7 +484,11 @@ class FinancialRuntimeExecutor:
                     status=ExecutionStatus.UNAVAILABLE,
                     verification_status=VerificationStatus.NOT_REQUIRED,
                     status_reason=task.status_reason or "data_unavailable",
-                    metadata={"source": "semantic_coverage"},
+                    metadata={
+                        "source": "semantic_coverage",
+                        "growth_comparison_type": _growth_comparison_type(plan).value,
+                        "growth_period_basis": _growth_period_basis(plan).value,
+                    },
                 ))
                 unavailable_count += 1
                 continue
@@ -534,6 +559,11 @@ class FinancialRuntimeExecutor:
                 status_reason=error,
                 error=error,
                 output_refs=output_refs,
+                metadata={
+                    "source": "workflow",
+                    "growth_comparison_type": _growth_comparison_type(plan).value,
+                    "growth_period_basis": _growth_period_basis(plan).value,
+                },
             ))
 
             if status == ExecutionStatus.SUCCEEDED:

@@ -8,8 +8,24 @@ from .anomaly_engine import FinancialAnomalyEngine
 from .classifier import FinancialTaskClassifier, FinancialTaskType
 from .data_service import FinancialDataService
 from .finding_engine import FinancialFindingEngine
-from .metrics import compute_metric, financial_metric_registry
-from .period import PeriodNormalizer
+from .metrics import (
+    MetricComputation,
+    UNAVAILABLE,
+    compute_metric,
+    financial_metric_registry,
+)
+from .period import (
+    PeriodBasisType,
+    PeriodComparisonType,
+    PeriodNormalizer,
+    PeriodType,
+)
+from .period_basis import (
+    derive_single_period_cash_flow,
+    derive_single_period_income,
+    is_first_cumulative_period,
+    statement_source_ids,
+)
 from .models import (
     BalanceSheetStatement,
     CashFlowStatement,
@@ -110,6 +126,8 @@ class FinancialAnalysisWorkflow:
         company_names = query.company_names or [
             item.company_name for item in self.data_service.list_companies()
         ]
+        comparison_type = PeriodComparisonType(query.growth_comparison_type)
+        period_basis = PeriodBasisType(query.growth_period_basis)
         for company_name in company_names:
             company = self.data_service.resolve_company(company_name)
             periods = self.data_service.periods_for(company.company_id)
@@ -130,7 +148,9 @@ class FinancialAnalysisWorkflow:
 
             for period in selected:
                 previous_period = self.data_service.previous_period(
-                    company.company_id, period
+                    company.company_id,
+                    period,
+                    comparison_type=comparison_type,
                 )
                 previous_balance = self.data_service.previous_balance(
                     company.company_id, period
@@ -142,14 +162,159 @@ class FinancialAnalysisWorkflow:
                 )
                 for metric_id in metrics:
                     definition = financial_metric_registry.get(metric_id)
-                    computation = compute_metric(
-                        metric_id,
-                        income=income,
-                        balance=balance,
-                        cash_flow=cash_flow,
-                        previous_income=previous_income,
-                        previous_balance=previous_balance,
-                    )
+                    growth_income = income
+                    growth_cash_flow = cash_flow
+                    growth_previous_income = previous_income
+                    conversion_source_ids: list[str] = []
+                    if (
+                        definition.calculation_type == "growth"
+                        and self._period_normalizer.parse(period).period_type
+                        == PeriodType.TTM
+                    ):
+                        computation = MetricComputation(
+                            metric_id=metric_id,
+                            status=UNAVAILABLE,
+                            inputs={"current": None, "previous": None},
+                            reason="unsupported_growth_period:ttm",
+                        )
+                        formula = self._comparison_formula(
+                            definition.formula,
+                            comparison_type,
+                            period_basis,
+                        )
+                        metric_source_ids = self._source_ids_for_metric(
+                            definition,
+                            income=income,
+                            balance=balance,
+                            cash_flow=cash_flow,
+                            previous_income=previous_income,
+                            previous_balance=previous_balance,
+                        )
+                        source_fields = list(definition.source_fields)
+                        calculation = FinancialCalculation(
+                            metric_id=metric_id,
+                            company_id=company.company_id,
+                            company_name=company.company_name,
+                            period=period,
+                            formula=formula,
+                            inputs=computation.inputs,
+                            result=computation.value,
+                            unit=definition.unit,
+                            status=computation.status,
+                            status_reason=computation.reason,
+                            missing_fields=computation.missing_fields,
+                            source_ids=metric_source_ids,
+                            source_fields=source_fields,
+                        )
+                        verifications.append(self.verification_engine.verify(
+                            calculation=calculation,
+                            metric_id=metric_id,
+                            income=income,
+                            balance=balance,
+                            cash_flow=cash_flow,
+                            previous_income=previous_income,
+                            previous_balance=previous_balance,
+                        ))
+                        calculations.append(calculation)
+                        continue
+
+                    if (
+                        definition.calculation_type == "growth"
+                        and period_basis == PeriodBasisType.SINGLE_PERIOD
+                    ):
+                        current_predecessor_period = self.data_service.previous_period(
+                            company.company_id,
+                            period,
+                            comparison_type=PeriodComparisonType.SEQUENTIAL,
+                        )
+                        baseline_predecessor_period = (
+                            self.data_service.previous_period(
+                                company.company_id,
+                                previous_period,
+                                comparison_type=PeriodComparisonType.SEQUENTIAL,
+                            )
+                            if previous_period is not None
+                            else None
+                        )
+                        _, _, current_predecessor_cash_flow, current_predecessor_income = (
+                            self.data_service.statements(
+                                company.company_id,
+                                period,
+                                current_predecessor_period,
+                            )
+                        )
+                        _, _, baseline_cash_flow, baseline_income = (
+                            self.data_service.statements(
+                                company.company_id,
+                                previous_period,
+                                baseline_predecessor_period,
+                            )
+                            if previous_period is not None
+                            else (None, None, None, None)
+                        )
+                        current_is_first = is_first_cumulative_period(
+                            period,
+                            normalizer=self._period_normalizer,
+                        )
+                        baseline_is_first = (
+                            is_first_cumulative_period(
+                                previous_period,
+                                normalizer=self._period_normalizer,
+                            )
+                            if previous_period is not None
+                            else True
+                        )
+                        growth_income = derive_single_period_income(
+                            income,
+                            current_predecessor_income,
+                            is_first_period=current_is_first,
+                        )
+                        growth_cash_flow = derive_single_period_cash_flow(
+                            cash_flow,
+                            current_predecessor_cash_flow,
+                            is_first_period=current_is_first,
+                        )
+                        growth_previous_income = (
+                            derive_single_period_income(
+                                previous_income,
+                                baseline_income,
+                                is_first_period=baseline_is_first,
+                            )
+                            if previous_income is not None
+                            else None
+                        )
+                        conversion_source_ids = statement_source_ids(
+                            income,
+                            current_predecessor_income,
+                            previous_income,
+                            baseline_income,
+                        )
+
+                    if definition.calculation_type == "growth":
+                        computation = compute_metric(
+                            metric_id,
+                            income=growth_income,
+                            balance=balance,
+                            cash_flow=growth_cash_flow,
+                            previous_income=growth_previous_income,
+                            previous_balance=previous_balance,
+                        )
+                        formula = self._comparison_formula(
+                            definition.formula,
+                            comparison_type,
+                            period_basis,
+                        )
+                    else:
+                        computation = compute_metric(
+                            metric_id,
+                            income=income,
+                            balance=balance,
+                            cash_flow=cash_flow,
+                            previous_income=previous_income,
+                            previous_balance=previous_balance,
+                        )
+                        formula = definition.formula
+
                     metric_source_ids = self._source_ids_for_metric(
                         definition,
                         income=income,
@@ -158,13 +323,17 @@ class FinancialAnalysisWorkflow:
                         previous_income=previous_income,
                         previous_balance=previous_balance,
                     )
+                    metric_source_ids = list(dict.fromkeys([
+                        *metric_source_ids,
+                        *conversion_source_ids,
+                    ]))
                     source_fields = list(definition.source_fields)
                     calculation = FinancialCalculation(
                         metric_id=metric_id,
                         company_id=company.company_id,
                         company_name=company.company_name,
                         period=period,
-                        formula=definition.formula,
+                        formula=formula,
                         inputs=computation.inputs,
                         result=computation.value,
                         unit=definition.unit,
@@ -177,10 +346,22 @@ class FinancialAnalysisWorkflow:
                     verification = self.verification_engine.verify(
                         calculation=calculation,
                         metric_id=metric_id,
-                        income=income,
+                        income=(
+                            growth_income
+                            if definition.calculation_type == "growth"
+                            else income
+                        ),
                         balance=balance,
-                        cash_flow=cash_flow,
-                        previous_income=previous_income,
+                        cash_flow=(
+                            growth_cash_flow
+                            if definition.calculation_type == "growth"
+                            else cash_flow
+                        ),
+                        previous_income=(
+                            growth_previous_income
+                            if definition.calculation_type == "growth"
+                            else previous_income
+                        ),
                         previous_balance=previous_balance,
                     )
                     calculations.append(calculation)
@@ -197,7 +378,7 @@ class FinancialAnalysisWorkflow:
                         period=period,
                         value=computation.value,
                         unit=definition.unit,
-                        formula=definition.formula,
+                        formula=formula,
                         fact=(
                             f"{company.company_name} {period} "
                             f"{definition.name}为{computation.value:,.4f}{definition.unit}"
@@ -217,7 +398,7 @@ class FinancialAnalysisWorkflow:
                         metric_name=definition.name,
                         value=computation.value,
                         unit=definition.unit,
-                        formula=definition.formula,
+                        formula=formula,
                         fact=evidence_item.fact,
                         calculation=calculation,
                         source_ids=metric_source_ids,
@@ -296,6 +477,25 @@ class FinancialAnalysisWorkflow:
         )
         result.report_markdown = self._report(result)
         return result
+
+    @staticmethod
+    @staticmethod
+    def _comparison_formula(
+        formula: str,
+        comparison_type: PeriodComparisonType,
+        period_basis: PeriodBasisType = PeriodBasisType.CUMULATIVE,
+    ) -> str:
+        label = (
+            "同比"
+            if comparison_type == PeriodComparisonType.YEAR_OVER_YEAR
+            else "环比"
+        )
+        basis = (
+            "累计"
+            if period_basis == PeriodBasisType.CUMULATIVE
+            else "单期"
+        )
+        return f"{formula}（{label}/{basis}）"
 
     def _normalize_query(self, query: FinancialQuery | str) -> FinancialQuery:
         if isinstance(query, FinancialQuery):

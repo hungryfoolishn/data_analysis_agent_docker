@@ -14,7 +14,7 @@ from .models import (
     FinancialDataSource,
     IncomeStatement,
 )
-from .period import PeriodNormalizer
+from .period import PeriodComparisonType, PeriodNormalizer
 
 
 class FinancialDataService:
@@ -193,15 +193,23 @@ class FinancialDataService:
             )
         )
 
-    def previous_period(self, company_id: str, period: str) -> str | None:
-        """Return the semantically previous period when present in the dataset."""
+    def previous_period(
+        self,
+        company_id: str,
+        period: str,
+        *,
+        comparison_type: PeriodComparisonType | str = PeriodComparisonType.SEQUENTIAL,
+    ) -> str | None:
+        """Return the baseline period for the requested comparison contract."""
         canonical_period = self._period_normalizer.normalize(period)
         periods = self.periods_for(company_id)
         if canonical_period not in periods:
             raise KeyError(f"Unknown period {period} for {company_id}")
-        previous = self._period_normalizer.parse(canonical_period).previous()
-        # Missing prior periods must remain absent so average-balance metrics
-        # become UNAVAILABLE instead of silently using an older available period.
+        previous = self._period_normalizer.parse(canonical_period).comparison_period(
+            comparison_type
+        )
+        # Missing baselines must remain absent so dependent metrics become
+        # UNAVAILABLE instead of silently using an older available period.
         return previous.normalized_period if previous.normalized_period in periods else None
 
     def list_sources(self) -> list[FinancialDataSource]:

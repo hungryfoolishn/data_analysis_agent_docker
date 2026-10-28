@@ -10,7 +10,7 @@ from langgraph_langchain.runtime.financial.metrics import (
     financial_metric_registry,
 )
 from langgraph_langchain.runtime.financial.models import Company
-from langgraph_langchain.runtime.financial.period import PeriodNormalizer
+from langgraph_langchain.runtime.financial.period import PeriodComparisonType, PeriodNormalizer
 
 from .models import CompanyResolution, FinancialTaskUnderstanding
 from .semantic_models import (
@@ -178,6 +178,10 @@ class FinancialSemanticResolver:
     def resolve(
         self,
         understanding: FinancialTaskUnderstanding,
+        *,
+        growth_comparison_type: PeriodComparisonType | str = (
+            PeriodComparisonType.YEAR_OVER_YEAR
+        ),
     ) -> SemanticResolution:
         companies = self.company_registry.resolve(
             understanding.raw_question,
@@ -189,6 +193,7 @@ class FinancialSemanticResolver:
             companies.resolved,
             periods,
             metrics.resolved,
+            growth_comparison_type=growth_comparison_type,
         )
 
         diagnostics: list[str] = []
@@ -335,6 +340,10 @@ class FinancialSemanticResolver:
         companies: list[CompanyResolution],
         period_coverage: list[PeriodCoverage],
         metrics: list[MetricDefinitionResolution],
+        *,
+        growth_comparison_type: PeriodComparisonType | str = (
+            PeriodComparisonType.YEAR_OVER_YEAR
+        ),
     ) -> DataCoverageResult:
         if not companies or not period_coverage or not metrics:
             return DataCoverageResult(
@@ -345,6 +354,7 @@ class FinancialSemanticResolver:
             item.metric_id: self._metric_requirements(item)
             for item in metrics
         }
+        normalized_comparison_type = PeriodComparisonType(growth_comparison_type)
         company_coverage: list[CompanyDataCoverage] = []
         blockers: list[DataCoverageGap] = []
         warnings: list[DataCoverageGap] = []
@@ -360,6 +370,7 @@ class FinancialSemanticResolver:
                 period_item,
                 metrics,
                 requirements,
+                growth_comparison_type=normalized_comparison_type,
             )
             company_coverage.append(item)
             blockers.extend(item.blockers)
@@ -389,6 +400,10 @@ class FinancialSemanticResolver:
         period_item: PeriodCoverage,
         metrics: list[MetricDefinitionResolution],
         requirements: dict[str, list[DataRequirement]],
+        *,
+        growth_comparison_type: PeriodComparisonType = (
+            PeriodComparisonType.YEAR_OVER_YEAR
+        ),
     ) -> CompanyDataCoverage:
         metric_coverage: list[MetricCoverage] = []
         blockers: list[DataCoverageGap] = []
@@ -443,6 +458,16 @@ class FinancialSemanticResolver:
             }
 
             for metric in metrics:
+                metric_comparison_type = (
+                    growth_comparison_type
+                    if metric.calculation_type == "growth"
+                    else PeriodComparisonType.SEQUENTIAL
+                )
+                metric_previous_period = self.data_service.previous_period(
+                    company.company_id,
+                    period,
+                    comparison_type=metric_comparison_type,
+                )
                 missing_current: list[str] = []
                 missing_previous: list[str] = []
                 for requirement in requirements.get(metric.metric_id, []):
@@ -465,7 +490,7 @@ class FinancialSemanticResolver:
                             else None
                         )
                         if (
-                            previous_period is None
+                            metric_previous_period is None
                             or statement is None
                             or value is None
                         ):
@@ -507,7 +532,7 @@ class FinancialSemanticResolver:
                     metric_id=metric.metric_id,
                     status=status,
                     missing_fields=[*missing_current, *missing_previous],
-                    previous_period=previous_period,
+                    previous_period=metric_previous_period,
                 ))
 
         return CompanyDataCoverage(
