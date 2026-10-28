@@ -167,6 +167,9 @@ class FinancialTaskUnderstandingBuilder:
 
         missing_information: list[str] = []
         planning_diagnostics: list[str] = []
+        if growth_intent_source in {"conflict", "ambiguous"}:
+            planning_diagnostics.extend(growth_intent_diagnostics)
+            planning_diagnostics.append("GROWTH_COMPARISON_REQUIRES_CLARIFICATION")
         if not raw_question:
             planning_diagnostics.append("EMPTY_QUESTION")
         if not companies:
@@ -321,16 +324,8 @@ class FinancialTaskUnderstandingBuilder:
         )
 
         if has_conflict:
-            primary_comparison, primary_basis = self._extract_growth_semantics(
-                question,
-                period_range,
-            )
             return (
-                [GrowthComparisonIntent(
-                    comparison_type=primary_comparison,
-                    period_basis=primary_basis,
-                    source="conflict",
-                )],
+                [],
                 "conflict",
                 ["GROWTH_COMPARISON_CONFLICT"],
             )
@@ -342,28 +337,33 @@ class FinancialTaskUnderstandingBuilder:
             )
 
         intents: list[GrowthComparisonIntent] = []
-        if has_cumulative_yoy:
-            intents.append(GrowthComparisonIntent(
-                comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
-                period_basis=PeriodBasisType.CUMULATIVE,
-                source="explicit",
-            ))
-        if has_yoy and not has_cumulative_yoy:
-            intents.append(self._intent_for_comparison(
-                PeriodComparisonType.YEAR_OVER_YEAR,
-                period_range,
-            ))
-        if has_sequential_cumulative:
-            intents.append(GrowthComparisonIntent(
-                comparison_type=PeriodComparisonType.SEQUENTIAL,
-                period_basis=PeriodBasisType.CUMULATIVE,
-                source="explicit",
-            ))
-        if has_qoq:
-            intents.append(self._intent_for_comparison(
-                PeriodComparisonType.SEQUENTIAL,
-                period_range,
-            ))
+        has_cumulative_context = "累计" in text or "年初至今" in text
+        if has_cumulative_context:
+            # A cumulative qualifier applies to every requested comparison.
+            # Never mix it with single-period variants for the same question.
+            if has_yoy:
+                intents.append(GrowthComparisonIntent(
+                    comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+                    period_basis=PeriodBasisType.CUMULATIVE,
+                    source="explicit",
+                ))
+            if has_qoq:
+                intents.append(GrowthComparisonIntent(
+                    comparison_type=PeriodComparisonType.SEQUENTIAL,
+                    period_basis=PeriodBasisType.CUMULATIVE,
+                    source="explicit",
+                ))
+        else:
+            if has_yoy:
+                intents.append(self._intent_for_comparison(
+                    PeriodComparisonType.YEAR_OVER_YEAR,
+                    period_range,
+                ))
+            if has_qoq:
+                intents.append(self._intent_for_comparison(
+                    PeriodComparisonType.SEQUENTIAL,
+                    period_range,
+                ))
 
         unique_intents: list[GrowthComparisonIntent] = []
         seen: set[tuple[str, str]] = set()

@@ -295,6 +295,76 @@ PYTHONPATH=. pytest -q
 # 917 passed, 26 warnings, 4 subtests passed
 ```
 
+
+## 阶段 4：Growth Intent Guardrails
+
+### 目标
+
+冲突和歧义不再只是诊断信息，而是计划级阻断条件。
+
+### 阻断规则
+
+- `GROWTH_COMPARISON_CONFLICT`
+  - 不生成增长率任务；
+  - 执行计划状态为 `BLOCKED`；
+  - 不允许选择任意一个口径继续计算。
+- `GROWTH_COMPARISON_AMBIGUOUS`
+  - 不生成增长率任务；
+  - 执行计划状态为 `BLOCKED`；
+  - 不静默选择同比或环比。
+- 两种情况都会写入：
+  - `FinancialTaskUnderstanding.planning_diagnostics`
+  - `ExecutionPlan.diagnostics`
+  - `ExecutionPlan.metadata.blocking_diagnostics`
+  - `planning_readiness = NEEDS_CLARIFICATION`
+
+### 累计口径生成规则
+
+当问题包含“累计”或“年初至今”时，所有被请求的比较都保持在累计基础：
+
+```text
+累计收入同比和环比
+  -> year_over_year + cumulative
+  -> sequential     + cumulative
+```
+
+不会额外生成：
+
+```text
+sequential + single_period
+```
+
+### 执行边界
+
+被阻断的执行计划不会进入 DAG。`FinancialRuntimeExecutor.execute_plan()` 会因为计划状态不是 `PENDING` 而返回明确错误，避免生成看似成功的报告。
+
+
+### 阶段 4 回归结果
+
+```bash
+PYTHONPATH=. pytest \
+  tests/financial_agent/test_period_semantics_v10_4.py \
+  tests/financial_agent/test_task_executor.py \
+  tests/financial_agent/test_scheduler.py \
+  tests/financial_agent/test_execution_plan.py \
+  tests/financial_agent/test_runtime_integration.py \
+  tests/financial_agent/test_tool_execution.py \
+  -q
+# 96 passed
+
+PYTHONPATH=. pytest \
+  tests/financial/test_runtime_v9_semantics.py \
+  tests/financial/test_runtime_v9_period_hardening.py \
+  tests/financial/test_runtime_v9.py \
+  tests/financial/test_runtime_v9_hardening.py \
+  tests/financial/test_runtime_v9_golden.py \
+  -q
+# 60 passed
+
+PYTHONPATH=. pytest -q
+# 920 passed, 11 warnings, 4 subtests passed
+```
+
 ## 边界与后续（V10.4 阶段 2+）
 
 - 季度利润表仍按累计值口径读取；`growth_period_basis=single_period` 时

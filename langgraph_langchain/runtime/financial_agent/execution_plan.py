@@ -61,6 +61,38 @@ class ExecutionPlanBuilder:
     ) -> ExecutionPlan:
         if not plan_id:
             raise ValueError("plan_id is required to build an execution plan")
+        if understanding.growth_intent_source in {"conflict", "ambiguous"}:
+            blocking_diagnostics = list(dict.fromkeys([
+                *understanding.growth_intent_diagnostics,
+                "GROWTH_COMPARISON_REQUIRES_CLARIFICATION",
+                *understanding.planning_diagnostics,
+            ]))
+            return ExecutionPlan(
+                execution_id=f"execution_{uuid4().hex}",
+                plan_id=plan_id,
+                query_id=understanding.query_id,
+                status=ExecutionPlanStatus.BLOCKED,
+                tasks=[],
+                diagnostics=blocking_diagnostics,
+                metadata={
+                    "planning_readiness": understanding.planning_readiness.value,
+                    "growth_intent_source": understanding.growth_intent_source,
+                    "growth_intent_diagnostics": list(
+                        understanding.growth_intent_diagnostics
+                    ),
+                    "blocking_diagnostics": blocking_diagnostics,
+                    "growth_comparison_type": (
+                        understanding.growth_comparison_type.value
+                    ),
+                    "growth_period_basis": (
+                        understanding.growth_period_basis.value
+                    ),
+                    "growth_intents": [
+                        intent.model_dump(mode="json")
+                        for intent in understanding.growth_intents
+                    ],
+                },
+            )
         self.growth_comparison_type = (
             self._growth_comparison_type_override
             or PeriodComparisonType(understanding.growth_comparison_type)

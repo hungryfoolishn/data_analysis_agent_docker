@@ -29,11 +29,14 @@ from langgraph_langchain.runtime.financial.period import (
 )
 from langgraph_langchain.runtime.financial_agent import (
     ExecutionPlanBuilder,
+    ExecutionPlanStatus,
     ExecutionStatus,
     FinancialRuntimeExecutor,
     FinancialSemanticResolver,
     FinancialTaskUnderstandingBuilder,
+    PlanningReadiness,
     RuntimeExecutionStatus,
+    RuntimeIntegrationError,
 )
 from langgraph_langchain.runtime.financial_agent.task_executor import (
     TaskLevelFinancialExecutor,
@@ -448,6 +451,91 @@ def test_growth_comparison_period_boundaries_are_explicit():
         assert parsed.comparison_period(comparison_type).normalized_period == (
             expected_period
         )
+
+
+def test_growth_intent_conflict_blocks_plan_execution():
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 收入增长率，同比和环比二选一"
+    )
+    assert understanding.planning_readiness == PlanningReadiness.NEEDS_CLARIFICATION
+    assert understanding.growth_intent_source == "conflict"
+    assert understanding.growth_intents == []
+    assert "GROWTH_COMPARISON_CONFLICT" in understanding.growth_intent_diagnostics
+
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_growth_intent_service()),
+    ).build(understanding, plan_id="plan_growth_conflict")
+
+    assert plan.status == ExecutionPlanStatus.BLOCKED
+    assert plan.tasks == []
+    assert "GROWTH_COMPARISON_CONFLICT" in plan.diagnostics
+    assert "GROWTH_COMPARISON_REQUIRES_CLARIFICATION" in plan.diagnostics
+    assert plan.metadata["planning_readiness"] == "NEEDS_CLARIFICATION"
+    assert plan.metadata["growth_intent_source"] == "conflict"
+
+    with pytest.raises(RuntimeIntegrationError, match="must be PENDING"):
+        FinancialRuntimeExecutor(
+            FinancialAnalysisWorkflow(_growth_intent_service()),
+        ).execute_plan(plan, understanding=understanding)
+
+
+def test_growth_intent_ambiguity_blocks_plan_execution():
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 收入增长率，同比还是环比"
+    )
+    assert understanding.planning_readiness == PlanningReadiness.NEEDS_CLARIFICATION
+    assert understanding.growth_intent_source == "ambiguous"
+    assert understanding.growth_intents == []
+    assert "GROWTH_COMPARISON_AMBIGUOUS" in understanding.growth_intent_diagnostics
+
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_growth_intent_service()),
+    ).build(understanding, plan_id="plan_growth_ambiguous")
+
+    assert plan.status == ExecutionPlanStatus.BLOCKED
+    assert plan.tasks == []
+    assert "GROWTH_COMPARISON_AMBIGUOUS" in plan.diagnostics
+    assert "GROWTH_COMPARISON_REQUIRES_CLARIFICATION" in plan.diagnostics
+    assert plan.metadata["planning_readiness"] == "NEEDS_CLARIFICATION"
+    assert plan.metadata["growth_intent_source"] == "ambiguous"
+
+    with pytest.raises(RuntimeIntegrationError, match="must be PENDING"):
+        FinancialRuntimeExecutor(
+            FinancialAnalysisWorkflow(_growth_intent_service()),
+        ).execute_plan(plan, understanding=understanding)
+
+
+def test_cumulative_yoy_and_qoq_generate_only_cumulative_intents():
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 累计收入同比和环比"
+    )
+
+    assert [
+        (item.comparison_type, item.period_basis)
+        for item in understanding.growth_intents
+    ] == [
+        (PeriodComparisonType.YEAR_OVER_YEAR, PeriodBasisType.CUMULATIVE),
+        (PeriodComparisonType.SEQUENTIAL, PeriodBasisType.CUMULATIVE),
+    ]
+
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_growth_intent_service()),
+    ).build(understanding, plan_id="plan_cumulative_multi_intent")
+    growth_tasks = [
+        task for task in plan.tasks if task.metric_id == "revenue_growth"
+    ]
+    assert len(growth_tasks) == 2
+    assert {
+        task.inputs["growth_comparison_variant"]
+        for task in growth_tasks
+    } == {
+        "year_over_year:cumulative",
+        "sequential:cumulative",
+    }
+    assert all(
+        task.inputs["growth_period_basis"] == "cumulative"
+        for task in growth_tasks
+    )
 
 
 def test_quarterly_average_balance_golden_values():
