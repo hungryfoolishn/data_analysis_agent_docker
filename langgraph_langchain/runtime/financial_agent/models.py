@@ -83,6 +83,20 @@ class CompanyResolution(BaseModel):
     resolution: str = "resolved"
 
 
+class GrowthComparisonIntent(BaseModel):
+    """One explicit growth comparison requested by the caller."""
+
+    comparison_type: PeriodComparisonType
+    period_basis: PeriodBasisType
+    source: str = "explicit"
+
+    @property
+    def variant(self) -> str:
+        return f"{self.comparison_type.value}:{self.period_basis.value}"
+
+    model_config = {"frozen": True}
+
+
 class PeriodResolution(BaseModel):
     start_year: int
     end_year: int
@@ -115,6 +129,9 @@ class FinancialTaskUnderstanding(BaseModel):
         PeriodComparisonType.YEAR_OVER_YEAR
     )
     growth_period_basis: PeriodBasisType = PeriodBasisType.CUMULATIVE
+    growth_intents: list[GrowthComparisonIntent] = Field(default_factory=list)
+    growth_intent_source: str = "default"
+    growth_intent_diagnostics: list[str] = Field(default_factory=list)
     ambiguities: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
     planning_readiness: PlanningReadiness = PlanningReadiness.NEEDS_CLARIFICATION

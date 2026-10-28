@@ -114,20 +114,39 @@ class ExecutionPlanBuilder:
                         period,
                         metric.metric_id,
                     )
-                    tasks.append(self._make_task(
-                        resolution=resolution,
-                        plan_id=plan_id,
-                        company_id=company.company_id,
-                        company_name=company.company_name,
-                        period_coverage=period_coverage,
-                        metric=metric,
-                        coverage=coverage,
-                        period=period,
-                    ))
+                    if metric.calculation_type == "growth":
+                        for growth_intent in understanding.growth_intents:
+                            tasks.append(self._make_task(
+                                resolution=resolution,
+                                plan_id=plan_id,
+                                company_id=company.company_id,
+                                company_name=company.company_name,
+                                period_coverage=period_coverage,
+                                metric=metric,
+                                coverage=coverage,
+                                period=period,
+                                growth_intent=growth_intent,
+                            ))
+                    else:
+                        tasks.append(self._make_task(
+                            resolution=resolution,
+                            plan_id=plan_id,
+                            company_id=company.company_id,
+                            company_name=company.company_name,
+                            period_coverage=period_coverage,
+                            metric=metric,
+                            coverage=coverage,
+                            period=period,
+                        ))
 
         self._assign_ids(tasks)
         task_id_by_key = {
-            (task.company_id, task.period, task.metric_id): task.task_id
+            (
+                task.company_id,
+                task.period,
+                task.metric_id,
+                task.metadata.get("growth_comparison_variant"),
+            ): task.task_id
             for task in tasks
         }
         self._link_dependencies(tasks, task_id_by_key)
@@ -148,6 +167,11 @@ class ExecutionPlanBuilder:
             "tool_version": self.tool_version,
             "growth_comparison_type": self.growth_comparison_type.value,
             "growth_period_basis": self.growth_period_basis.value,
+            "growth_intent_source": understanding.growth_intent_source,
+            "growth_intents": [
+                intent.model_dump(mode="json")
+                for intent in understanding.growth_intents
+            ],
         }
         errors = self.validate(ExecutionPlan(
             plan_id=plan_id,
@@ -182,12 +206,24 @@ class ExecutionPlanBuilder:
         metric: MetricDefinitionResolution,
         coverage: MetricCoverage | None,
         period: str,
+        growth_intent: GrowthComparisonIntent | None = None,
     ) -> ExecutionTask:
         executable = coverage is not None and coverage.status == "AVAILABLE"
+        is_growth = metric.calculation_type == "growth"
         comparison_type = (
-            self.growth_comparison_type
-            if metric.calculation_type == "growth"
+            growth_intent.comparison_type
+            if is_growth and growth_intent is not None
             else PeriodComparisonType.SEQUENTIAL
+        )
+        period_basis = (
+            growth_intent.period_basis
+            if is_growth and growth_intent is not None
+            else PeriodBasisType.CUMULATIVE
+        )
+        comparison_variant = (
+            f"{comparison_type.value}:{period_basis.value}"
+            if is_growth and growth_intent is not None
+            else None
         )
         previous_period = self._previous_period(
             period_coverage,
@@ -232,16 +268,9 @@ class ExecutionPlanBuilder:
                 "balance_policy": metric.balance_policy,
                 "previous_period": previous_period,
                 "growth_input_contract": growth_input_contract,
-                "growth_period_basis": (
-                    self.growth_period_basis.value
-                    if metric.calculation_type == "growth"
-                    else None
-                ),
-                "growth_comparison_type": (
-                    comparison_type.value
-                    if metric.calculation_type == "growth"
-                    else None
-                ),
+                "growth_period_basis": period_basis.value if is_growth else None,
+                "growth_comparison_type": comparison_type.value if is_growth else None,
+                "growth_comparison_variant": comparison_variant,
                 "source_fields": metric.source_fields,
                 "coverage_status": (
                     coverage.status if coverage else "PERIOD_MISSING"
@@ -264,15 +293,11 @@ class ExecutionPlanBuilder:
                 "plan_id": plan_id,
                 "metric_id": metric.metric_id,
                 "previous_period": previous_period,
-                "growth_period_basis": (
-                    self.growth_period_basis.value
-                    if metric.calculation_type == "growth"
-                    else None
-                ),
-                "growth_comparison_type": (
-                    comparison_type.value
-                    if metric.calculation_type == "growth"
-                    else None
+                "growth_period_basis": period_basis.value if is_growth else None,
+                "growth_comparison_type": comparison_type.value if is_growth else None,
+                "growth_comparison_variant": comparison_variant,
+                "growth_intent_source": (
+                    growth_intent.source if is_growth and growth_intent else None
                 ),
                 "coverage_status": (
                     coverage.status if coverage else "PERIOD_MISSING"
@@ -288,7 +313,7 @@ class ExecutionPlanBuilder:
     def _link_dependencies(
         self,
         tasks: list[ExecutionTask],
-        task_id_by_key: dict[tuple[str, str, str], str],
+        task_id_by_key: dict[tuple[str, str, str, str | None], str],
     ) -> None:
         for task in tasks:
             task.dependencies = []
@@ -308,6 +333,7 @@ class ExecutionPlanBuilder:
                     task.company_id,
                     period,
                     base_metric_id,
+                    None,
                 ))
                 if dependency_id:
                     task.dependencies.append(dependency_id)
@@ -362,12 +388,17 @@ class ExecutionPlanBuilder:
             errors.append("Execution plan has duplicate task IDs.")
 
         keys = [
-            (task.company_id, task.period, task.metric_id)
+            (
+                task.company_id,
+                task.period,
+                task.metric_id,
+                task.metadata.get("growth_comparison_variant"),
+            )
             for task in plan.tasks
         ]
         if len(keys) != len(set(keys)):
             errors.append(
-                "Execution plan has duplicate company/period/metric tasks."
+                "Execution plan has duplicate company/period/metric/variant tasks."
             )
 
         tasks_by_id = {task.task_id: task for task in plan.tasks}

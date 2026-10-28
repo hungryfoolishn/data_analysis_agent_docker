@@ -359,7 +359,7 @@ def test_growth_task_reads_direct_data_when_previous_base_task_is_absent():
 
     builder._link_dependencies(
         [growth_task],
-        {("600519", "2023", "revenue"): "exec_current_revenue"},
+        {("600519", "2023", "revenue", None): "exec_current_revenue"},
     )
 
     assert growth_task.status == ExecutionStatus.PENDING

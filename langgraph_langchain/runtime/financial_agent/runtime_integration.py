@@ -379,6 +379,19 @@ class FinancialRuntimeExecutor:
         if not plan.tasks:
             raise RuntimeIntegrationError("Execution plan has no tasks.")
 
+        if len(plan.metadata.get("growth_intents", [])) > 1:
+            plan.status = ExecutionPlanStatus.FAILED
+            plan.finished_at = _utc_now()
+            return _failed_result(
+                plan,
+                "Multiple growth comparison intents require DAG execution.",
+                started_at=plan.started_at or _utc_now(),
+                metadata={
+                    "workflow_tool_id": WORKFLOW_TOOL_ID,
+                    "growth_intents": plan.metadata.get("growth_intents", []),
+                },
+            )
+
         company_names = list(dict.fromkeys(
             task.company_name for task in plan.tasks
         ))

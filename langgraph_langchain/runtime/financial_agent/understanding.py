@@ -17,6 +17,7 @@ from langgraph_langchain.runtime.financial.period import (
 from .models import (
     CompanyResolution,
     FinancialTaskUnderstanding,
+    GrowthComparisonIntent,
     PeriodResolution,
     PlanningReadiness,
 )
@@ -141,8 +142,19 @@ class FinancialTaskUnderstandingBuilder:
         companies = self._resolve_companies(raw_question)
         objectives = self._extract_objectives(text)
         period_range, ambiguities = self._extract_period_range(raw_question)
-        growth_comparison_type, growth_period_basis = (
-            self._extract_growth_semantics(raw_question, period_range)
+        growth_intents, growth_intent_source, growth_intent_diagnostics = (
+            self._extract_growth_intents(raw_question, period_range)
+        )
+        primary_intent = growth_intents[0] if growth_intents else None
+        growth_comparison_type = (
+            primary_intent.comparison_type
+            if primary_intent
+            else PeriodComparisonType.YEAR_OVER_YEAR
+        )
+        growth_period_basis = (
+            primary_intent.period_basis
+            if primary_intent
+            else PeriodBasisType.CUMULATIVE
         )
         comparison_enabled = "peer_comparison" in objectives and len(companies) >= 2
         task_type = self._infer_task_type(objectives)
@@ -197,6 +209,9 @@ class FinancialTaskUnderstandingBuilder:
             comparison_enabled=comparison_enabled,
             growth_comparison_type=growth_comparison_type,
             growth_period_basis=growth_period_basis,
+            growth_intents=growth_intents,
+            growth_intent_source=growth_intent_source,
+            growth_intent_diagnostics=growth_intent_diagnostics,
             ambiguities=ambiguities,
             missing_information=missing_information,
             planning_readiness=planning_readiness,
@@ -253,6 +268,143 @@ class FinancialTaskUnderstandingBuilder:
                 objectives.append("comprehensive")
 
         return objectives
+
+    def _extract_growth_intents(
+        self,
+        question: str,
+        period_range: PeriodResolution | None,
+    ) -> tuple[
+        list[GrowthComparisonIntent],
+        str,
+        list[str],
+    ]:
+        """Return explicit growth intents, their source, and diagnostics.
+
+        "同比和环比" means the caller wants two independent comparisons, not a
+        conflict. A true conflict phrase such as "二选一" must be clarified
+        instead of silently choosing one comparison.
+        """
+        text = question.casefold()
+        has_yoy = (
+            "同比" in text
+            or re.search(r"\b(?:yoy|year[-_ ]over[-_ ]year)\b", text) is not None
+        )
+        has_qoq = (
+            "环比" in text
+            or "相邻期间" in text
+            or re.search(r"\b(?:qoq|quarter[-_ ]over[-_ ]quarter|sequential)\b", text)
+            is not None
+        )
+        has_cumulative_yoy = (
+            ("累计" in text and "同比" in text)
+            or "年初至今同比" in text
+            or re.search(r"\b(?:ytd[_ -]?yoy|year[-_ ]to[-_ ]date[_ -]?yoy)\b", text)
+            is not None
+        )
+        has_sequential_cumulative = (
+            ("累计" in text and ("环比" in text or "上一报告期" in text))
+            or re.search(
+                r"\b(?:sequential[_ -]?cumulative|cumulative[_ -]?qoq)\b",
+                text,
+            )
+            is not None
+        )
+        has_conflict = has_yoy and has_qoq and any(
+            phrase in text
+            for phrase in ("二选一", "不能同时", "只选一个", "口径冲突")
+        )
+        is_ambiguous = (
+            has_yoy
+            and has_qoq
+            and not has_conflict
+            and ("还是" in text or ("或" in text and "和" not in text))
+        )
+
+        if has_conflict:
+            primary_comparison, primary_basis = self._extract_growth_semantics(
+                question,
+                period_range,
+            )
+            return (
+                [GrowthComparisonIntent(
+                    comparison_type=primary_comparison,
+                    period_basis=primary_basis,
+                    source="conflict",
+                )],
+                "conflict",
+                ["GROWTH_COMPARISON_CONFLICT"],
+            )
+        if is_ambiguous:
+            return (
+                [],
+                "ambiguous",
+                ["GROWTH_COMPARISON_AMBIGUOUS"],
+            )
+
+        intents: list[GrowthComparisonIntent] = []
+        if has_cumulative_yoy:
+            intents.append(GrowthComparisonIntent(
+                comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+                period_basis=PeriodBasisType.CUMULATIVE,
+                source="explicit",
+            ))
+        if has_yoy and not has_cumulative_yoy:
+            intents.append(self._intent_for_comparison(
+                PeriodComparisonType.YEAR_OVER_YEAR,
+                period_range,
+            ))
+        if has_sequential_cumulative:
+            intents.append(GrowthComparisonIntent(
+                comparison_type=PeriodComparisonType.SEQUENTIAL,
+                period_basis=PeriodBasisType.CUMULATIVE,
+                source="explicit",
+            ))
+        if has_qoq:
+            intents.append(self._intent_for_comparison(
+                PeriodComparisonType.SEQUENTIAL,
+                period_range,
+            ))
+
+        unique_intents: list[GrowthComparisonIntent] = []
+        seen: set[tuple[str, str]] = set()
+        for intent in intents:
+            key = (intent.comparison_type.value, intent.period_basis.value)
+            if key not in seen:
+                unique_intents.append(intent)
+                seen.add(key)
+        if unique_intents:
+            return unique_intents, "explicit", []
+
+        default_intent = self._intent_for_comparison(
+            PeriodComparisonType.YEAR_OVER_YEAR,
+            period_range,
+        )
+        default_intent = default_intent.model_copy(update={"source": "default"})
+        return [default_intent], "default", []
+
+    def _intent_for_comparison(
+        self,
+        comparison_type: PeriodComparisonType,
+        period_range: PeriodResolution | None,
+    ) -> GrowthComparisonIntent:
+        has_subannual_period = bool(
+            period_range
+            and period_range.canonical_periods
+            and any(
+                self._is_subannual_period(period)
+                for period in period_range.canonical_periods
+            )
+        )
+        period_basis = (
+            PeriodBasisType.SINGLE_PERIOD
+            if has_subannual_period
+            else PeriodBasisType.CUMULATIVE
+        )
+        return GrowthComparisonIntent(
+            comparison_type=comparison_type,
+            period_basis=period_basis,
+            source="default",
+        )
 
     def _extract_growth_semantics(
         self,

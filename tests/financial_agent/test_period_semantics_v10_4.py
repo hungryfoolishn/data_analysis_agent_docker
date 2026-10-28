@@ -25,6 +25,7 @@ from langgraph_langchain.runtime.financial import (
 from langgraph_langchain.runtime.financial.period import (
     PeriodBasisType,
     PeriodComparisonType,
+    PeriodNormalizer,
 )
 from langgraph_langchain.runtime.financial_agent import (
     ExecutionPlanBuilder,
@@ -321,6 +322,132 @@ def test_growth_intent_end_to_end_uses_auditable_comparison_contract():
         )
         assert evidence.formula == calculation.formula
         assert evidence.source_ids == calculation.source_ids
+
+
+def test_simultaneous_yoy_and_qoq_create_independent_growth_tasks():
+    service = _growth_intent_service()
+    question = "分析贵州茅台 2023Q2 收入同比和环比增长率"
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(question)
+
+    assert understanding.growth_intent_source == "explicit"
+    assert [
+        (item.comparison_type, item.period_basis)
+        for item in understanding.growth_intents
+    ] == [
+        (PeriodComparisonType.YEAR_OVER_YEAR, PeriodBasisType.SINGLE_PERIOD),
+        (PeriodComparisonType.SEQUENTIAL, PeriodBasisType.SINGLE_PERIOD),
+    ]
+
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(service),
+    ).build(understanding, plan_id="plan_growth_multi_intent")
+
+    assert plan.metadata["growth_intent_source"] == "explicit"
+    assert len(plan.metadata["growth_intents"]) == 2
+    growth_tasks = [
+        task for task in plan.tasks if task.metric_id == "revenue_growth"
+    ]
+    assert len(growth_tasks) == 2
+    assert {
+        task.inputs["growth_comparison_variant"]
+        for task in growth_tasks
+    } == {
+        "year_over_year:single_period",
+        "sequential:single_period",
+    }
+    assert all(
+        task.inputs["previous_period"] == "2022Q2"
+        for task in growth_tasks
+        if task.inputs["growth_comparison_type"] == "year_over_year"
+    )
+    assert all(
+        task.inputs["previous_period"] == "2023Q1"
+        for task in growth_tasks
+        if task.inputs["growth_comparison_type"] == "sequential"
+    )
+
+    result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(service),
+    ).execute_plan(plan, understanding=understanding)
+
+    assert result.status == RuntimeExecutionStatus.SUCCEEDED
+    growth_results = [
+        item for item in result.task_results if item.metric_id == "revenue_growth"
+    ]
+    assert len(growth_results) == 2
+    assert {
+        item.metadata["growth_comparison_variant"]
+        for item in growth_results
+    } == {
+        "year_over_year:single_period",
+        "sequential:single_period",
+    }
+    assert all(item.status == ExecutionStatus.SUCCEEDED for item in growth_results)
+    growth_calculations = [
+        item.result
+        for item in result.analysis_result.calculations
+        if item.metric_id == "revenue_growth"
+    ]
+    assert len(growth_calculations) == 2
+    assert all(value == pytest.approx(20.0) for value in growth_calculations)
+
+
+def test_growth_intent_default_is_explicit_and_recorded():
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 收入增长情况"
+    )
+    assert understanding.growth_intent_source == "default"
+    assert understanding.growth_comparison_type == PeriodComparisonType.YEAR_OVER_YEAR
+    assert understanding.growth_period_basis == PeriodBasisType.SINGLE_PERIOD
+
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_growth_intent_service()),
+    ).build(understanding, plan_id="plan_growth_default")
+    assert plan.metadata["growth_intent_source"] == "default"
+    assert plan.metadata["growth_intents"] == [{
+        "comparison_type": "year_over_year",
+        "period_basis": "single_period",
+        "source": "default",
+    }]
+
+
+def test_conflicting_growth_comparison_requires_clarification():
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 收入增长率，同比和环比二选一"
+    )
+    assert "GROWTH_COMPARISON_CONFLICT" in understanding.growth_intent_diagnostics
+    assert understanding.growth_intent_source == "conflict"
+
+
+def test_ambiguous_growth_comparison_requires_clarification():
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 收入增长率，同比还是环比"
+    )
+    assert "GROWTH_COMPARISON_AMBIGUOUS" in understanding.growth_intent_diagnostics
+    assert understanding.growth_intent_source == "ambiguous"
+    assert understanding.growth_intents == []
+
+
+def test_growth_comparison_period_boundaries_are_explicit():
+    normalizer = PeriodNormalizer()
+    expected = {
+        ("2023Q1", PeriodComparisonType.YEAR_OVER_YEAR): "2022Q1",
+        ("2023Q1", PeriodComparisonType.SEQUENTIAL): "2022Q4",
+        ("2023Q2", PeriodComparisonType.YEAR_OVER_YEAR): "2022Q2",
+        ("2023Q2", PeriodComparisonType.SEQUENTIAL): "2023Q1",
+        ("2023Q3", PeriodComparisonType.YEAR_OVER_YEAR): "2022Q3",
+        ("2023Q3", PeriodComparisonType.SEQUENTIAL): "2023Q2",
+        ("2023Q4", PeriodComparisonType.YEAR_OVER_YEAR): "2022Q4",
+        ("2023Q4", PeriodComparisonType.SEQUENTIAL): "2023Q3",
+        ("2023H1", PeriodComparisonType.YEAR_OVER_YEAR): "2022H1",
+        ("2023H2", PeriodComparisonType.YEAR_OVER_YEAR): "2022H2",
+        ("2023H2", PeriodComparisonType.SEQUENTIAL): "2023H1",
+    }
+    for (period, comparison_type), expected_period in expected.items():
+        parsed = normalizer.parse(period)
+        assert parsed.comparison_period(comparison_type).normalized_period == (
+            expected_period
+        )
 
 
 def test_quarterly_average_balance_golden_values():

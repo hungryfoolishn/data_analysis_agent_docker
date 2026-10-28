@@ -208,6 +208,93 @@ PYTHONPATH=. pytest -q
 # 912 passed, 11 warnings, 4 subtests passed
 ```
 
+
+## 阶段 3：同比 / 环比多意图与歧义治理
+
+### 多任务语义
+
+`FinancialTaskUnderstanding` 新增：
+
+```text
+growth_intents
+growth_intent_source
+growth_intent_diagnostics
+```
+
+当用户同时要求同比和环比时，系统生成两个独立的增长率任务：
+
+```text
+year_over_year + single_period
+sequential     + single_period
+```
+
+每个任务使用：
+
+```text
+growth_comparison_variant
+```
+
+作为唯一比较口径签名，避免同公司、同期间、同指标任务被误判为重复。
+
+### 默认口径策略
+
+- 显式季度 / 半年度 + 未说明同比 / 环比：
+  - 默认 `year_over_year + single_period`
+  - `growth_intent_source = default`
+- 年度增长：
+  - 默认 `year_over_year + cumulative`
+- 实际采用的口径会写入计划、任务和结果元数据。
+
+### 冲突与歧义
+
+- `同比和环比`：
+  - 不是冲突，生成两个任务。
+- `同比和环比二选一` / `口径冲突`：
+  - 写入 `GROWTH_COMPARISON_CONFLICT`。
+- `同比还是环比`：
+  - 写入 `GROWTH_COMPARISON_AMBIGUOUS`。
+  - 不会静默选择其中一个口径。
+
+### 旧 workflow 模式边界
+
+多增长率意图必须走 DAG。旧批量工作流遇到多个增长率意图时返回结构化失败，避免把同一口径结果错误映射到多个任务。
+
+### 新增验证
+
+- 同时同比 / 环比生成两个独立增长率任务。
+- 每个任务有独立 `growth_comparison_variant`、`previous_period`、结果和元数据。
+- 默认口径显式记录为 `default`。
+- 冲突和歧义写入诊断。
+- Q1–Q4、H1/H2 的同比 / 环比基期边界测试。
+- 依赖图按 `company + period + metric + comparison_variant` 建键。
+
+
+### 阶段 3 回归结果
+
+```bash
+PYTHONPATH=. pytest \
+  tests/financial_agent/test_period_semantics_v10_4.py \
+  tests/financial_agent/test_task_executor.py \
+  tests/financial_agent/test_scheduler.py \
+  tests/financial_agent/test_execution_plan.py \
+  tests/financial_agent/test_runtime_integration.py \
+  tests/financial_agent/test_tool_execution.py \
+  -q
+# 93 passed
+
+PYTHONPATH=. pytest \
+  tests/financial/test_runtime_v9_semantics.py \
+  tests/financial/test_runtime_v9_period_hardening.py \
+  tests/financial/test_runtime_v9.py \
+  tests/financial/test_runtime_v9_hardening.py \
+  tests/financial/test_runtime_v9_golden.py \
+  -q
+# 60 passed
+
+PYTHONPATH=. pytest -q
+# 917 passed, 26 warnings, 4 subtests passed
+```
+
 ## 边界与后续（V10.4 阶段 2+）
 
 - 季度利润表仍按累计值口径读取；`growth_period_basis=single_period` 时
