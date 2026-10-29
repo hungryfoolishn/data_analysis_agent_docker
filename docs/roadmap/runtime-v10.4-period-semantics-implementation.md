@@ -479,3 +479,56 @@ PYTHONPATH=. pytest -q
   LLM 生成澄清话术，必须保留“无财务数字”的硬约束。
 
 ---
+
+## Runtime V10.4 阶段 5 补充：口径否定表达解析
+
+### 问题
+
+累计上下文判断原先使用 `"累计" in text`，否定表达会被误读：
+
+- “不要累计，按单季度收入同比分析” → 仍被识别为累计口径；
+- “不是累计口径，计算单季度环比” → 同样误判。
+
+### 修复（`understanding.py`）
+
+新增 `_resolve_period_basis_context()`，以否定窗口（关键词前 4 个字符内的
+否定词：不要/不是/非/别/无需/不用/排除）区分正向与否定用法，并按以下优先级：
+
+1. **矛盾表述请求澄清**（返回 `ambiguous` +
+   `GROWTH_PERIOD_BASIS_AMBIGUOUS`）：
+   - 同一关键词既被正向又被否定（“不是累计口径，按累计同比”）；
+   - 双向否定（“不要累计也不要单季”）。
+2. **正向累计关键词优先**：“累计/年初至今” → 累计口径；
+3. **否定累计或正向单季** → 单期口径；
+4. **否定单季** → 累计口径；
+5. 无显式关键词时回退到子年度期间启发式（原行为不变）。
+
+`_extract_growth_intents` 使用该覆盖值生成意图；矛盾时返回
+`ambiguous`，由计划层继续阻断。旧的单意图路径
+`_extract_growth_semantics` 同步应用同一覆盖，保持两条路径语义一致。
+
+### 新增测试
+
+- `test_negated_cumulative_keyword_resolves_to_single_period`：
+  “不要累计”/“不是累计口径”/“非累计” 三种否定表达均解析为单期口径，
+  且同比/环比/多意图组合正确；
+- `test_negated_single_period_keyword_resolves_to_cumulative`：
+  “不要单季度口径，按累计计算” → 累计口径；
+- `test_negated_cumulative_intent_executes_single_period_golden_value`：
+  否定累计的端到端执行命中单期同比黄金值 42.857143%
+  （current=500，previous=350），比较基期 2022Q2；
+- `test_contradictory_period_basis_wording_requires_clarification`：
+  “不要累计也不要单季” → `NEEDS_CLARIFICATION` → `BLOCKED` 计划
+  （含 `GROWTH_PERIOD_BASIS_AMBIGUOUS`）→ 结构化 BLOCKED 执行结果。
+
+### 回归结果
+
+```bash
+PYTHONPATH=. pytest tests/financial_agent -q
+# 176 passed
+
+PYTHONPATH=. pytest -q
+# 全量回归见验收记录
+```
+
+---

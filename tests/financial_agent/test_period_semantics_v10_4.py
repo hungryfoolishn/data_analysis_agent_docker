@@ -1131,3 +1131,93 @@ def test_missing_growth_base_period_matrix_is_unavailable():
     assert control_outcome.status == ExecutionStatus.SUCCEEDED
     # (800 - 300) / 300 = 166.666667%
     assert control_outcome.output.calculation.result == pytest.approx(166.666667)
+
+
+def test_negated_cumulative_keyword_resolves_to_single_period():
+    """Negated cumulative wording must never be read as cumulative basis."""
+    builder = FinancialTaskUnderstandingBuilder(["贵州茅台"])
+    cases = [
+        (
+            "分析贵州茅台 2023Q2 单季度收入同比增长率，不要累计",
+            {PeriodComparisonType.YEAR_OVER_YEAR},
+        ),
+        (
+            "分析贵州茅台 2023Q2 收入环比增长率，不是累计口径，按单季度计算",
+            {PeriodComparisonType.SEQUENTIAL},
+        ),
+        (
+            "分析贵州茅台 2023Q2 非累计收入同比和环比增长率",
+            {PeriodComparisonType.YEAR_OVER_YEAR, PeriodComparisonType.SEQUENTIAL},
+        ),
+    ]
+    for question, expected_comparisons in cases:
+        understanding = builder.build(question)
+        assert understanding.growth_intent_source == "explicit", question
+        assert {
+            (item.comparison_type, item.period_basis)
+            for item in understanding.growth_intents
+        } == {
+            (comparison, PeriodBasisType.SINGLE_PERIOD)
+            for comparison in expected_comparisons
+        }, question
+
+
+def test_negated_single_period_keyword_resolves_to_cumulative():
+    """Negated single-period wording resolves to the cumulative basis."""
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 收入同比增长率，不要单季度口径，按累计计算"
+    )
+    assert understanding.growth_intent_source == "explicit"
+    assert [
+        (item.comparison_type, item.period_basis)
+        for item in understanding.growth_intents
+    ] == [(PeriodComparisonType.YEAR_OVER_YEAR, PeriodBasisType.CUMULATIVE)]
+
+
+def test_negated_cumulative_intent_executes_single_period_golden_value():
+    """A negated-cumulative question computes the single-quarter golden value."""
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 单季度收入同比增长率，不要累计"
+    )
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_growth_basis_service()),
+    ).build(understanding, plan_id="plan_negated_cumulative")
+    growth_tasks = [
+        task for task in plan.tasks if task.metric_id == "revenue_growth"
+    ]
+    assert len(growth_tasks) == 1
+    assert growth_tasks[0].inputs["growth_period_basis"] == "single_period"
+    assert growth_tasks[0].inputs["previous_period"] == "2022Q2"
+
+    result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(_growth_basis_service()),
+    ).execute_plan(plan, understanding=understanding)
+    assert result.status == RuntimeExecutionStatus.SUCCEEDED
+    outputs = _growth_results_by_variant(result)
+    # yoy single-period = (500 - 350) / 350 = 42.857143%
+    calculation = outputs["同比/单期"]["calculation"]
+    assert calculation.result == pytest.approx(42.857143)
+    assert calculation.inputs["current"] == pytest.approx(500.0)
+    assert calculation.inputs["previous"] == pytest.approx(350.0)
+
+
+def test_contradictory_period_basis_wording_requires_clarification():
+    """Contradictory basis wording must block the plan, not guess."""
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 收入同比增长率，不要累计也不要单季"
+    )
+    assert understanding.planning_readiness == PlanningReadiness.NEEDS_CLARIFICATION
+    assert understanding.growth_intent_source == "ambiguous"
+    assert "GROWTH_PERIOD_BASIS_AMBIGUOUS" in understanding.growth_intent_diagnostics
+
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_growth_intent_service()),
+    ).build(understanding, plan_id="plan_basis_ambiguous")
+    assert plan.status == ExecutionPlanStatus.BLOCKED
+    assert plan.tasks == []
+    assert "GROWTH_PERIOD_BASIS_AMBIGUOUS" in plan.diagnostics
+
+    result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(_growth_intent_service()),
+    ).execute_plan(plan, understanding=understanding)
+    _assert_structured_blocked_result(result, plan, "ambiguous")

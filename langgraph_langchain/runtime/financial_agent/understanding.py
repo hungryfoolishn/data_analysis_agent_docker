@@ -75,6 +75,11 @@ _OBJECTIVE_METRICS = {
 }
 
 
+_GROWTH_BASIS_NEGATIONS = ("不要", "不是", "非", "别", "无需", "不用", "排除")
+_CUMULATIVE_KEYWORDS = ("累计", "年初至今")
+_SINGLE_PERIOD_KEYWORDS = ("单季", "单期")
+
+
 _COMPANY_ALIASES = {
     "贵州茅台": ("Guizhou Moutai", "Kweichow Moutai", "Moutai"),
     "五粮液": ("Wuliangye",),
@@ -272,6 +277,54 @@ class FinancialTaskUnderstandingBuilder:
 
         return objectives
 
+    @staticmethod
+    def _keyword_negation_hits(text: str, keywords: tuple[str, ...]) -> tuple[bool, bool]:
+        """Scan keyword occurrences for negated vs positive usage."""
+        has_positive = False
+        has_negated = False
+        for keyword in keywords:
+            for match in re.finditer(re.escape(keyword), text):
+                prefix = text[max(0, match.start() - 4):match.start()]
+                if any(negation in prefix for negation in _GROWTH_BASIS_NEGATIONS):
+                    has_negated = True
+                else:
+                    has_positive = True
+        return has_positive, has_negated
+
+    @classmethod
+    def _resolve_period_basis_context(
+        cls,
+        text: str,
+    ) -> tuple[PeriodBasisType | None, bool]:
+        """Resolve explicit cumulative/single-period wording with negations.
+
+        Explicit user wording always wins over generic keyword matching and
+        over the subannual-period heuristic.  Contradictory wording (both
+        wanting and rejecting the same basis) is reported as ambiguous so the
+        caller requests clarification instead of guessing a basis.
+        """
+        cumulative_positive, cumulative_negated = cls._keyword_negation_hits(
+            text,
+            _CUMULATIVE_KEYWORDS,
+        )
+        single_positive, single_negated = cls._keyword_negation_hits(
+            text,
+            _SINGLE_PERIOD_KEYWORDS,
+        )
+        # Contradictions: wanting and rejecting the same basis, or rejecting
+        # both bases ("不要累计也不要单季") — both must request clarification.
+        if (cumulative_positive and cumulative_negated) or (
+            single_positive and single_negated
+        ) or (cumulative_negated and single_negated):
+            return None, True
+        if cumulative_positive:
+            return PeriodBasisType.CUMULATIVE, False
+        if cumulative_negated or single_positive:
+            return PeriodBasisType.SINGLE_PERIOD, False
+        if single_negated:
+            return PeriodBasisType.CUMULATIVE, False
+        return None, False
+
     def _extract_growth_intents(
         self,
         question: str,
@@ -337,8 +390,16 @@ class FinancialTaskUnderstandingBuilder:
             )
 
         intents: list[GrowthComparisonIntent] = []
-        has_cumulative_context = "累计" in text or "年初至今" in text
-        if has_cumulative_context:
+        basis_override, basis_ambiguous = self._resolve_period_basis_context(text)
+        if basis_ambiguous:
+            # Contradictory period-basis wording must not be silently resolved;
+            # request clarification instead of guessing a financial basis.
+            return (
+                [],
+                "ambiguous",
+                ["GROWTH_PERIOD_BASIS_AMBIGUOUS"],
+            )
+        if basis_override == PeriodBasisType.CUMULATIVE:
             # A cumulative qualifier applies to every requested comparison.
             # Never mix it with single-period variants for the same question.
             if has_yoy:
@@ -351,6 +412,21 @@ class FinancialTaskUnderstandingBuilder:
                 intents.append(GrowthComparisonIntent(
                     comparison_type=PeriodComparisonType.SEQUENTIAL,
                     period_basis=PeriodBasisType.CUMULATIVE,
+                    source="explicit",
+                ))
+        elif basis_override == PeriodBasisType.SINGLE_PERIOD:
+            # Explicitly requested single-period wording wins over the
+            # subannual-period heuristic and any cumulative keyword.
+            if has_yoy:
+                intents.append(GrowthComparisonIntent(
+                    comparison_type=PeriodComparisonType.YEAR_OVER_YEAR,
+                    period_basis=PeriodBasisType.SINGLE_PERIOD,
+                    source="explicit",
+                ))
+            if has_qoq:
+                intents.append(GrowthComparisonIntent(
+                    comparison_type=PeriodComparisonType.SEQUENTIAL,
+                    period_basis=PeriodBasisType.SINGLE_PERIOD,
                     source="explicit",
                 ))
         else:
@@ -452,6 +528,14 @@ class FinancialTaskUnderstandingBuilder:
             )
         )
 
+        basis_override, basis_ambiguous = self._resolve_period_basis_context(text)
+        if not basis_ambiguous and basis_override is not None:
+            comparison_type = (
+                PeriodComparisonType.SEQUENTIAL
+                if has_qoq
+                else PeriodComparisonType.YEAR_OVER_YEAR
+            )
+            return comparison_type, basis_override
         if has_cumulative_yoy or has_sequential_cumulative:
             if has_cumulative_yoy:
                 return PeriodComparisonType.YEAR_OVER_YEAR, PeriodBasisType.CUMULATIVE
