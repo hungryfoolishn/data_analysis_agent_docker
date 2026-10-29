@@ -532,3 +532,38 @@ PYTHONPATH=. pytest -q
 ```
 
 ---
+
+## Runtime V10.4 阶段 5 补充 2：冲突表达覆盖扩展
+
+### 问题（实测复现）
+
+冲突短语列表原先为（“二选一”“不能同时”“只选一个”“口径冲突”），
+以下表达未被识别，会错误生成多意图任务而非阻断：
+
+- “不要同时计算同比和环比。” → 误判为 explicit 多意图；
+- “同比、环比只能保留一种。” → 误判为 explicit 多意图。
+
+“我还没确定是同比还是环比。” 已由歧义检测（“还是”）正确覆盖。
+
+### 修复
+
+冲突短语提取为模块常量 `_GROWTH_CONFLICT_PHRASES`，新增
+“不要同时”“只能保留一种”“只保留一种”“保留一种”。
+
+### 新增测试
+
+- `test_expanded_conflict_phrases_block_plan_execution`：三个新表达
+  （含既有“只保留一种”）全部走
+  conflict → `BLOCKED` 计划 → 结构化阻断结果的全链路；
+- `test_unresolved_comparison_wording_requires_clarification`：
+  “还没确定”表述进入澄清流程，不生成任务。
+
+### 回归结果
+
+```bash
+PYTHONPATH=. pytest tests/financial_agent -q
+# 178 passed
+
+PYTHONPATH=. pytest -q
+# 全量回归见验收记录
+```

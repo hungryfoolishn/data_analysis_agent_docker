@@ -76,6 +76,16 @@ _OBJECTIVE_METRICS = {
 
 
 _GROWTH_BASIS_NEGATIONS = ("不要", "不是", "非", "别", "无需", "不用", "排除")
+_GROWTH_CONFLICT_PHRASES = (
+    "二选一",
+    "不能同时",
+    "不要同时",
+    "只选一个",
+    "只保留一种",
+    "只能保留一种",
+    "保留一种",
+    "口径冲突",
+)
 _CUMULATIVE_KEYWORDS = ("累计", "年初至今")
 _SINGLE_PERIOD_KEYWORDS = ("单季", "单期")
 
@@ -367,7 +377,7 @@ class FinancialTaskUnderstandingBuilder:
         )
         has_conflict = has_yoy and has_qoq and any(
             phrase in text
-            for phrase in ("二选一", "不能同时", "只选一个", "口径冲突")
+            for phrase in _GROWTH_CONFLICT_PHRASES
         )
         is_ambiguous = (
             has_yoy

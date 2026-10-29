@@ -1132,7 +1132,6 @@ def test_missing_growth_base_period_matrix_is_unavailable():
     # (800 - 300) / 300 = 166.666667%
     assert control_outcome.output.calculation.result == pytest.approx(166.666667)
 
-
 def test_negated_cumulative_keyword_resolves_to_single_period():
     """Negated cumulative wording must never be read as cumulative basis."""
     builder = FinancialTaskUnderstandingBuilder(["贵州茅台"])
@@ -1221,3 +1220,49 @@ def test_contradictory_period_basis_wording_requires_clarification():
         FinancialAnalysisWorkflow(_growth_intent_service()),
     ).execute_plan(plan, understanding=understanding)
     _assert_structured_blocked_result(result, plan, "ambiguous")
+
+def test_expanded_conflict_phrases_block_plan_execution():
+    """Additional conflict phrasings must block instead of multi-intent."""
+    builder = FinancialTaskUnderstandingBuilder(["贵州茅台"])
+    conflict_questions = [
+        "分析贵州茅台 2023Q2 收入增长率，不要同时计算同比和环比。",
+        "分析贵州茅台 2023Q2 收入增长率，同比、环比只能保留一种。",
+        "分析贵州茅台 2023Q2 收入增长率，同比和环比只保留一种。",
+    ]
+    for question in conflict_questions:
+        understanding = builder.build(question)
+        assert understanding.growth_intent_source == "conflict", question
+        assert "GROWTH_COMPARISON_CONFLICT" in (
+            understanding.growth_intent_diagnostics
+        ), question
+        assert understanding.growth_intents == [], question
+        assert understanding.planning_readiness == (
+            PlanningReadiness.NEEDS_CLARIFICATION
+        ), question
+
+        plan = ExecutionPlanBuilder(
+            semantic_resolver=FinancialSemanticResolver(_growth_intent_service()),
+        ).build(understanding, plan_id=f"plan_conflict_{abs(hash(question)) % 10000}")
+        assert plan.status == ExecutionPlanStatus.BLOCKED, question
+        assert plan.tasks == [], question
+
+        result = FinancialRuntimeExecutor(
+            FinancialAnalysisWorkflow(_growth_intent_service()),
+        ).execute_plan(plan, understanding=understanding)
+        _assert_structured_blocked_result(result, plan, "conflict")
+
+
+def test_unresolved_comparison_wording_requires_clarification():
+    """"还没确定"-style wording enters the clarification flow, not execution."""
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "我还没确定是同比还是环比，先分析贵州茅台 2023Q2 收入。"
+    )
+    assert understanding.growth_intent_source == "ambiguous"
+    assert "GROWTH_COMPARISON_AMBIGUOUS" in understanding.growth_intent_diagnostics
+    assert understanding.growth_intents == []
+
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_growth_intent_service()),
+    ).build(understanding, plan_id="plan_unresolved_comparison")
+    assert plan.status == ExecutionPlanStatus.BLOCKED
+    assert plan.tasks == []
