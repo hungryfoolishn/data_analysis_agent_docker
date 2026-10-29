@@ -75,6 +75,12 @@ _QUARTER_BALANCES = {
         "fixed_assets": 92.0, "short_term_debt": 42.0, "long_term_debt": 42.0,
         "current_assets": 185.0, "current_liabilities": 92.0,
     },
+    "2022Q2": {
+        "total_assets": 420.0, "total_liabilities": 195.0, "total_equity": 220.0,
+        "cash": 115.0, "accounts_receivable": 12.0, "inventory": 22.0,
+        "fixed_assets": 91.0, "short_term_debt": 41.0, "long_term_debt": 41.0,
+        "current_assets": 175.0, "current_liabilities": 88.0,
+    },
     "2022Q4": {
         "total_assets": 400.0, "total_liabilities": 200.0, "total_equity": 200.0,
         "cash": 125.0, "accounts_receivable": 10.0, "inventory": 20.0,
@@ -473,10 +479,10 @@ def test_growth_intent_conflict_blocks_plan_execution():
     assert plan.metadata["planning_readiness"] == "NEEDS_CLARIFICATION"
     assert plan.metadata["growth_intent_source"] == "conflict"
 
-    with pytest.raises(RuntimeIntegrationError, match="must be PENDING"):
-        FinancialRuntimeExecutor(
-            FinancialAnalysisWorkflow(_growth_intent_service()),
-        ).execute_plan(plan, understanding=understanding)
+    result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(_growth_intent_service()),
+    ).execute_plan(plan, understanding=understanding)
+    _assert_structured_blocked_result(result, plan, "conflict")
 
 
 def test_growth_intent_ambiguity_blocks_plan_execution():
@@ -499,10 +505,10 @@ def test_growth_intent_ambiguity_blocks_plan_execution():
     assert plan.metadata["planning_readiness"] == "NEEDS_CLARIFICATION"
     assert plan.metadata["growth_intent_source"] == "ambiguous"
 
-    with pytest.raises(RuntimeIntegrationError, match="must be PENDING"):
-        FinancialRuntimeExecutor(
-            FinancialAnalysisWorkflow(_growth_intent_service()),
-        ).execute_plan(plan, understanding=understanding)
+    result = FinancialRuntimeExecutor(
+        FinancialAnalysisWorkflow(_growth_intent_service()),
+    ).execute_plan(plan, understanding=understanding)
+    _assert_structured_blocked_result(result, plan, "ambiguous")
 
 
 def test_cumulative_yoy_and_qoq_generate_only_cumulative_intents():
@@ -744,3 +750,384 @@ def test_end_to_end_quarter_execution_keeps_period_and_evidence_consistent():
         assert len(resolved_sources) > 0
         for source in resolved_sources:
             assert source.company_id == "600519"
+
+def _assert_structured_blocked_result(result, plan, expected_intent_source):
+    """Phase-5 contract: blocked plans produce structured results, not raises."""
+    assert result.status == RuntimeExecutionStatus.BLOCKED
+    assert result.task_results == []
+    assert result.succeeded_count == 0
+    assert result.unavailable_count == 0
+    assert result.failed_count == 0
+    assert result.blocked_count == 0
+    assert result.analysis_result is None
+    assert result.metadata["blocked_before_execution"] is True
+    assert result.metadata["growth_intent_source"] == expected_intent_source
+    assert "GROWTH_COMPARISON_REQUIRES_CLARIFICATION" in (
+        result.metadata["blocking_diagnostics"]
+    )
+    assert plan.status == ExecutionPlanStatus.BLOCKED
+    assert plan.finished_at is not None
+    # The blocked report must explain itself and never fake a conclusion.
+    assert "财务分析已阻断" in result.report_markdown
+    assert "未生成任何财务计算结果" in result.report_markdown
+    assert "同比" in result.report_markdown and "环比" in result.report_markdown
+
+
+def test_blocked_intent_structured_result_in_both_execution_modes():
+    understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 收入增长率，同比和环比二选一"
+    )
+    plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(_growth_intent_service()),
+    ).build(understanding, plan_id="plan_growth_conflict_structured")
+    workflow_obj = FinancialAnalysisWorkflow(_growth_intent_service())
+
+    for execution_mode in ("dag", "workflow"):
+        plan_copy = plan.model_copy(deep=True)
+        plan_copy.status = ExecutionPlanStatus.BLOCKED
+        result = FinancialRuntimeExecutor(
+            workflow_obj,
+            execution_mode=execution_mode,
+        ).execute_plan(plan_copy, understanding=understanding)
+        _assert_structured_blocked_result(result, plan_copy, "conflict")
+
+
+# ---------------------------------------------------------------------------
+# V10.4 阶段 5：增长率基期、累计口径与多意图证据一致性验收
+# ---------------------------------------------------------------------------
+
+# Cumulative revenue values. Single-quarter values are derived:
+# 2022Q1=250, 2022Q2=350, 2023Q1=300, 2023Q2=500.
+_GROWTH_BASIS_REVENUE = {
+    "2022Q1": 250.0,
+    "2022Q2": 600.0,
+    "2023Q1": 300.0,
+    "2023Q2": 800.0,
+}
+
+
+def _growth_basis_service() -> FinancialDataService:
+    return FinancialDataService(
+        companies=[_company()],
+        income_statements=[
+            _income(
+                period,
+                revenue=revenue,
+                cost_of_revenue=revenue * 0.3,
+                gross_profit=revenue * 0.7,
+                operating_profit=revenue * 0.2,
+                net_profit=revenue * 0.2,
+                net_profit_attributable=revenue * 0.19,
+            )
+            for period, revenue in _GROWTH_BASIS_REVENUE.items()
+        ],
+        balance_sheets=[_balance_for(period) for period in _GROWTH_BASIS_REVENUE],
+        cash_flows=[_cash(period) for period in _GROWTH_BASIS_REVENUE],
+    )
+
+
+def _growth_results_by_variant(result, *, plan_index=0):
+    """Map executed growth outputs by their comparison variant."""
+    outputs = {}
+    calculations = {
+        item.calculation_id: item
+        for item in result.analysis_result.calculations
+    }
+    verifications = {
+        item.verification_id: item
+        for item in result.analysis_result.verifications
+    }
+    evidence_items = {
+        item.evidence_id: item
+        for item in result.analysis_result.evidence
+    }
+    for task_result in result.task_results:
+        if task_result.metric_id != "revenue_growth":
+            continue
+        calculation = calculations[task_result.calculation_id]
+        # Formulas end with the comparison label, e.g. "（同比/累计）".
+        variant_label = calculation.formula.rsplit("（", 1)[-1].rstrip("）")
+        outputs[variant_label] = {
+            "task_id": f"plan{plan_index}:{task_result.execution_task_id}",
+            "task_result": task_result,
+            "calculation": calculation,
+            "verification": verifications[task_result.verification_id],
+            "evidence": evidence_items[task_result.evidence_id],
+        }
+    return outputs
+
+
+def _build_growth_variant_plans(service, plan_suffix):
+    """Build single-period and cumulative multi-intent growth plans."""
+    outputs = []
+    for index, question in enumerate([
+        "分析贵州茅台 2023Q2 收入同比和环比增长率",
+        "分析贵州茅台 2023Q2 累计收入同比和环比增长率",
+    ]):
+        understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+            question
+        )
+        plan = ExecutionPlanBuilder(
+            semantic_resolver=FinancialSemanticResolver(service),
+        ).build(
+            understanding,
+            plan_id=f"plan_{plan_suffix}_{index}",
+        )
+        outputs.append((understanding, plan))
+    return outputs
+
+
+def test_growth_comparison_matrix_golden_values():
+    """Cumulative and single-period yoy/qoq golden values, hand-computed.
+
+    Cumulative revenue data: 2022Q1=250, 2022Q2=600, 2023Q1=300, 2023Q2=800.
+    Derived single-quarter revenue: 2022Q1=250, 2022Q2=350,
+    2023Q1=300, 2023Q2=500.
+    """
+    service = _growth_basis_service()
+    workflow_obj = FinancialAnalysisWorkflow(service)
+    # Hand-computed golden values (percent):
+    #   yoy cumulative    = (800 - 600) / 600 = 33.333333%
+    #   qoq cumulative    = (800 - 300) / 300 = 166.666667%
+    #   yoy single-period = (500 - 350) / 350 = 42.857143%
+    #   qoq single-period = (500 - 300) / 300 = 66.666667%
+    expected = {
+        "同比/累计": 33.333333,
+        "环比/累计": 166.666667,
+        "同比/单期": 42.857143,
+        "环比/单期": 66.666667,
+    }
+    merged_outputs = {}
+    for plan_index, (understanding, plan) in enumerate(
+        _build_growth_variant_plans(service, "matrix_dag")
+    ):
+        result = FinancialRuntimeExecutor(workflow_obj).execute_plan(
+            plan,
+            understanding=understanding,
+        )
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+        merged_outputs.update(
+            _growth_results_by_variant(result, plan_index=plan_index)
+        )
+    assert set(merged_outputs) == set(expected)
+    for formula_label, expected_value in expected.items():
+        calculation = merged_outputs[formula_label]["calculation"]
+        verification = merged_outputs[formula_label]["verification"]
+        assert calculation.result == pytest.approx(expected_value), formula_label
+        assert verification.passed is True
+        assert verification.actual_value == pytest.approx(expected_value)
+
+    # Boundary: the legacy workflow mode refuses multi-intent plans explicitly
+    # instead of silently picking one comparison semantics.
+    multi_intent_understanding, multi_intent_plan = _build_growth_variant_plans(
+        service, "matrix_workflow_rejected"
+    )[0]
+    workflow_plan = multi_intent_plan.model_copy(deep=True)
+    workflow_plan.status = ExecutionPlanStatus.PENDING
+    workflow_result = FinancialRuntimeExecutor(
+        workflow_obj,
+        execution_mode="workflow",
+    ).execute_plan(workflow_plan, understanding=multi_intent_understanding)
+    assert workflow_result.status == RuntimeExecutionStatus.FAILED
+    assert all(
+        "Multiple growth comparison intents require DAG execution" in (
+            item.error or ""
+        )
+        for item in workflow_result.task_results
+    )
+
+    # Engine parity: a single-intent plan still computes identically in both
+    # execution modes (cumulative yoy golden value).
+    single_understanding = FinancialTaskUnderstandingBuilder(["贵州茅台"]).build(
+        "分析贵州茅台 2023Q2 累计收入同比增长率"
+    )
+    single_plan = ExecutionPlanBuilder(
+        semantic_resolver=FinancialSemanticResolver(service),
+    ).build(
+        single_understanding,
+        plan_id="plan_matrix_single_intent",
+    )
+    dag_single = FinancialRuntimeExecutor(workflow_obj).execute_plan(
+        single_plan,
+        understanding=single_understanding,
+    )
+    workflow_single_plan = single_plan.model_copy(deep=True)
+    workflow_single_plan.status = ExecutionPlanStatus.PENDING
+    workflow_single = FinancialRuntimeExecutor(
+        workflow_obj,
+        execution_mode="workflow",
+    ).execute_plan(workflow_single_plan, understanding=single_understanding)
+    for mode_result in (dag_single, workflow_single):
+        assert mode_result.status == RuntimeExecutionStatus.SUCCEEDED
+        outputs = _growth_results_by_variant(mode_result)
+        calculation = outputs["同比/累计"]["calculation"]
+        assert calculation.result == pytest.approx(33.333333)
+
+
+def test_cumulative_and_single_period_use_correct_comparison_bases():
+    """The four growth variants must compare against different baselines."""
+    service = _growth_basis_service()
+    merged_outputs = {}
+    merged_plan_tasks = {}
+    for plan_index, (understanding, plan) in enumerate(
+        _build_growth_variant_plans(service, "bases")
+    ):
+        result = FinancialRuntimeExecutor(
+            FinancialAnalysisWorkflow(service),
+        ).execute_plan(plan, understanding=understanding)
+        assert result.status == RuntimeExecutionStatus.SUCCEEDED
+        merged_outputs.update(
+            _growth_results_by_variant(result, plan_index=plan_index)
+        )
+        for task in plan.tasks:
+            if task.metric_id == "revenue_growth":
+                merged_plan_tasks[
+                    f"plan{plan_index}:{task.task_id}"
+                ] = task
+
+    # Baseline expectations from cumulative revenue data:
+    # yoy cumulative    -> 2022Q2 cumulative (600)
+    # qoq cumulative    -> 2023Q1 cumulative (300)
+    # yoy single-period -> 2022Q2 single quarter (600 - 250 = 350)
+    # qoq single-period -> 2023Q1 single quarter (300)
+    expected_variants = {
+        "同比/累计": {
+            "previous_period": "2022Q2",
+            "source_ids": {"income_2023Q2", "income_2022Q2"},
+            "current": 800.0,
+            "previous": 600.0,
+        },
+        "环比/累计": {
+            "previous_period": "2023Q1",
+            "source_ids": {"income_2023Q2", "income_2023Q1"},
+            "current": 800.0,
+            "previous": 300.0,
+        },
+        "同比/单期": {
+            "previous_period": "2022Q2",
+            "source_ids": {
+                "income_2023Q2", "income_2023Q1", "income_2022Q2", "income_2022Q1",
+            },
+            "current": 500.0,
+            "previous": 350.0,
+        },
+        "环比/单期": {
+            "previous_period": "2023Q1",
+            "source_ids": {"income_2023Q2", "income_2023Q1"},
+            "current": 500.0,
+            "previous": 300.0,
+        },
+    }
+    task_ids = set()
+    evidence_ids = set()
+    calculation_ids = set()
+    for formula_label, expected_values in expected_variants.items():
+        item = merged_outputs[formula_label]
+        task_result = item["task_result"]
+        calculation = item["calculation"]
+        evidence = item["evidence"]
+        verification = item["verification"]
+
+        task_ids.add(item["task_id"])
+        evidence_ids.add(evidence.evidence_id)
+        calculation_ids.add(calculation.calculation_id)
+
+        plan_task = merged_plan_tasks[item["task_id"]]
+        assert plan_task.inputs["previous_period"] == (
+            expected_values["previous_period"]
+        ), formula_label
+        assert set(calculation.source_ids) == expected_values["source_ids"]
+        assert calculation.inputs["current"] == pytest.approx(
+            expected_values["current"]
+        ), formula_label
+        assert calculation.inputs["previous"] == pytest.approx(
+            expected_values["previous"]
+        ), formula_label
+        assert verification.calculation_id == calculation.calculation_id
+        assert evidence.calculation_id == calculation.calculation_id
+        assert evidence.period == "2023Q2"
+        assert evidence.formula == calculation.formula
+
+    # Every growth intent is an independent task with independent evidence.
+    assert len(task_ids) == 4
+    assert len(evidence_ids) == 4
+    assert len(calculation_ids) == 4
+
+
+def test_missing_growth_base_period_matrix_is_unavailable():
+    """Annual, quarterly, and half-year growth without baselines is unavailable."""
+    missing_base_revenue = {
+        "2023Q1": 300.0,
+        "2023Q2": 800.0,
+        "2023H1": 460.0,
+        "2023": 1500.0,
+    }
+    service = FinancialDataService(
+        companies=[_company()],
+        income_statements=[
+            _income(
+                period,
+                revenue=revenue,
+                cost_of_revenue=revenue * 0.3,
+                gross_profit=revenue * 0.7,
+                operating_profit=revenue * 0.2,
+                net_profit=revenue * 0.2,
+                net_profit_attributable=revenue * 0.19,
+            )
+            for period, revenue in missing_base_revenue.items()
+        ],
+        balance_sheets=[_balance_for(period) for period in missing_base_revenue],
+        cash_flows=[_cash(period) for period in missing_base_revenue],
+    )
+    workflow_obj = FinancialAnalysisWorkflow(service)
+    executor = TaskLevelFinancialExecutor(workflow_obj, TaskOutputStore())
+    cases = [
+        ("2023", "year_over_year", "cumulative"),
+        ("2023Q1", "year_over_year", "single_period"),
+        ("2023Q1", "sequential", "cumulative"),
+        ("2023H1", "year_over_year", "cumulative"),
+    ]
+    for task_number, (period, comparison_type, period_basis) in enumerate(
+        cases, start=1
+    ):
+        definition = financial_metric_registry.get("revenue_growth")
+        task = ExecutionTask(
+            task_id=f"exec_v105_{task_number:04d}",
+            tool_id="financial_metric_engine",
+            tool_version="v10.4.0",
+            company_id="600519",
+            company_name="贵州茅台",
+            period=period,
+            metric_id="revenue_growth",
+            metric_name=definition.name,
+            inputs={
+                "growth_comparison_type": comparison_type,
+                "growth_period_basis": period_basis,
+            },
+        )
+        outcome = executor(task)
+        assert outcome.status == ExecutionStatus.UNAVAILABLE, (
+            f"{period}/{comparison_type}/{period_basis}: {outcome.status_reason}"
+        )
+        assert outcome.status_reason == "growth_previous_period_missing"
+
+    # Control: 2023Q2 sequential cumulative has a baseline (2023Q1).
+    definition = financial_metric_registry.get("revenue_growth")
+    control_task = ExecutionTask(
+        task_id="exec_v105_0009",
+        tool_id="financial_metric_engine",
+        tool_version="v10.4.0",
+        company_id="600519",
+        company_name="贵州茅台",
+        period="2023Q2",
+        metric_id="revenue_growth",
+        metric_name=definition.name,
+        inputs={
+            "growth_comparison_type": "sequential",
+            "growth_period_basis": "cumulative",
+        },
+    )
+    control_outcome = executor(control_task)
+    assert control_outcome.status == ExecutionStatus.SUCCEEDED
+    # (800 - 300) / 300 = 166.666667%
+    assert control_outcome.output.calculation.result == pytest.approx(166.666667)

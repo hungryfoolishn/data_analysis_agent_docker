@@ -380,3 +380,102 @@ PYTHONPATH=. pytest -q
 （新增 `test_quarterly_average_balance_metrics_use_distinct_period_balances`
 并修正期间聚合断言）。该修改已并入本次变更集，其黄金值依赖的季度夹具由
 `test_runtime_integration.py` 的显式季度余额补充完成，全部测试通过。
+
+---
+
+## Runtime V10.4 阶段 5：端到端阻断与增长率口径验收
+
+对应提交 `21ea4d8 fix(runtime-v10.4): block ambiguous growth intents` 之后的验收收尾。
+
+### 背景
+
+`21ea4d8` 已在计划层阻断 conflict/ambiguous 增长意图，但阻断以
+`RuntimeIntegrationError` 异常形式暴露，上层调用方一旦漏接异常就会变成
+笼统执行失败；同时增长率比较基期与累计/单期口径的正确性缺少端到端黄金值证明。
+
+### 变更 1：结构化 BLOCKED 结果贯穿执行链路
+
+`FinancialRuntimeExecutor.execute_plan()` 对 `status=BLOCKED` 的计划：
+
+- 不再抛出异常，返回结构化 `RuntimeExecutionResult`：
+  - `status=BLOCKED`、`task_results=[]`、三项计数均为 0；
+  - `analysis_result=None`，不产生任何 Observation/Calculation/Evidence；
+  - `metadata.blocked_before_execution=True`，保留
+    `blocking_diagnostics`、`growth_intent_source`、`growth_intents` 等契约；
+- `report_markdown` 为确定性澄清报告：明确说明“未生成任何财务计算结果或财务结论”，
+  列出阻断诊断，并提示用户澄清同比/环比与累计/单期口径；
+- DAG 与 workflow 两种执行模式行为一致（模式无关短路）；
+- 其他非 PENDING 状态仍保持原有 `RuntimeIntegrationError` 契约。
+
+对应更新 `test_growth_intent_conflict_blocks_plan_execution` /
+`test_growth_intent_ambiguity_blocks_plan_execution` 的契约断言，并新增
+`test_blocked_intent_structured_result_in_both_execution_modes`。
+
+### 变更 2：DAG 路径缺失基期的明确不可用原因
+
+`TaskLevelFinancialExecutor._compute_growth()` 在比较期报表缺失时，从
+`growth_value_missing` 改为显式 `growth_previous_period_missing`，
+与 workflow 路径语义对齐：缺失基期是数据不可用，不是数值缺失。
+
+### 阶段 5 验收测试
+
+新增于 `tests/financial_agent/test_period_semantics_v10_4.py`：
+
+1. **全链路阻断**
+   - `test_blocked_intent_structured_result_in_both_execution_modes`：
+     conflict 计划在 DAG/workflow 两种模式下都返回结构化 BLOCKED，
+     报告不含任何财务数字，仅含澄清指引。
+2. **四种增长率口径黄金值（人工可复核）**
+
+   累计收入样例 `2022Q1=250, 2022Q2=600, 2023Q1=300, 2023Q2=800`，
+   推导单季收入 `2022Q2=350, 2023Q2=500`：
+
+   | 口径 | 比较基期 | 黄金值 |
+   | --- | --- | --- |
+   | 同比/累计 | 2022Q2 累计 (600) | (800-600)/600 = 33.333333% |
+   | 环比/累计 | 2023Q1 累计 (300) | (800-300)/300 = 166.666667% |
+   | 同比/单期 | 2022Q2 单季 (350) | (500-350)/350 = 42.857143% |
+   | 环比/单期 | 2023Q1 单季 (300) | (500-300)/300 = 66.666667% |
+
+   `test_growth_comparison_matrix_golden_values` 同时断言计算输入
+   （current/previous）、独立验证通过，并验证：
+   - workflow 模式对多意图计划显式拒绝
+     （`Multiple growth comparison intents require DAG execution`），
+     不静默选择口径；
+   - 单意图计划 DAG 与 workflow 计算结果一致（引擎等价性）。
+
+3. **比较基期与证据一致性**
+   - `test_cumulative_and_single_period_use_correct_comparison_bases`：
+     四个口径变体各自拥有独立 task_id、比较基期
+     （2022Q2/2023Q1/2022Q2/2023Q1）、source_ids、calculation、verification
+     与 Evidence；Evidence 的 formula/period/calculation_id 与 Calculation 一致。
+4. **缺失基期矩阵**
+   - `test_missing_growth_base_period_matrix_is_unavailable`：
+     年度同比、2023Q1 同比/单期、2023Q1 环比、2023H1 同比在缺少 2022 年
+     基期时全部返回 `UNAVAILABLE` 且 `status_reason=growth_previous_period_missing`；
+     对照组（2023Q2 环比/累计）正常计算 166.666667%。
+
+### 回归结果
+
+```bash
+PYTHONPATH=. pytest tests/financial_agent -q
+# 172 passed
+
+PYTHONPATH=. pytest -q
+# 全量回归（见验收记录）
+```
+
+### CI 核实（P2）
+
+- GitHub Actions `Runtime Tests`（run 40660387828）在 `21ea4d8` 上
+  push 触发，9/9 步骤成功，结论 success。
+  文档中的全量测试数字自此有可核验的 CI 运行记录支撑。
+
+### 后续边界
+
+- 多意图计划仅在 DAG 模式执行；workflow 模式的显式拒绝为设计行为，
+  上层如需兼容需向用户说明改用 DAG 模式或拆分请求。
+- 报告层（`_blocked_plan_report`）当前为确定性澄清文本；如需接入
+  LLM 生成澄清话术，必须保留“无财务数字”的硬约束。
+
+---

@@ -236,6 +236,12 @@ class FinancialRuntimeExecutor:
         *,
         understanding,
     ) -> RuntimeExecutionResult:
+        if plan.status == ExecutionPlanStatus.BLOCKED:
+            # Ambiguous or conflicting plans must surface as a structured
+            # BLOCKED result through the whole chain; never fall through to
+            # execution or a pseudo-success report.
+            return self._blocked_plan_result(plan)
+
         if self.execution_mode == "workflow":
             return self._execute_plan_with_workflow(
                 plan,
@@ -260,6 +266,78 @@ class FinancialRuntimeExecutor:
             plan,
             understanding=understanding,
         )
+
+    def _blocked_plan_result(self, plan: ExecutionPlan) -> RuntimeExecutionResult:
+        """Return a structured BLOCKED result for plans blocked before execution."""
+        finished_at = _utc_now()
+        plan.finished_at = finished_at
+        blocking_diagnostics = list(dict.fromkeys([
+            *plan.diagnostics,
+            *plan.metadata.get("blocking_diagnostics", []),
+        ]))
+        return RuntimeExecutionResult(
+            execution_id=f"runtime_{plan.execution_id}",
+            plan_id=plan.plan_id,
+            query_id=plan.query_id,
+            status=RuntimeExecutionStatus.BLOCKED,
+            task_results=[],
+            succeeded_count=0,
+            unavailable_count=0,
+            failed_count=0,
+            blocked_count=0,
+            analysis_result=None,
+            report_markdown=self._blocked_plan_report(plan, blocking_diagnostics),
+            started_at=finished_at,
+            finished_at=finished_at,
+            metadata={
+                "execution_mode": self.execution_mode,
+                "blocked_before_execution": True,
+                "blocking_diagnostics": blocking_diagnostics,
+                "planning_readiness": plan.metadata.get("planning_readiness"),
+                "growth_intent_source": plan.metadata.get("growth_intent_source"),
+                "growth_intent_diagnostics": list(
+                    plan.metadata.get("growth_intent_diagnostics", [])
+                ),
+                "growth_comparison_type": plan.metadata.get(
+                    "growth_comparison_type"
+                ),
+                "growth_period_basis": plan.metadata.get("growth_period_basis"),
+                "growth_intents": list(plan.metadata.get("growth_intents", [])),
+            },
+        )
+
+    @staticmethod
+    def _blocked_plan_report(
+        plan: ExecutionPlan,
+        blocking_diagnostics: list[str],
+    ) -> str:
+        """Build a clarification report without any financial conclusion."""
+        lines = [
+            "# 财务分析已阻断：需要澄清",
+            "",
+            "本次请求在执行前被阻断，未生成任何财务计算结果或财务结论。",
+            "",
+            "## 阻断原因",
+            "",
+        ]
+        lines.extend(f"- `{item}`" for item in blocking_diagnostics)
+        lines.extend([
+            "",
+            "## 需要澄清的内容",
+            "",
+        ])
+        if plan.metadata.get("growth_intent_source") in {"conflict", "ambiguous"}:
+            lines.extend([
+                "- 增长率比较口径存在歧义：请明确使用同比（与上年同期比较）"
+                "还是环比（与上一报告期比较）。",
+                "- 如需单季度口径，请明确「单季」；如需累计口径，请明确「累计」。",
+            ])
+        lines.extend([
+            "",
+            "明确比较口径后重新发起请求，即可继续执行财务分析。",
+            "",
+        ])
+        return "\n".join(lines)
 
     def _execute_plan_with_scheduler(
         self,

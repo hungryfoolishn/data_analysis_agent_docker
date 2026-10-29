@@ -486,7 +486,15 @@ class TaskLevelFinancialExecutor:
         else:
             input_sources["previous"] = "data_service"
             if previous_income is None:
-                previous = None
+                # Missing baseline must be explicit and match the workflow
+                # path semantics: it is data unavailability, not a zero value.
+                return MetricComputation(
+                    metric_id=task.metric_id,
+                    status=UNAVAILABLE,
+                    inputs={"current": current, "previous": None},
+                    missing_fields=[f"previous.{base_metric_id}"],
+                    reason="growth_previous_period_missing",
+                )
             else:
                 previous_computation = compute_metric(
                     base_metric_id,
