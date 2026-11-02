@@ -2,10 +2,17 @@
 
 ## Current Phase
 
-**Phase 0 — Product Direction Convergence and Architecture Baseline**
+**Phase 1 / M1 — Architecture Baseline Confirmation**
 
-Phase 0 is documentation/audit only. It freezes financial semantic expansion and
-prepares the Phase 1 general analysis MVP plan.
+Phase 0 completed the product/architecture audit. Phase 1 M1 freezes the MVP
+scope, SQLite CI baseline, Golden contracts, M2/M6 boundaries, and the Runtime
+V2 default-switch gate. No Phase 1 feature code is implemented in M1.
+
+Normative docs:
+
+- `docs/product/acceptance/phase1-golden-contract.md`
+- `docs/architecture/runtime-v2-default-gate.md`
+- `docs/roadmap/phase1-general-analysis-mvp.md`
 
 ## Phase Sequence
 

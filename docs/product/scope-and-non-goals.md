@@ -81,6 +81,22 @@
 | Advanced permissions and multi-tenancy | Platform hardening |
 | Distributed execution | Platform hardening |
 
+## M1 Contract Freeze
+
+For Phase 1 M1, the general analysis MVP is frozen to these input families:
+
+- CSV files.
+- Excel files with one or more sheets.
+- Parquet files.
+- SQLite relational databases.
+- In-memory DataFrames registered by the runtime.
+
+The first database target is SQLite because it is deterministic, local, and CI-friendly. PostgreSQL/MySQL adapters are deferred until after the SQLite contract passes.
+
+Phase 1 remains a general tabular-analysis milestone. It does not add financial
+semantics, macro-data acquisition, trading logic, or multi-agent research.
+Domain-specific rules belong in later Domain Packs.
+
 ## Boundary Rule
 
 A capability belongs in the core platform only if it would be useful for CSV,

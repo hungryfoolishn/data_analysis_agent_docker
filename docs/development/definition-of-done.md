@@ -35,6 +35,19 @@ Architecture or product documentation is done only when:
 4. Acceptance criteria are testable.
 5. Open questions are marked as open.
 
+## Architecture / Contract Milestone Definition of Done
+
+Documentation-only milestones such as M1 are done only when:
+
+1. Scope and non-goals are frozen.
+2. Contract inputs and outputs are specified.
+3. Acceptance criteria are testable.
+4. Ownership boundaries are unambiguous.
+5. Docs avoid duplicating or contradicting each other.
+6. No runtime code or dependency changes are smuggled into the milestone.
+7. Reviewer can approve the next implementation milestone without reopening
+   architecture questions.
+
 ## Milestone Definition of Done
 
 A milestone is done only when:

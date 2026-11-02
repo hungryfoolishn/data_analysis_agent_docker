@@ -189,6 +189,32 @@ Keep `finish_report` and report rebuild. Phase 1 report must include:
 - Limitations.
 - SQL/pandas reproducibility notes.
 
+## M2 / M6 Responsibility Boundary
+
+M2 owns the database adapter. M6 owns the runtime-facing SQL tool. They must not
+collapse into one layer.
+
+| Responsibility | Owner |
+| --- | --- |
+| SQLite connection lifecycle | M2 `DatabaseDataSource` |
+| Read-only connection policy | M2 `DatabaseDataSource` |
+| Schema/table introspection | M2 `DatabaseDataSource` |
+| Bounded SQL execution and row limits | M2 `DatabaseDataSource` |
+| Query result to `QueryResultDataSource` / `DataAsset` | M2 `DatabaseDataSource` |
+| SQL tool interface for Agent/Runtime | M6 SQL Tool |
+| Tool argument validation and user-facing errors | M6 SQL Tool |
+| Runtime execution record | Runtime / M6 integration |
+| Query artifact registration | Runtime / M6 integration |
+| Evidence creation from verified query results | Evidence layer / M6 integration |
+
+Rules:
+
+- Runtime and tool code must not create database connections directly.
+- Runtime and tool code must not bypass `DatabaseDataSource`.
+- M2 must remain independently testable without Runtime V2 or Agent tools.
+- M6 must be able to consume any governed `QueryResultDataSource`, not only SQLite.
+- Credentials and connection strings must not enter the Python sandbox or reports.
+
 ## Migration Strategy
 
 | Current Capability | Phase 1 Treatment |

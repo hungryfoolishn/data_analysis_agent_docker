@@ -5,6 +5,18 @@
 Phase 1 is accepted by a fixed dataset/question matrix, not by continuously
 adding semantic tests.
 
+## Machine-readable Contract
+
+The fixture, question, expected-result, tolerance, evidence, and CI-tier
+contracts are defined in:
+
+```text
+docs/product/acceptance/phase1-golden-contract.md
+```
+
+That document is normative for M2-M8. The list below remains the human-readable
+coverage matrix.
+
 ## Dataset Plan
 
 Create fixtures under:
