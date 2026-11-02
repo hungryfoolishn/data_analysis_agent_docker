@@ -2,11 +2,24 @@
 
 ## Current Phase
 
-**Phase 1 / M1 — Architecture Baseline Confirmation**
+**Phase 1 / M2 — SQLite DataSource Adapter**
 
-Phase 0 completed the product/architecture audit. Phase 1 M1 freezes the MVP
-scope, SQLite CI baseline, Golden contracts, M2/M6 boundaries, and the Runtime
-V2 default-switch gate. No Phase 1 feature code is implemented in M1.
+M1 Architecture Baseline has been completed and reviewed. The current
+implementation milestone is M2.
+
+M2 focuses only on the database access layer:
+
+```text
+SQLite fixture builder
+→ read-only connection
+→ schema introspection
+→ bounded SQL execution
+→ QueryResultDataSource / DataAsset
+→ adapter tests
+```
+
+It does not implement the SQL Tool, Planner, Runtime V2 integration, Evidence,
+or Report layers; those belong to M4/M5a/M6/M7.
 
 Normative docs:
 

@@ -75,4 +75,5 @@ Add tests for:
 3. At M5b/M8, run the overall gate after SQLite and integration tests pass.
 4. Enable Runtime V2 globally only after file and SQLite golden E2E tests pass.
 5. Keep `RUNTIME_V2_ENABLED` as an override during stabilization.
-6. Remove silent fallback after confidence is established.
+6. Silent fallback remains prohibited at all times.
+7. Explicitly configured infrastructure fallback may remain during stabilization.

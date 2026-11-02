@@ -85,10 +85,15 @@ Definition of done:
 
 Acceptance:
 
-- SQLite fixture is scanned.
-- SQL result becomes a runtime data asset.
-- Query evidence links query text and artifact.
-- Unsafe SQL is rejected.
+- The SQLite fixture can be connected and scanned.
+- Schema introspection returns correct table and column information.
+- Read-only SQL execution returns a structured query result.
+- A query result can be converted into a runtime data asset.
+- SQL timeout, row limit, and result-size limits are enforced.
+- `INSERT`, `UPDATE`, `DELETE`, DDL, and other unsafe operations are rejected.
+- Connection close, exception cleanup, and resource release work correctly.
+
+Evidence wiring is not part of M2; it belongs to M6.
 
 ### M3 — Data Understanding Service
 
@@ -137,7 +142,11 @@ Acceptance:
 
 Acceptance:
 
-- Evidence for database questions is complete and traceable.
+- The SQL tool executes queries through the M2 adapter.
+- SQL query text, execution records, and result artifacts are linked.
+- Evidence can reference the SQL execution result and its artifact.
+- Evidence can be consumed by findings and report claims.
+- Database questions produce complete, traceable evidence.
 
 ### M7 — Report And Session Integration
 
@@ -165,7 +174,7 @@ Acceptance:
 | Milestone | Depends On | Primary Modules | Tests | Non-goals |
 | --- | --- | --- | --- | --- |
 | M1 Architecture Baseline | Phase 0 | docs only | docs review, link check | No adapter/tool/runtime implementation |
-| M2 SQLite DataSource Adapter | M1 | `langgraph_langchain/data/database.py` | adapter unit/integration tests | No Runtime tool, no planner |
+| M2 SQLite DataSource Adapter | M1 | `langgraph_langchain/data/database.py` | adapter unit/integration tests | No Runtime tool, planner, or Evidence wiring |
 | M3 Generic Data Understanding | M2 for SQLite, existing file support | data understanding service | profile/quality tests | No financial or macro semantics |
 | M4 Data-aware Generic Planner | M3 output contract | `langgraph_langchain/runtime/generic_planner.py` | plan validation tests | No execution changes |
 | M5a Runtime V2 File Path | M2-M4 and golden file tests | Runtime V2 bridge/config | runtime selection/file tests | No SQL requirement; no silent fallback |
