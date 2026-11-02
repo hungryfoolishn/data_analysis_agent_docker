@@ -227,6 +227,41 @@ def test_fixture_instances_are_isolated(tmp_path: Path):
     assert second_count == 4
 
 
+def test_create_refuses_to_overwrite_caller_provided_path(tmp_path: Path):
+    db_path = tmp_path / "important.sqlite"
+    db_path.write_text("not a fixture", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        create_golden_sqlite(db_path)
+
+    assert db_path.read_text(encoding="utf-8") == "not a fixture"
+
+
+def test_create_can_overwrite_caller_provided_path_only_when_explicit(tmp_path: Path):
+    db_path = tmp_path / "replaceable.sqlite"
+    db_path.write_text("old data", encoding="utf-8")
+
+    created_path = create_golden_sqlite(db_path, overwrite=True)
+
+    assert created_path == db_path
+    assert db_path.read_bytes() != b"old data"
+    with _connect(db_path) as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM customers"
+        ).fetchone()[0]
+    assert count == 4
+
+
+def test_cleanup_leaves_non_fixture_files_untouched(tmp_path: Path):
+    db_path = tmp_path / "important.sqlite"
+    db_path.write_text("important database", encoding="utf-8")
+
+    cleanup_golden_sqlite(db_path)
+
+    assert db_path.is_file()
+    assert db_path.read_text(encoding="utf-8") == "important database"
+
+
 def test_cleanup_golden_sqlite_removes_temporary_database(tmp_path: Path):
     db_path = create_golden_sqlite()
     assert db_path.is_file()

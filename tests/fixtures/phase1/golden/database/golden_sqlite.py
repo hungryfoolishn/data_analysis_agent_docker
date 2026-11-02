@@ -2,7 +2,6 @@
 
 This module is intentionally test-only. It creates a small, stable, and
 human-auditable database for later Phase 1 database adapter tests.
-''' + '''
 """
 
 from __future__ import annotations
@@ -34,8 +33,7 @@ CREATE TABLE order_items (
     order_id INTEGER NOT NULL REFERENCES orders(order_id),
     product TEXT NOT NULL,
     quantity INTEGER NOT NULL,
-    unit_price REAL,
-    FOREIGN KEY (order_id) REFERENCES orders(order_id)
+    unit_price REAL
 );
 """
 
@@ -67,18 +65,25 @@ ORDER_ITEMS = [
 ]
 
 
-def create_golden_sqlite(db_path: str | Path | None = None) -> Path:
+def create_golden_sqlite(
+    db_path: str | Path | None = None,
+    *,
+    overwrite: bool = False,
+) -> Path:
     """Create a deterministic SQLite golden fixture and return its path.
 
     Args:
         db_path: Optional target path. When omitted, the database is created in
-            a fresh temporary directory. The caller owns the returned path and
-            may remove it with :func:`cleanup_golden_sqlite`.
+            a fresh temporary directory. The caller owns the returned path.
+        overwrite: Allow replacing an existing caller-provided database path.
+            Automatic temporary fixtures always start from a fresh path.
 
     Returns:
         Path to the created SQLite database.
 
     Raises:
+        FileExistsError: If a caller-provided path exists and ``overwrite`` is
+            false.
         RuntimeError: If schema or fixture data creation fails.
     """
     created_temp_dir = db_path is None
@@ -90,6 +95,10 @@ def create_golden_sqlite(db_path: str | Path | None = None) -> Path:
 
     try:
         target_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_path.exists() and not (overwrite and not created_temp_dir):
+            raise FileExistsError(
+                f"Refusing to overwrite existing SQLite fixture path: {target_path}"
+            )
         target_path.unlink(missing_ok=True)
 
         connection = sqlite3.connect(target_path)
@@ -123,12 +132,22 @@ def create_golden_sqlite(db_path: str | Path | None = None) -> Path:
 
 
 def cleanup_golden_sqlite(db_path: str | Path) -> None:
-    """Remove a fixture database and its containing temporary directory if empty."""
+    """Remove only a fixture-generated temporary database.
+
+    A caller-provided path is deliberately not accepted as cleanup input. This
+    prevents the helper from deleting arbitrary database files.
+    """
     path = Path(db_path)
+    is_generated_fixture = (
+        path.name == "golden.sqlite"
+        and path.parent.name.startswith("deepanalyze_golden_sqlite_")
+    )
+    if not is_generated_fixture:
+        return
+
     path.unlink(missing_ok=True)
-    if path.parent.name.startswith("deepanalyze_golden_sqlite_"):
-        try:
-            path.parent.rmdir()
-        except OSError:
-            # The directory is not empty or is no longer owned by the fixture.
-            pass
+    try:
+        path.parent.rmdir()
+    except OSError:
+        # The directory is not empty or is no longer owned by the fixture.
+        pass
