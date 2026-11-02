@@ -126,9 +126,9 @@ def cleanup_golden_sqlite(db_path: str | Path) -> None:
     """Remove a fixture database and its containing temporary directory if empty."""
     path = Path(db_path)
     path.unlink(missing_ok=True)
-    parent = path.parent
-    try:
-        parent.rmdir()
-    except OSError:
-        # The directory is not empty or is not a temporary fixture directory.
-        pass
+    if path.parent.name.startswith("deepanalyze_golden_sqlite_"):
+        try:
+            path.parent.rmdir()
+        except OSError:
+            # The directory is not empty or is no longer owned by the fixture.
+            pass
