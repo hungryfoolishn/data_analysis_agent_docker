@@ -60,10 +60,13 @@ def test_scan_schema_satisfies_source_scan_contract(tmp_path: Path):
 
     assert isinstance(scan, SourceScan)
     assert scan.source_type == "sqlite"
-    assert scan.estimated_rows == 0
+    assert scan.estimated_rows == -1
     assert scan.metadata["schema_introspection_only"] is True
     assert scan.metadata["database_schema"]["tables"]
-    assert not scan.schema_snapshot.columns
+    assert scan.schema_snapshot.row_count == -1
+    assert scan.schema_snapshot.column_count == 14
+    assert "customers.customer_id" in {column.name for column in scan.schema_snapshot.columns}
+    assert scan.metadata["row_count_known"] is False
 
 
 def test_golden_fixture_columns_and_primary_keys_are_normalized(tmp_path: Path):
@@ -93,7 +96,7 @@ def test_nullable_and_default_values_are_preserved(tmp_path: Path):
     schema = _source(db_path).introspect_schema()
     columns = {column.name: column for column in schema.tables[0].columns}
 
-    assert columns["id"].nullable is True
+    assert columns["id"].nullable is False
     assert columns["name"].nullable is False
     assert columns["name"].default_value == "'unknown'"
     assert columns["value"].nullable is True
@@ -117,6 +120,46 @@ def test_views_internal_tables_and_empty_databases_are_handled(tmp_path: Path):
     empty_path.touch()
     assert _source(empty_path).introspect_schema().tables == ()
 
+
+def test_rowid_alias_primary_key_is_not_nullable(tmp_path: Path):
+    db_path = _create_database(
+        tmp_path / "pk-nullability.sqlite",
+        [
+            "CREATE TABLE rowid_alias (id INTEGER PRIMARY KEY, name TEXT)",
+            "CREATE TABLE text_pk (code TEXT PRIMARY KEY, name TEXT)",
+        ],
+    )
+    schema = _source(db_path).introspect_schema()
+    tables = {table.name: table for table in schema.tables}
+
+    assert tables["rowid_alias"].columns[0].nullable is False
+    assert tables["text_pk"].columns[0].nullable is True
+
+
+def _supports_fts5() -> bool:
+    try:
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.execute("CREATE VIRTUAL TABLE probe USING fts5(content)")
+        finally:
+            connection.close()
+        return True
+    except sqlite3.OperationalError:
+        return False
+
+
+@pytest.mark.skipif(not _supports_fts5(), reason="SQLite build has no FTS5")
+def test_fts5_virtual_table_and_shadow_tables_are_excluded(tmp_path: Path):
+    db_path = _create_database(
+        tmp_path / "virtual.sqlite",
+        [
+            "CREATE TABLE user_table (id INTEGER PRIMARY KEY, title TEXT)",
+            "CREATE VIRTUAL TABLE search_index USING fts5(title)",
+        ],
+    )
+    schema = _source(db_path).introspect_schema()
+
+    assert [table.name for table in schema.tables] == ["user_table"]
 
 def test_composite_primary_key_preserves_declared_order(tmp_path: Path):
     db_path = _create_database(

@@ -16,6 +16,7 @@ import sqlite3
 
 import pandas as pd
 
+from .assets import ColumnSpec
 from .sources import DataSource, SchemaSnapshot, SourceScan
 
 
@@ -191,6 +192,25 @@ def _metadata_rows(connection: sqlite3.Connection, statement: str) -> list[dict[
     return [dict(zip(names, row)) for row in cursor.fetchall()]
 
 
+def _table_types(connection: sqlite3.Connection) -> dict[str, str]:
+    """Return SQLite table types from PRAGMA table_list when available."""
+    if sqlite3.sqlite_version_info < (3, 37, 0):
+        return {}
+    try:
+        rows = _metadata_rows(connection, "PRAGMA table_list")
+    except sqlite3.OperationalError:
+        return {}
+    return {
+        str(row["name"]): str(row["type"])
+        for row in rows
+        if row.get("schema") == "main"
+    }
+
+
+def _has_primary_key_autoindex(connection: sqlite3.Connection, quoted_table: str) -> bool:
+    rows = _metadata_rows(connection, f"PRAGMA index_list({quoted_table})")
+    return any(row.get("origin") == "pk" for row in rows)
+
 def _column_schemas(connection: sqlite3.Connection, table_name: str) -> tuple[tuple[SQLiteColumnSchema, ...], tuple[str, ...]]:
     quoted_table = _quote_sqlite_identifier(table_name)
     rows = _metadata_rows(connection, f"PRAGMA table_info({quoted_table})")
@@ -198,11 +218,23 @@ def _column_schemas(connection: sqlite3.Connection, table_name: str) -> tuple[tu
     primary_key_rows = [row for row in rows if row["pk"]]
     primary_key_rows.sort(key=lambda row: int(row["pk"]))
     primary_key_columns = tuple(str(row["name"]) for row in primary_key_rows)
+    # INTEGER PRIMARY KEY without a PK autoindex is a rowid alias. SQLite
+    # reports notnull=0 for compatibility, but it cannot store NULL.
+    is_rowid_alias = (
+        len(primary_key_rows) == 1
+        and int(primary_key_rows[0]["pk"]) == 1
+        and str(primary_key_rows[0]["type"] or "").strip().upper() == "INTEGER"
+        and not _has_primary_key_autoindex(connection, quoted_table)
+    )
     columns = tuple(
         SQLiteColumnSchema(
             name=str(row["name"]),
             declared_type=str(row["type"] or ""),
-            nullable=not bool(row["notnull"]),
+            nullable=(
+                False
+                if is_rowid_alias and int(row["pk"]) == 1
+                else not bool(row["notnull"])
+            ),
             default_value=row["dflt_value"],
             is_primary_key=bool(row["pk"]),
             ordinal_position=int(row["cid"]),
@@ -264,23 +296,43 @@ def _index_schemas(connection: sqlite3.Connection, table_name: str) -> tuple[SQL
     return tuple(indexes)
 
 
+def _schema_snapshot_columns(schema: SQLiteDatabaseSchema) -> list[ColumnSpec]:
+    """Project SQLite schema into the generic SourceScan column model."""
+    return [
+        ColumnSpec(
+            name=f"{table.name}.{column.name}",
+            dtype=column.declared_type,
+            nullable=column.nullable,
+            null_count=0,
+        )
+        for table in schema.tables
+        for column in table.columns
+    ]
+
+
 def _introspect_sqlite_schema(connection: sqlite3.Connection) -> SQLiteDatabaseSchema:
     rows = _metadata_rows(
         connection,
         "SELECT name, rootpage, sql FROM sqlite_schema WHERE type = 'table'",
     )
+    table_types = _table_types(connection)
     tables: list[SQLiteTableSchema] = []
     for row in rows:
         name = row["name"]
         if not isinstance(name, str) or name.startswith("sqlite_"):
             continue
-        # rootpage == 0 identifies virtual tables; this also avoids relying on
-        # naming prefixes alone.
-        if row["rootpage"] in (None, 0):
+        table_type = table_types.get(name)
+        if table_type not in (None, "table"):
             continue
-        sql = row["sql"]
-        if isinstance(sql, str) and "CREATE VIRTUAL TABLE" in sql.upper():
-            continue
+        # Older SQLite builds without PRAGMA table_list use sqlite_schema as a
+        # best-effort fallback for virtual tables; shadow tables require a
+        # SQLite version that can identify them explicitly.
+        if table_type is None:
+            if row["rootpage"] in (None, 0):
+                continue
+            sql = row["sql"]
+            if isinstance(sql, str) and "CREATE VIRTUAL TABLE" in sql.upper():
+                continue
         columns, primary_key_columns = _column_schemas(connection, name)
         tables.append(
             SQLiteTableSchema(
@@ -332,14 +384,22 @@ class SQLiteDataSource(DataSource):
 
     def scan_schema(self) -> SourceScan:
         schema = self.introspect_schema()
+        generic_columns = _schema_snapshot_columns(schema)
+        # -1 is an explicit unknown sentinel: schema introspection must not
+        # scan business rows merely to estimate row counts.
         return SourceScan(
             source_type=self.source_type,
-            schema_snapshot=SchemaSnapshot(row_count=0, column_count=0, columns=[]),
-            estimated_rows=0,
+            schema_snapshot=SchemaSnapshot(
+                row_count=-1,
+                column_count=len(generic_columns),
+                columns=generic_columns,
+            ),
+            estimated_rows=-1,
             size_bytes=self.path.stat().st_size,
             metadata={
                 "database_schema": schema.to_dict(),
                 "schema_introspection_only": True,
+                "row_count_known": False,
             },
         )
 
