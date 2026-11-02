@@ -66,6 +66,7 @@ def test_scan_schema_satisfies_source_scan_contract(tmp_path: Path):
     assert scan.schema_snapshot.row_count == -1
     assert scan.schema_snapshot.column_count == 14
     assert "customers.customer_id" in {column.name for column in scan.schema_snapshot.columns}
+    assert all(column.null_count is None for column in scan.schema_snapshot.columns)
     assert scan.metadata["row_count_known"] is False
 
 

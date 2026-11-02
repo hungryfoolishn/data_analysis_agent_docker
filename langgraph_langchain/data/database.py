@@ -303,7 +303,7 @@ def _schema_snapshot_columns(schema: SQLiteDatabaseSchema) -> list[ColumnSpec]:
             name=f"{table.name}.{column.name}",
             dtype=column.declared_type,
             nullable=column.nullable,
-            null_count=0,
+            null_count=None,
         )
         for table in schema.tables
         for column in table.columns

@@ -42,12 +42,15 @@ def canonical_text_sha256(path: Path) -> str:
 
 
 class ColumnSpec(BaseModel):
-    """Observed physical metadata for one column."""
+    """Observed physical metadata for one column.
+
+    ``null_count`` is ``None`` when actual data has not been scanned.
+    """
 
     name: str
     dtype: str
     nullable: bool = False
-    null_count: int = 0
+    null_count: Optional[int] = None
     unique_count: Optional[int] = None
     semantic_type: Optional[str] = None
 
