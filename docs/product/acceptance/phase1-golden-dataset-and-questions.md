@@ -19,17 +19,24 @@ coverage matrix.
 
 ## Dataset Plan
 
-Create fixtures under:
+Create file fixtures under:
 
 ```text
 tests/fixtures/phase1/golden/
 ```
 
-and a database fixture:
+Create the SQLite fixture through a deterministic Python builder under:
 
 ```text
-tests/fixtures/phase1/golden/golden.sqlite
+tests/fixtures/phase1/golden/database/golden_sqlite.py
 ```
+
+Do not depend on a checked-in binary `golden.sqlite` file. M1 freezes the
+contract; actual manifests and fixtures are delivered in M2/M3/M8.
+
+In-memory DataFrames are runtime inputs produced by file/SQL adapters or test
+helpers. They are not separate Golden Dataset manifest entries with a
+`dataframe` source_type.
 
 ### Datasets
 

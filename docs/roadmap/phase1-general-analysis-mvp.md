@@ -7,15 +7,16 @@ with schema understanding, planning, execution, evidence, and reporting.
 
 ## Success Statement
 
-A user uploads one of the Phase 1 golden files or connects the golden SQLite
-database, asks one of the golden questions, and receives a correct report with
-evidence and artifacts.
+A user uploads one of the Phase 1 golden files or connects a temporary SQLite
+fixture built by the Golden fixture helper, asks one of the golden questions,
+and receives a correct report with evidence and artifacts.
 
 ## Milestones
 
 ### M1 — Architecture Baseline
 
-Status: ready for review; no Phase 1 feature code is implemented.
+Status: completed as a documentation-only architecture milestone; no Phase 1
+feature code is implemented and no actual manifests/fixtures are frozen yet.
 
 Objectives:
 
@@ -39,24 +40,31 @@ Documents:
 - `docs/architecture/runtime-v2-default-gate.md`
 - `docs/development/definition-of-done.md`
 
-Acceptance checklist:
+Acceptance checklist (contract review only):
 
-- [ ] Phase 1 inputs are limited to CSV, Excel, Parquet, SQLite, and in-memory
-  DataFrames.
-- [ ] Financial, macro, crawler, and multi-agent work is explicitly out of scope.
-- [ ] SQLite is selected as the first CI database.
-- [ ] SQLite fixtures are local, deterministic, isolated, and CI-friendly.
-- [ ] Dataset manifests define schema, row count, nullability, semantics,
-  profile expectations, and expected artifacts.
-- [ ] Question manifests define expected results, tolerances, required methods,
-  evidence, forbidden behavior, and CI tier.
-- [ ] Numeric tolerance rules are explicit.
-- [ ] Evidence, artifact, plan, and report assertions are explicit.
-- [ ] M2 owns connection, introspection, and bounded execution.
-- [ ] M6 owns tool integration and evidence wiring, not connection management.
-- [ ] Runtime V2 default-switch gate has measurable conditions.
-- [ ] Silent legacy fallback is prohibited.
-- [ ] M1-M8 dependencies, deliverables, and non-goals are documented.
+- [x] Phase 1 inputs are limited to CSV, Excel, Parquet, SQLite, and in-memory
+  DataFrames as runtime inputs.
+- [x] Financial, macro, crawler, and multi-agent work is explicitly out of scope.
+- [x] SQLite is selected as the first CI database.
+- [x] The SQLite fixture-building contract is local, deterministic, isolated,
+  and CI-friendly.
+- [x] The dataset manifest schema defines schema, row count, nullability,
+  semantics, profile expectations, and expected artifacts.
+- [x] The question manifest schema defines expected results, tolerances,
+  required methods, evidence, forbidden behavior, and CI tier.
+- [x] Numeric tolerance rules are explicit.
+- [x] Evidence, artifact, plan, and report assertions are explicit.
+- [x] M2 owns connection, introspection, and bounded execution.
+- [x] M6 owns tool integration and evidence wiring, not connection management.
+- [x] Runtime V2 file-path and overall default-switch gates have measurable
+  conditions.
+- [x] Silent legacy fallback is prohibited.
+- [x] M1-M8 dependencies, deliverables, and non-goals are documented.
+- [ ] Actual dataset/question manifests and all expected values are delivered in
+  M2/M3/M8, not in M1.
+
+These items validate the frozen contract, not executable Golden tests. Actual
+manifests, fixtures, and Golden test runs are M2/M3/M8 deliverables.
 
 Definition of done:
 
@@ -107,16 +115,18 @@ Acceptance:
 - Every golden question produces an inspectable plan.
 - No plan references unknown columns or unavailable tools.
 
-### M5 — Runtime Default Path
+### M5a — Runtime V2 File Path Enablement
 
-- Add a tested gate for Runtime V2 default execution.
-- File and database golden scenarios run through Runtime V2.
-- Legacy ReAct remains explicit emergency fallback only.
+- Add a tested gate for Runtime V2 on file-analysis scenarios only.
+- Enable Runtime V2 for file golden questions after the generic planner exists.
+- Legacy ReAct remains an explicit emergency fallback only.
 
 Acceptance:
 
-- Runtime V2 executes all golden questions.
+- File golden questions run through Runtime V2.
+- Planner and file execution paths are selected explicitly.
 - No silent fallback occurs on ordinary task failure.
+- SQLite Golden tests are not required for M5a.
 
 ### M6 — SQL Tool And Evidence
 
@@ -140,10 +150,14 @@ Acceptance:
 - User can download report and artifacts.
 - Report claims trace to evidence.
 
-### M8 — Golden Acceptance
+### M8 / M5b — Overall Default And Golden Acceptance
 
-- Execute all golden datasets/questions.
+- This milestone applies the Runtime V2 overall default gate after file and
+  SQLite paths pass.
+- Execute all file and SQLite golden datasets/questions.
+- Verify Session, SSE, artifacts, report, and evidence integration.
 - Record pass/fail and known limitations.
+- Switch Runtime V2 to the overall default only if the gate passes.
 - Freeze Phase 1.
 
 ## Milestone Details
@@ -154,10 +168,10 @@ Acceptance:
 | M2 SQLite DataSource Adapter | M1 | `langgraph_langchain/data/database.py` | adapter unit/integration tests | No Runtime tool, no planner |
 | M3 Generic Data Understanding | M2 for SQLite, existing file support | data understanding service | profile/quality tests | No financial or macro semantics |
 | M4 Data-aware Generic Planner | M3 output contract | `langgraph_langchain/runtime/generic_planner.py` | plan validation tests | No execution changes |
-| M5 Runtime V2 File Default | M2-M4 and golden file tests | Runtime V2 bridge/config | runtime selection tests | No silent legacy fallback |
-| M6 SQL Tool Integration | M2 adapter + Runtime V2 | SQL tool and evidence wiring | tool/evidence tests | No direct DB connection in tool |
-| M7 Report / Session / Artifacts | M6 | report/session integration | artifact/e2e tests | No new UI framework |
-| M8 Golden Acceptance | M1-M7 | fixtures and e2e tests | full Golden matrix | No new scope |
+| M5a Runtime V2 File Path | M2-M4 and golden file tests | Runtime V2 bridge/config | runtime selection/file tests | No SQL requirement; no silent fallback |
+| M6 SQL Tool Integration | M2 adapter | SQL tool and evidence wiring | tool/evidence tests | No direct DB connection in tool |
+| M7 Report / Session / Artifacts | M5a + M6 | report/session integration | artifact/e2e tests | No new UI framework |
+| M5b/M8 Overall Default + Golden Acceptance | M5a + M6 + M7 | Runtime gate, fixtures, e2e tests | file and SQLite Golden matrix | No scope growth |
 
 M2 and M3 may proceed partially in parallel only if M3 uses file fixtures and
 does not depend on SQLite adapter details. M4 cannot start until M3 freezes its
@@ -170,11 +184,24 @@ M1 Baseline
   -> M2 Database Source
        -> M3 Understanding
             -> M4 Planner
-                 -> M5 Runtime Default
+                 -> M5a Runtime V2 File Path
                       -> M6 SQL Tool / Evidence
                            -> M7 Report / Session
-                                -> M8 Golden Acceptance
+                                -> M5b/M8 Overall Default + Golden Acceptance
 ```
+
+## M1 Follow-up Notes
+
+M1 freezes the contract schema, terminology, fixture-building rules, and
+coverage matrix. It does not freeze actual manifests or fixtures. Those are
+delivered later:
+
+- SQLite fixture builder: M2.
+- Deterministic profiles for file fixtures: M3.
+- Final question expected values and CI matrix: M8.
+
+A change to fixture data or a question's expected value after M8 requires a
+milestone decision and a documented reason.
 
 ## Explicitly Deferred
 

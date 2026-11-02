@@ -12,9 +12,19 @@ file-and-SQL analysis loop. Until then, it remains an opt-in path.
 - Runtime V2 has strong structured tests, but the Phase 1 database and planner
   loop is not implemented yet.
 
-## Default Switch Gate
+## Gate Types
 
-Runtime V2 may become default only when all items below pass:
+There are two gates:
+
+1. **File Path Gate (M5a)** — Runtime V2 becomes the default for file-analysis
+   scenarios after planner, file tests, and runtime selection tests pass.
+2. **Overall Default Gate (M5b/M8)** — Runtime V2 becomes the global default
+   only after file and SQLite Golden E2E, evidence, report, session, and
+   artifact integration tests pass.
+
+## Overall Default Switch Gate
+
+Runtime V2 may become the global default only when all items below pass:
 
 1. File-analysis golden tests pass through Runtime V2.
 2. SQLite `DatabaseDataSource` tests pass.
@@ -61,7 +71,8 @@ Add tests for:
 ## Rollout Plan
 
 1. Keep Runtime V2 opt-in while M2-M6 are implemented.
-2. Add the gate checklist to release review.
-3. Enable Runtime V2 by default only after file and SQLite golden E2E tests pass.
-4. Keep `RUNTIME_V2_ENABLED` as an override during stabilization.
-5. Remove silent fallback after confidence is established.
+2. At M5a, enable it only for file-analysis paths behind a tested gate.
+3. At M5b/M8, run the overall gate after SQLite and integration tests pass.
+4. Enable Runtime V2 globally only after file and SQLite golden E2E tests pass.
+5. Keep `RUNTIME_V2_ENABLED` as an override during stabilization.
+6. Remove silent fallback after confidence is established.

@@ -174,6 +174,40 @@ A question fails if:
 6. The report asserts causality without support.
 7. Runtime V2 silently falls back to legacy ReAct.
 
+## M1 Freeze Scope
+
+M1 freezes the contract schema, field names, fixture-building rules, tolerance
+rules, evidence assertions, coverage matrix, and CI tiers.
+
+M1 does not freeze the final `datasets.yaml`, `questions.yaml`, every fixture
+file, or all expected numeric values. Those are implemented in later milestones:
+
+| Deliverable | Milestone |
+| --- | --- |
+| SQLite fixture builder | M2 |
+| Deterministic file-data profiles | M3 |
+| Complete question expected values and CI matrix | M8 |
+
+Changing a field or tolerance after review requires a milestone decision and a
+documented reason. Adding or correcting fixture data after M8 is a release-gate
+change, not a routine test tweak.
+
+## Source Type Boundary
+
+Golden manifest `source_type` values are:
+
+```text
+csv
+xlsx
+parquet
+sqlite
+```
+
+In-memory DataFrames are runtime inputs, not standalone Golden fixtures. They may
+be produced by a test helper, file adapter, or SQL query, but they are not
+assigned a separate `dataframe` source_type in the dataset manifest. The
+manifest still records the originating persisted source or fixture builder.
+
 ## SQLite CI Baseline
 
 - Use a temporary SQLite file or `:memory:` database created per test.
@@ -205,8 +239,10 @@ The Phase 1 matrix must retain at least 30 questions and cover:
 | `ci-full` | All 30+ questions | Must pass before milestone completion. |
 | `nightly` | Full matrix plus performance/noisy-data variants | Run on schedule or release candidate. |
 
-## Freeze Rule
+## Contract Freeze Boundary
 
-M1 is complete only when the manifests, fixture paths, expected results,
-tolerances, evidence assertions, and CI tiers are stable. M2 implementation may
-begin after review, but fixture contracts must not change casually.
+M1 is complete when the contract schema, fixture-building rules, tolerance
+rules, evidence assertions, coverage matrix, and CI tiers are stable. Actual
+manifests, fixtures, and final expected values are delivered in M2/M3/M8 as
+described above. M2 may begin after review; later contract changes require a
+milestone decision and a documented reason.
