@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from langgraph_langchain.data.assets import DataAsset, hash_file
+from langgraph_langchain.data.assets import DataAsset, hash_dataframe, hash_file
 from langgraph_langchain.runtime.models import (
     AnalysisRun,
     AnalysisTask,
@@ -158,6 +158,74 @@ class AnalysisRuntime:
         if asset.asset_id not in self.task.input_asset_ids:
             self.task.input_asset_ids.append(asset.asset_id)
         self._persist()
+        return asset
+
+    @staticmethod
+    def _sqlite_assets_match(existing: DataAsset, asset: DataAsset) -> bool:
+        """Reuse only when both provenance and result content are identical."""
+        return (
+            existing.source_type == "sqlite"
+            and asset.source_type == "sqlite"
+            and existing.content_hash == asset.content_hash
+            and existing.source_metadata == asset.source_metadata
+        )
+
+    def register_sqlite_result(
+        self,
+        *,
+        result,
+        name: Optional[str] = None,
+    ) -> DataAsset:
+        """Register a bounded SQLite read as a Runtime V2 DataAsset."""
+        dataframe = getattr(result, "dataframe", None)
+        metadata = getattr(result, "metadata", None)
+        if dataframe is None or metadata is None:
+            raise ValueError("result must be a BoundedReadResult")
+
+        query_fingerprint = getattr(metadata, "query_sha256", None)
+        query_type = getattr(metadata, "query_type", None)
+        source_identity = getattr(metadata, "source_identity", None)
+        table_name = getattr(metadata, "table_name", None)
+        if getattr(metadata, "source_type", None) != "sqlite":
+            raise ValueError("Only SQLite bounded reads can be registered here")
+        if not source_identity:
+            raise ValueError("SQLite result is missing source_identity")
+        if query_type not in {"table", "sql"}:
+            raise ValueError("SQLite result is missing a valid query_type")
+        if query_type == "table" and not table_name:
+            raise ValueError("SQLite table reads must include table_name")
+
+        asset = DataAsset.from_sqlite_query(
+            dataframe=dataframe,
+            source_identity=source_identity,
+            query_fingerprint=query_fingerprint,
+            query_type=query_type,
+            table_name=table_name,
+            selected_columns=tuple(getattr(metadata, "selected_columns", ()) or ()),
+            truncated=bool(getattr(metadata, "truncated", False)),
+            name=name,
+        )
+        for existing in self.assets.values():
+            if self._sqlite_assets_match(existing, asset):
+                if existing.asset_id not in self.task.input_asset_ids:
+                    self.task.input_asset_ids.append(existing.asset_id)
+                    self._persist()
+                return existing
+
+        added_asset = asset.asset_id not in self.assets
+        linked_asset = asset.asset_id not in self.task.input_asset_ids
+        if added_asset:
+            self.assets[asset.asset_id] = asset
+        if linked_asset:
+            self.task.input_asset_ids.append(asset.asset_id)
+        try:
+            self._persist()
+        except Exception:
+            if added_asset:
+                self.assets.pop(asset.asset_id, None)
+            if linked_asset:
+                self.task.input_asset_ids.remove(asset.asset_id)
+            raise
         return asset
 
     def register_artifact(

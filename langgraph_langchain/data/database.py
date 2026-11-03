@@ -62,6 +62,7 @@ class SQLiteConnectionConfig:
     # guarantee for SQLite's internal or Python's peak memory usage.
     max_result_bytes: int = 50 * 1024 * 1024
     fetch_batch_rows: int = 1_000
+    source_identity: str | None = None
 
     def __post_init__(self) -> None:
         path = Path(self.database_path).resolve()
@@ -84,11 +85,25 @@ class SQLiteConnectionConfig:
         if self.query_timeout_seconds <= 0:
             raise DatabaseConfigError("query_timeout_seconds must be positive")
         _validate_positive_int(self.max_result_bytes, "max_result_bytes")
+        if self.source_identity is not None and (
+            not isinstance(self.source_identity, str)
+            or not self.source_identity.strip()
+        ):
+            raise DatabaseConfigError(
+                "source_identity must be non-empty text when provided"
+            )
 
 
 def _validate_positive_int(value: Any, name: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise DatabaseConfigError(f"{name} must be a positive integer")
+
+
+def _sqlite_source_identity(path: Path) -> str:
+    """Return a stable internal identity without exposing the source path."""
+    normalized_path = str(Path(path).resolve())
+    digest = hashlib.sha256(normalized_path.encode("utf-8")).hexdigest()
+    return f"sqlite:sha256:{digest}"
 
 
 class SQLiteDatabase:
@@ -236,6 +251,8 @@ class SQLiteReadMetadata:
     """Provenance and resource metadata for one bounded read."""
 
     database_path: str
+    source_identity: str | None
+    query_type: str
     table_name: str | None
     query_sha256: str | None
     selected_columns: tuple[str, ...]
@@ -522,8 +539,77 @@ def _is_timeout_error(exc: sqlite3.Error) -> bool:
     return "interrupted" in str(exc).casefold()
 
 
-def _query_fingerprint(sql: str) -> str:
-    return hashlib.sha256(sql.encode("utf-8")).hexdigest()
+def _hash_fingerprint_token(digest: "hashlib._Hash", tag: str, payload: bytes) -> None:
+    tag_bytes = tag.encode("ascii")
+    digest.update(len(tag_bytes).to_bytes(2, "big"))
+    digest.update(tag_bytes)
+    digest.update(len(payload).to_bytes(8, "big"))
+    digest.update(payload)
+
+
+def _sqlite_parameter_fingerprint(
+    parameters: tuple[Any, ...] | Mapping[str, Any] | None,
+) -> str:
+    """Hash SQLite bound parameters without retaining their raw values."""
+    digest = hashlib.sha256()
+
+    def token(tag: str, payload: bytes) -> None:
+        _hash_fingerprint_token(digest, tag, payload)
+
+    def scalar(value: Any) -> None:
+        if value is None:
+            token("null", b"")
+        elif isinstance(value, bool):
+            token("bool", b"1" if value else b"0")
+        elif isinstance(value, int):
+            token("int", str(value).encode("ascii"))
+        elif isinstance(value, float):
+            token("float", format(value, ".17g").encode("ascii"))
+        elif isinstance(value, str):
+            token("str", value.encode("utf-8"))
+        elif isinstance(value, (bytes, bytearray)):
+            token("bytes", bytes(value))
+        else:
+            raise DatabaseQueryValidationError(
+                "Unsupported SQLite parameter type for fingerprinting"
+            )
+
+    if parameters is None:
+        token("mode", b"none")
+    elif isinstance(parameters, Mapping):
+        token("mode", b"mapping")
+        token("count", str(len(parameters)).encode("ascii"))
+        for key in sorted(parameters, key=lambda item: str(item)):
+            scalar(key)
+            scalar(parameters[key])
+    elif isinstance(parameters, tuple):
+        token("mode", b"tuple")
+        token("count", str(len(parameters)).encode("ascii"))
+        for value in parameters:
+            scalar(value)
+    else:
+        raise DatabaseQueryValidationError(
+            "SQLite query parameters must be a tuple or mapping"
+        )
+    return digest.hexdigest()
+
+
+def _query_fingerprint(
+    sql: str,
+    parameters: tuple[Any, ...] | Mapping[str, Any] | None = None,
+    *,
+    mode: str = "sql",
+) -> str:
+    """Fingerprint normalized SQL, bound parameters, and query mode."""
+    normalized_sql = re.sub(r"\s+", " ", sql).strip()
+    parameter_digest = _sqlite_parameter_fingerprint(parameters)
+    digest = hashlib.sha256()
+    _hash_fingerprint_token(digest, "query-mode", mode.encode("ascii"))
+    _hash_fingerprint_token(digest, "sql", normalized_sql.encode("utf-8"))
+    _hash_fingerprint_token(
+        digest, "parameters", parameter_digest.encode("ascii")
+    )
+    return digest.hexdigest()
 
 
 def _validate_max_rows(value: int | None, hard_limit: int, label: str) -> int:
@@ -599,6 +685,10 @@ class SQLiteDataSource(DataSource):
     @property
     def config(self) -> SQLiteConnectionConfig:
         return self.database.config
+
+    @property
+    def source_identity(self) -> str:
+        return self.config.source_identity or _sqlite_source_identity(self.path)
 
     def connect_readonly(self) -> sqlite3.Connection:
         return self.database.connect_readonly()
@@ -830,6 +920,9 @@ class SQLiteDataSource(DataSource):
                 return 1 if time.monotonic() >= deadline else 0
 
             connection.set_progress_handler(check_progress, 1_000)
+            query_sha256 = _query_fingerprint(
+                query, parameters, mode="sql"
+            )
             cursor = connection.execute(query, parameters or ())
             column_names = tuple(
                 str(description[0]) for description in cursor.description
@@ -866,8 +959,10 @@ class SQLiteDataSource(DataSource):
             duration = time.monotonic() - started
             metadata = SQLiteReadMetadata(
                 database_path=str(self.path),
+                source_identity=self.source_identity,
+                query_type="sql",
                 table_name=None,
-                query_sha256=_query_fingerprint(query),
+                query_sha256=query_sha256,
                 selected_columns=column_names,
                 returned_row_count=len(dataframe),
                 requested_row_limit=requested_limit,
@@ -942,8 +1037,10 @@ class SQLiteDataSource(DataSource):
         )
         metadata = SQLiteReadMetadata(
             database_path=str(self.path),
+            source_identity=self.source_identity,
+            query_type="table",
             table_name=table.name,
-            query_sha256=None,
+            query_sha256=_query_fingerprint(sql, mode="table"),
             selected_columns=tuple(
                 projected_columns if projected_columns is not None else column_names
             ),
