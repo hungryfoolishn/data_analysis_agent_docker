@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import itertools
 import re
 import sqlite3
 import time
@@ -58,6 +57,9 @@ class SQLiteConnectionConfig:
     preview_max_rows: int = 100
     materialize_max_rows: int = 100_000
     query_timeout_seconds: float = 30.0
+    # This is an estimated cap for materialized SQLite values. SQLite must
+    # return a row before Python can inspect its bytes, so it is not a hard
+    # guarantee for SQLite's internal or Python's peak memory usage.
     max_result_bytes: int = 50 * 1024 * 1024
     fetch_batch_rows: int = 1_000
 
@@ -486,6 +488,14 @@ def _has_multiple_statements(sql: str) -> bool:
     return False
 
 
+# SQLite must materialize values before Python can measure them. Deny the
+# built-in/extension functions most likely to create a very large value before
+# execution; ordinary column values are still guarded per fetched row.
+_UNBOUNDED_VALUE_FUNCTIONS = frozenset(
+    {"randomblob", "zeroblob", "readfile", "writefile"}
+)
+
+
 def _readonly_select_authorizer(
     action: int, arg1: Any, arg2: Any, database: Any, trigger: Any
 ) -> int:
@@ -498,7 +508,11 @@ def _readonly_select_authorizer(
     }
     if action in allowed:
         if action == sqlite3.SQLITE_FUNCTION and isinstance(arg2, str):
-            if arg2.casefold() == "load_extension":
+            function_name = arg2.casefold()
+            if (
+                function_name == "load_extension"
+                or function_name in _UNBOUNDED_VALUE_FUNCTIONS
+            ):
                 return sqlite3.SQLITE_DENY
         return sqlite3.SQLITE_OK
     return sqlite3.SQLITE_DENY
@@ -776,7 +790,14 @@ class SQLiteDataSource(DataSource):
         result_size_limit: int | None = None,
         timeout_seconds: float | None = None,
     ) -> BoundedReadResult:
-        """Execute one read-only SELECT with strict resource boundaries."""
+        """Execute one read-only SELECT with bounded rows, time, and size.
+
+        ``result_size_limit`` is an estimated cap applied as fetched values are
+        accumulated. SQLite must return a row before Python can inspect its
+        bytes, so this is not a hard SQLite/Python peak-memory boundary.
+        Functions capable of generating unbounded values are denied before
+        execution.
+        """
         if not isinstance(query, str) or not query.strip():
             raise DatabaseQueryValidationError("SQL query must be non-empty text")
         if _has_multiple_statements(query):
@@ -813,35 +834,35 @@ class SQLiteDataSource(DataSource):
             column_names = tuple(
                 str(description[0]) for description in cursor.description
             )
-            batches: list[list[tuple[Any, ...]]] = []
+            materialized_rows: list[tuple[Any, ...]] = []
             returned = 0
             result_bytes = 0
             truncated = False
             while True:
                 remaining = requested_limit - returned
                 fetch_count = min(self.config.fetch_batch_rows, remaining + 1)
-                rows = cursor.fetchmany(fetch_count)
-                if not rows:
+                fetched_rows = cursor.fetchmany(fetch_count)
+                if not fetched_rows:
                     break
-                if len(rows) > remaining:
-                    rows = rows[:remaining]
+                if len(fetched_rows) > remaining:
+                    fetched_rows = fetched_rows[:remaining]
                     truncated = True
-                for row in rows:
-                    result_bytes += sum(_sqlite_value_size(value) for value in row)
-                    if result_bytes > result_size_limit:
+                for row in fetched_rows:
+                    row_bytes = sum(_sqlite_value_size(value) for value in row)
+                    if result_bytes + row_bytes > result_size_limit:
                         raise ResultSizeLimitExceededError(
                             f"SQLite result exceeds {result_size_limit} bytes"
                         )
-                if rows:
-                    batches.append(rows)
-                    returned += len(rows)
-                if truncated or len(rows) < fetch_count:
+                    result_bytes += row_bytes
+                if fetched_rows:
+                    materialized_rows.extend(fetched_rows)
+                    returned += len(fetched_rows)
+                if truncated or len(fetched_rows) < fetch_count:
                     break
 
-            rows = (
-                list(itertools.chain.from_iterable(batches)) if batches else []
+            dataframe = pd.DataFrame(
+                materialized_rows, columns=list(column_names)
             )
-            dataframe = pd.DataFrame(rows, columns=list(column_names))
             duration = time.monotonic() - started
             metadata = SQLiteReadMetadata(
                 database_path=str(self.path),
@@ -859,7 +880,12 @@ class SQLiteDataSource(DataSource):
                 raise QueryTimeoutError(
                     f"SQLite query exceeded {timeout_seconds} seconds"
                 ) from exc
-            if "not authorized" in str(exc).casefold():
+            message = str(exc).casefold()
+            if "not authorized to use function" in message:
+                raise DatabaseQueryValidationError(
+                    "Blocked SQLite function: unbounded value functions are disabled"
+                ) from exc
+            if "not authorized" in message:
                 raise DatabaseQueryValidationError(
                     "Only single read-only SELECT statements are allowed"
                 ) from exc

@@ -272,6 +272,25 @@ def test_result_size_limit_is_explicit(tmp_path: Path):
         source.materialize(table_name="payload")
 
 
+def test_oversized_returned_value_is_rejected(tmp_path: Path):
+    db_path = _create_items(tmp_path / "items.sqlite", row_count=1)
+    source = _source(db_path, max_result_bytes=16)
+
+    with pytest.raises(ResultSizeLimitExceededError, match="16 bytes"):
+        source.execute_bounded_query(
+            "SELECT ? AS oversized_value", parameters=("x" * 64,)
+        )
+
+
+@pytest.mark.parametrize("sql", ["SELECT randomblob(64)", "SELECT zeroblob(64)"])
+def test_unbounded_value_functions_are_denied(tmp_path: Path, sql: str):
+    db_path = _create_items(tmp_path / "items.sqlite", row_count=1)
+    source = _source(db_path, max_result_bytes=64)
+
+    with pytest.raises(DatabaseQueryValidationError, match="Blocked SQLite function"):
+        source.execute_bounded_query(sql)
+
+
 class _SpySQLiteDatabase(SQLiteDatabase):
     def __init__(self, config: SQLiteConnectionConfig):
         super().__init__(config)
