@@ -37,4 +37,5 @@ dependencies:
   - pip:
     - huggingface-hub>=0.23.0
     - openai>=1.30.0
+    - pyarrow>=15.0.0
     - python-multipart>=0.0.9

@@ -6,6 +6,7 @@ pyyaml>=6.0
 
 # Data analysis
 pandas>=2.0.0
+pyarrow>=15.0.0      # DataFrame snapshot persistence (Parquet)
 openpyxl>=3.1.0      # Excel (.xlsx) support
 xlrd>=2.0.0          # Excel (.xls) support
 
