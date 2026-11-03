@@ -167,18 +167,15 @@ def test_sqlite_data_source_is_compatible_with_data_source_contract(tmp_path: Pa
         assert connection.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 6
 
 
-def test_data_source_defers_query_capabilities(tmp_path: Path):
+def test_data_source_read_capabilities_are_available(tmp_path: Path):
     db_path = create_golden_sqlite(tmp_path / "golden.sqlite")
     source = SQLiteDataSource(
         SQLiteDatabase(SQLiteConnectionConfig(database_path=db_path))
     )
 
-    with pytest.raises(NotImplementedError, match="M2.5"):
-        source.preview()
-    with pytest.raises(NotImplementedError, match="M2.5"):
-        source.estimate_rows()
-    with pytest.raises(NotImplementedError, match="M2.5"):
-        source.materialize()
+    assert source.preview(rows=1, table_name="orders").shape[0] == 1
+    assert source.estimate_rows("orders", exact=True).is_exact is True
+    assert source.materialize(table_name="orders", max_rows=1).shape[0] == 1
 
 
 def test_string_database_path_is_accepted(tmp_path: Path):
