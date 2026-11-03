@@ -207,9 +207,16 @@ class AnalysisRuntime:
         )
         for existing in self.assets.values():
             if self._sqlite_assets_match(existing, asset):
-                if existing.asset_id not in self.task.input_asset_ids:
+                linked_existing = (
+                    existing.asset_id not in self.task.input_asset_ids
+                )
+                if linked_existing:
                     self.task.input_asset_ids.append(existing.asset_id)
-                    self._persist()
+                    try:
+                        self._persist()
+                    except Exception:
+                        self.task.input_asset_ids.remove(existing.asset_id)
+                        raise
                 return existing
 
         added_asset = asset.asset_id not in self.assets

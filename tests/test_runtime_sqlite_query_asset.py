@@ -78,6 +78,18 @@ def test_query_fingerprint_distinguishes_sql_parameters_and_mode(tmp_path: Path)
     assert table.metadata.query_sha256 != query.metadata.query_sha256
 
 
+def test_sql_fingerprint_preserves_quoted_whitespace(tmp_path: Path):
+    db_path = _create_items(tmp_path / "items.sqlite")
+    source = _source(db_path)
+
+    wide = source.execute_bounded_query("SELECT 'a  b' AS text")
+    narrow = source.execute_bounded_query("SELECT 'a b' AS text")
+    repeated = source.execute_bounded_query("SELECT 'a  b' AS text")
+
+    assert wide.metadata.query_sha256 != narrow.metadata.query_sha256
+    assert wide.metadata.query_sha256 == repeated.metadata.query_sha256
+
+
 def test_query_metadata_does_not_retain_raw_parameters(tmp_path: Path):
     db_path = _create_items(tmp_path / "items.sqlite")
     source = _source(db_path)
@@ -240,3 +252,28 @@ def test_failed_sqlite_asset_registration_rolls_back(tmp_path: Path, monkeypatch
 
     assert runtime.assets == {}
     assert runtime.task.input_asset_ids == []
+
+
+
+def test_failed_sqlite_asset_reuse_rolls_back_task_link(
+    tmp_path: Path, monkeypatch
+):
+    db_path = _create_items(tmp_path / "items.sqlite")
+    result = _sqlite_result(db_path)
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Roll back failed asset reuse",
+    )
+    asset = runtime.register_sqlite_result(result=result)
+    runtime.task.input_asset_ids.remove(asset.asset_id)
+
+    def fail_persist():
+        raise OSError("simulated persistence failure")
+
+    monkeypatch.setattr(runtime, "_persist", fail_persist)
+    with pytest.raises(OSError, match="simulated persistence failure"):
+        runtime.register_sqlite_result(result=result)
+
+    assert runtime.assets[asset.asset_id] is asset
+    assert asset.asset_id not in runtime.task.input_asset_ids

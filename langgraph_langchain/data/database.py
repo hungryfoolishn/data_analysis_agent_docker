@@ -594,14 +594,56 @@ def _sqlite_parameter_fingerprint(
     return digest.hexdigest()
 
 
+def _normalize_sql_whitespace(sql: str) -> str:
+    """Collapse whitespace outside quoted strings and quoted identifiers.
+
+    Quoted content is preserved byte-for-byte so two SQL strings that differ
+    only inside a literal cannot produce the same provenance fingerprint.
+    """
+    normalized: list[str] = []
+    quote: str | None = None
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        if quote is not None:
+            normalized.append(char)
+            if char == quote:
+                if index + 1 < length and sql[index + 1] == quote:
+                    normalized.append(sql[index + 1])
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+            normalized.append(char)
+            index += 1
+            continue
+        if char == "[":
+            quote = "]"
+            normalized.append(char)
+            index += 1
+            continue
+        if char.isspace():
+            while index < length and sql[index].isspace():
+                index += 1
+            normalized.append(" ")
+            continue
+        normalized.append(char)
+        index += 1
+    return "".join(normalized).strip()
+
+
 def _query_fingerprint(
     sql: str,
     parameters: tuple[Any, ...] | Mapping[str, Any] | None = None,
     *,
     mode: str = "sql",
 ) -> str:
-    """Fingerprint normalized SQL, bound parameters, and query mode."""
-    normalized_sql = re.sub(r"\s+", " ", sql).strip()
+    """Fingerprint SQL-aware normalized SQL, parameters, and query mode."""
+    normalized_sql = _normalize_sql_whitespace(sql)
     parameter_digest = _sqlite_parameter_fingerprint(parameters)
     digest = hashlib.sha256()
     _hash_fingerprint_token(digest, "query-mode", mode.encode("ascii"))
