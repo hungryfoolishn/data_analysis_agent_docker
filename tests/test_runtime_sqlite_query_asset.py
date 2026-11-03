@@ -14,6 +14,11 @@ from langgraph_langchain.data.database import (
     SQLiteDatabase,
     SQLiteDataSource,
 )
+from langgraph_langchain.data.snapshots import (
+    SnapshotReference,
+    SnapshotStore,
+    SnapshotWriteError,
+)
 from langgraph_langchain.runtime.context import AnalysisRuntime
 
 
@@ -277,3 +282,189 @@ def test_failed_sqlite_asset_reuse_rolls_back_task_link(
 
     assert runtime.assets[asset.asset_id] is asset
     assert asset.asset_id not in runtime.task.input_asset_ids
+
+
+
+class _CountingSnapshotStore(SnapshotStore):
+    def __init__(self, root):
+        super().__init__(root)
+        self.save_count = 0
+
+    def save(self, dataframe, **kwargs):
+        self.save_count += 1
+        return super().save(dataframe, **kwargs)
+
+
+def test_sqlite_asset_registers_verified_snapshot(tmp_path: Path):
+    db_path = _create_items(tmp_path / "items.sqlite")
+    result = _sqlite_result(db_path)
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Snapshot SQLite query results",
+    )
+
+    asset = runtime.register_sqlite_result(result=result)
+    payload = asset.source_metadata["snapshot_reference"]
+    reference = SnapshotReference.model_validate(payload)
+
+    assert runtime.snapshot_store.exists(reference) is True
+    loaded = runtime.snapshot_store.load(reference)
+    pd.testing.assert_frame_equal(loaded, result.dataframe)
+    assert reference.content_hash == asset.content_hash
+    assert asset.source_metadata["truncated"] is False
+    assert str(db_path) not in reference.model_dump_json()
+
+
+def test_sqlite_asset_snapshot_persists_across_restart(tmp_path: Path):
+    db_path = _create_items(tmp_path / "items.sqlite")
+    result = _sqlite_result(db_path)
+    first = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Snapshot SQLite query results",
+    )
+    asset = first.register_sqlite_result(result=result)
+
+    second = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Snapshot SQLite query results",
+    )
+    restored = second.assets[asset.asset_id]
+    reference = SnapshotReference.model_validate(
+        restored.source_metadata["snapshot_reference"]
+    )
+    loaded = second.snapshot_store.load(reference)
+
+    assert restored.source_metadata == asset.source_metadata
+    assert second.snapshot_store.exists(reference) is True
+    pd.testing.assert_frame_equal(loaded, result.dataframe)
+    assert asset.asset_id in second.task.input_asset_ids
+
+
+def test_sqlite_asset_dedup_reuses_snapshot(tmp_path: Path):
+    db_path = _create_items(tmp_path / "items.sqlite")
+    result = _sqlite_result(db_path)
+    store = _CountingSnapshotStore(tmp_path / ".data_snapshots")
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Reuse SQLite snapshots",
+        snapshot_store=store,
+    )
+
+    first = runtime.register_sqlite_result(result=result)
+    reused = runtime.register_sqlite_result(result=result)
+
+    assert reused.asset_id == first.asset_id
+    assert store.save_count == 1
+    assert reused.source_metadata["snapshot_reference"] == (
+        first.source_metadata["snapshot_reference"]
+    )
+
+
+def test_changed_sqlite_content_creates_new_snapshot(tmp_path: Path):
+    db_path = _create_items(tmp_path / "items.sqlite")
+    source = _source(db_path)
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Version SQLite snapshots",
+    )
+    first_result = source.execute_bounded_query(
+        "SELECT id, value FROM items ORDER BY id"
+    )
+    first = runtime.register_sqlite_result(result=first_result)
+
+    changed_result = source.execute_bounded_query(
+        "SELECT id, value FROM items ORDER BY id"
+    )
+    changed_result.dataframe.loc[0, "value"] = "changed"
+    changed = runtime.register_sqlite_result(result=changed_result)
+
+    first_reference = SnapshotReference.model_validate(
+        first.source_metadata["snapshot_reference"]
+    )
+    changed_reference = SnapshotReference.model_validate(
+        changed.source_metadata["snapshot_reference"]
+    )
+
+    assert changed.asset_id != first.asset_id
+    assert changed_reference.snapshot_id != first_reference.snapshot_id
+    assert changed.content_hash != first.content_hash
+    assert runtime.snapshot_store.exists(first_reference) is True
+    assert runtime.snapshot_store.exists(changed_reference) is True
+
+
+def test_snapshot_save_failure_does_not_register_asset(tmp_path: Path, monkeypatch):
+    db_path = _create_items(tmp_path / "items.sqlite")
+    result = _sqlite_result(db_path)
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Snapshot failure",
+    )
+
+    def fail_save(*args, **kwargs):
+        raise SnapshotWriteError("simulated snapshot failure")
+
+    monkeypatch.setattr(runtime.snapshot_store, "save", fail_save)
+    with pytest.raises(SnapshotWriteError, match="simulated snapshot failure"):
+        runtime.register_sqlite_result(result=result)
+
+    assert runtime.assets == {}
+    assert runtime.task.input_asset_ids == []
+
+
+def test_runtime_persist_failure_cleans_new_snapshot(
+    tmp_path: Path, monkeypatch
+):
+    db_path = _create_items(tmp_path / "items.sqlite")
+    result = _sqlite_result(db_path)
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Clean snapshot after persistence failure",
+    )
+    original_save = runtime.snapshot_store.save
+    saved_references: list[SnapshotReference] = []
+
+    def save(dataframe, **kwargs):
+        reference = original_save(dataframe, **kwargs)
+        saved_references.append(reference)
+        return reference
+
+    def fail_persist():
+        raise OSError("simulated persistence failure")
+
+    monkeypatch.setattr(runtime.snapshot_store, "save", save)
+    monkeypatch.setattr(runtime, "_persist", fail_persist)
+    with pytest.raises(OSError, match="simulated persistence failure"):
+        runtime.register_sqlite_result(result=result)
+
+    assert len(saved_references) == 1
+    assert runtime.snapshot_store.exists(saved_references[0]) is False
+    assert runtime.assets == {}
+    assert runtime.task.input_asset_ids == []
+
+
+def test_truncated_state_is_preserved_in_snapshot_metadata(tmp_path: Path):
+    db_path = _create_items(tmp_path / "items.sqlite", row_count=2)
+    result = _source(db_path).execute_bounded_query(
+        "SELECT id, value FROM items ORDER BY id", max_rows=1
+    )
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path,
+        session_id="sqlite-asset",
+        question="Preserve truncation",
+    )
+
+    asset = runtime.register_sqlite_result(result=result)
+    reference = SnapshotReference.model_validate(
+        asset.source_metadata["snapshot_reference"]
+    )
+
+    assert asset.source_metadata["truncated"] is True
+    assert reference.row_count == 1
+    assert len(runtime.snapshot_store.load(reference)) == 1

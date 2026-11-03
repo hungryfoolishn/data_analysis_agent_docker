@@ -12,6 +12,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 from langgraph_langchain.data.assets import DataAsset, hash_dataframe, hash_file
+from langgraph_langchain.data.snapshots import (
+    SnapshotNotFoundError,
+    SnapshotReference,
+    SnapshotStore,
+    SnapshotValidationError,
+    new_snapshot_id,
+)
 from langgraph_langchain.runtime.models import (
     AnalysisRun,
     AnalysisTask,
@@ -78,8 +85,12 @@ class AnalysisRuntime:
         parent_run_id: Optional[str] = None,
         retry_of_step_id: Optional[str] = None,
         plan_first: bool = False,
+        snapshot_store: Optional[SnapshotStore] = None,
     ) -> None:
         self.workspace_dir = workspace_dir.resolve()
+        self.snapshot_store = snapshot_store or SnapshotStore(
+            self.workspace_dir / ".data_snapshots"
+        )
         self.session_id = session_id or "default"
         self.assets: dict[str, DataAsset] = {}
         self.executions: list[ExecutionResult] = []
@@ -161,14 +172,45 @@ class AnalysisRuntime:
         return asset
 
     @staticmethod
-    def _sqlite_assets_match(existing: DataAsset, asset: DataAsset) -> bool:
-        """Reuse only when both provenance and result content are identical."""
+    def _sqlite_provenance_matches(
+        existing: DataAsset,
+        *,
+        content_hash: str,
+        source_identity: str,
+        query_fingerprint: str,
+        query_type: str,
+        table_name: Optional[str],
+        selected_columns: tuple[str, ...],
+        row_count: int,
+        truncated: bool,
+    ) -> bool:
+        """Return whether provenance and content are identical for reuse."""
+        metadata = existing.source_metadata
         return (
             existing.source_type == "sqlite"
-            and asset.source_type == "sqlite"
-            and existing.content_hash == asset.content_hash
-            and existing.source_metadata == asset.source_metadata
+            and existing.content_hash == content_hash
+            and metadata.get("source_identity") == source_identity
+            and metadata.get("query_fingerprint") == query_fingerprint
+            and metadata.get("query_type") == query_type
+            and metadata.get("table_name") == table_name
+            and metadata.get("selected_columns") == list(selected_columns)
+            and metadata.get("row_count") == row_count
+            and metadata.get("truncated") == truncated
         )
+
+    @staticmethod
+    def _sqlite_snapshot_reference(asset: DataAsset) -> SnapshotReference:
+        payload = asset.source_metadata.get("snapshot_reference")
+        if not isinstance(payload, dict):
+            raise SnapshotValidationError(
+                "Existing SQLite asset has no snapshot reference"
+            )
+        try:
+            return SnapshotReference.model_validate(payload)
+        except Exception as exc:
+            raise SnapshotValidationError(
+                "Existing SQLite asset has an invalid snapshot reference"
+            ) from exc
 
     def register_sqlite_result(
         self,
@@ -176,7 +218,7 @@ class AnalysisRuntime:
         result,
         name: Optional[str] = None,
     ) -> DataAsset:
-        """Register a bounded SQLite read as a Runtime V2 DataAsset."""
+        """Register a bounded SQLite read with a verified data snapshot."""
         dataframe = getattr(result, "dataframe", None)
         metadata = getattr(result, "metadata", None)
         if dataframe is None or metadata is None:
@@ -186,6 +228,11 @@ class AnalysisRuntime:
         query_type = getattr(metadata, "query_type", None)
         source_identity = getattr(metadata, "source_identity", None)
         table_name = getattr(metadata, "table_name", None)
+        selected_columns = tuple(
+            getattr(metadata, "selected_columns", ()) or ()
+        )
+        row_count = int(len(dataframe))
+        truncated = bool(getattr(metadata, "truncated", False))
         if getattr(metadata, "source_type", None) != "sqlite":
             raise ValueError("Only SQLite bounded reads can be registered here")
         if not source_identity:
@@ -194,19 +241,27 @@ class AnalysisRuntime:
             raise ValueError("SQLite result is missing a valid query_type")
         if query_type == "table" and not table_name:
             raise ValueError("SQLite table reads must include table_name")
+        if not query_fingerprint:
+            raise ValueError("SQLite result is missing query_fingerprint")
 
-        asset = DataAsset.from_sqlite_query(
-            dataframe=dataframe,
-            source_identity=source_identity,
-            query_fingerprint=query_fingerprint,
-            query_type=query_type,
-            table_name=table_name,
-            selected_columns=tuple(getattr(metadata, "selected_columns", ()) or ()),
-            truncated=bool(getattr(metadata, "truncated", False)),
-            name=name,
-        )
+        content_hash = hash_dataframe(dataframe)
         for existing in self.assets.values():
-            if self._sqlite_assets_match(existing, asset):
+            if self._sqlite_provenance_matches(
+                existing,
+                content_hash=content_hash,
+                source_identity=source_identity,
+                query_fingerprint=query_fingerprint,
+                query_type=query_type,
+                table_name=table_name,
+                selected_columns=selected_columns,
+                row_count=row_count,
+                truncated=truncated,
+            ):
+                reference = self._sqlite_snapshot_reference(existing)
+                if not self.snapshot_store.exists(reference):
+                    raise SnapshotNotFoundError(
+                        f"Snapshot is missing for asset {existing.asset_id}"
+                    )
                 linked_existing = (
                     existing.asset_id not in self.task.input_asset_ids
                 )
@@ -219,18 +274,44 @@ class AnalysisRuntime:
                         raise
                 return existing
 
-        added_asset = asset.asset_id not in self.assets
-        linked_asset = asset.asset_id not in self.task.input_asset_ids
-        if added_asset:
-            self.assets[asset.asset_id] = asset
-        if linked_asset:
-            self.task.input_asset_ids.append(asset.asset_id)
+        reference = self.snapshot_store.save(
+            dataframe,
+            snapshot_id=new_snapshot_id(),
+            content_hash=content_hash,
+        )
+        added_asset = False
+        linked_asset = False
+        asset = None
         try:
+            asset = DataAsset.from_sqlite_query(
+                dataframe=dataframe,
+                source_identity=source_identity,
+                query_fingerprint=query_fingerprint,
+                query_type=query_type,
+                table_name=table_name,
+                selected_columns=selected_columns,
+                truncated=truncated,
+                source_metadata={
+                    "snapshot_reference": reference.model_dump(mode="json")
+                },
+                name=name,
+            )
+            added_asset = asset.asset_id not in self.assets
+            linked_asset = asset.asset_id not in self.task.input_asset_ids
+            if added_asset:
+                self.assets[asset.asset_id] = asset
+            if linked_asset:
+                self.task.input_asset_ids.append(asset.asset_id)
             self._persist()
         except Exception:
-            if added_asset:
+            self.snapshot_store.delete(reference)
+            if added_asset and asset is not None:
                 self.assets.pop(asset.asset_id, None)
-            if linked_asset:
+            if (
+                linked_asset
+                and asset is not None
+                and asset.asset_id in self.task.input_asset_ids
+            ):
                 self.task.input_asset_ids.remove(asset.asset_id)
             raise
         return asset
