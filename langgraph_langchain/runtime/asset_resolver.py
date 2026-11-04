@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping, Sequence
 
 import pandas as pd
 from pydantic import ValidationError
 
-from langgraph_langchain.data.assets import DataAsset
+from langgraph_langchain.data.assets import DataAsset, hash_file
 from langgraph_langchain.data.snapshots import (
     SnapshotError,
     SnapshotReference,
     SnapshotStore,
 )
+from langgraph_langchain.data.sources import FileDataSource
 
 
 class AssetResolutionError(RuntimeError):
@@ -46,13 +48,17 @@ class ResolvedAsset:
     selected_columns: tuple[str, ...]
     row_count: int
     truncated: bool
-    snapshot_reference: SnapshotReference
+    snapshot_reference: SnapshotReference | None
+    source_location: str | None = None
+    sheet_name: str | None = None
 
     @property
     def provenance(self) -> dict[str, object]:
         return {
             "asset_id": self.asset_id,
             "source_type": self.source_type,
+            "source_location": self.source_location,
+            "sheet_name": self.sheet_name,
             "source_identity": self.source_identity,
             "query_fingerprint": self.query_fingerprint,
             "query_type": self.query_type,
@@ -60,8 +66,15 @@ class ResolvedAsset:
             "selected_columns": list(self.selected_columns),
             "row_count": self.row_count,
             "truncated": self.truncated,
-            "snapshot_reference": self.snapshot_reference.model_dump(mode="json"),
+            "snapshot_reference": (
+                self.snapshot_reference.model_dump(mode="json")
+                if self.snapshot_reference is not None
+                else None
+            ),
         }
+
+
+_FILE_SOURCE_TYPES = {"csv", "xlsx", "xls", "parquet"}
 
 
 class AssetResolver:
@@ -86,9 +99,11 @@ class AssetResolver:
         asset = self._assets.get(asset_id)
         if asset is None:
             raise AssetNotFoundError(f"Input asset is not registered: {asset_id}")
+        if asset.source_type in _FILE_SOURCE_TYPES:
+            return self._resolve_file_asset(asset)
         if asset.source_type != "sqlite":
             raise AssetUnsupportedError(
-                f"Asset '{asset_id}' is not a SQLite query-result asset"
+                f"Asset '{asset_id}' is not a supported query-result asset"
             )
 
         payload = asset.source_metadata.get("snapshot_reference")
@@ -145,6 +160,48 @@ class AssetResolver:
             row_count=int(len(dataframe)),
             truncated=bool(metadata.get("truncated", False)),
             snapshot_reference=reference,
+        )
+
+    def _resolve_file_asset(self, asset: DataAsset) -> ResolvedAsset:
+        """Load a registered file asset using the existing FileDataSource."""
+        asset_id = asset.asset_id
+        if not isinstance(asset.location, str) or not asset.location:
+            raise AssetUnsupportedError(
+                f"File asset '{asset_id}' has no registered location"
+            )
+        path = Path(asset.location)
+        if not path.is_file():
+            raise AssetResolutionError(
+                f"File asset '{asset_id}' is no longer available"
+            )
+        if asset.content_hash and hash_file(path) != asset.content_hash:
+            raise AssetResolutionError(
+                f"File asset '{asset_id}' changed after registration"
+            )
+        try:
+            source = FileDataSource(
+                path,
+                sheet_name=asset.sheet_name,
+            )
+            dataframe = source.materialize()
+        except Exception as exc:
+            raise AssetResolutionError(
+                f"Unable to load file asset '{asset_id}'"
+            ) from exc
+        return ResolvedAsset(
+            asset_id=asset_id,
+            dataframe=dataframe,
+            source_type=asset.source_type,
+            source_location=str(path),
+            sheet_name=asset.sheet_name,
+            source_identity=None,
+            query_fingerprint=None,
+            query_type=None,
+            table_name=None,
+            selected_columns=tuple(str(column) for column in dataframe.columns),
+            row_count=int(len(dataframe)),
+            truncated=False,
+            snapshot_reference=None,
         )
 
     def resolve_many(self, asset_ids: Sequence[str]) -> dict[str, ResolvedAsset]:
