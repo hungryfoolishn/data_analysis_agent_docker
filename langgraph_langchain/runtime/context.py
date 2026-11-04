@@ -19,6 +19,11 @@ from langgraph_langchain.data.snapshots import (
     SnapshotValidationError,
     new_snapshot_id,
 )
+from langgraph_langchain.runtime.asset_resolver import (
+    AssetInputConflictError,
+    AssetResolutionError,
+    AssetResolver,
+)
 from langgraph_langchain.runtime.models import (
     AnalysisRun,
     AnalysisTask,
@@ -93,6 +98,10 @@ class AnalysisRuntime:
         )
         self.session_id = session_id or "default"
         self.assets: dict[str, DataAsset] = {}
+        self.asset_resolver = AssetResolver(
+            assets=self.assets,
+            snapshot_store=self.snapshot_store,
+        )
         self.executions: list[ExecutionResult] = []
         self.artifacts: dict[str, RuntimeArtifact] = {}
         self.findings: list[dict[str, Any]] = []
@@ -594,16 +603,43 @@ class AnalysisRuntime:
     def build_execution_request(self, task):
         from langgraph_langchain.execution.task_models import TaskExecutionRequest
 
+        namespace = dict(self.execution_namespace)
+        metadata: dict[str, Any] = {}
+        input_asset_ids = list(task.input_asset_ids)
+        if input_asset_ids:
+            try:
+                if "runtime_inputs" in namespace or "runtime_input_metadata" in namespace:
+                    raise AssetInputConflictError(
+                        "runtime_inputs namespace keys are reserved for resolved assets"
+                    )
+                resolved = self.asset_resolver.resolve_many(input_asset_ids)
+                namespace["runtime_inputs"] = {
+                    asset_id: resolved.dataframe
+                    for asset_id, resolved in resolved.items()
+                }
+                namespace["runtime_input_metadata"] = {
+                    asset_id: resolved.provenance
+                    for asset_id, resolved in resolved.items()
+                }
+            except AssetResolutionError as exc:
+                namespace.pop("runtime_inputs", None)
+                namespace.pop("runtime_input_metadata", None)
+                metadata["asset_resolution_error"] = {
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                }
+
         return TaskExecutionRequest(
             task=task,
             run_id=self.run.run_id,
             arguments=self.resolve_arguments(task),
             code=task.constraints.get("code"),
-            namespace=self.execution_namespace,
+            namespace=namespace,
             workspace_dir=str(self.workspace_dir),
             source_path=task.constraints.get("source_path"),
             timeout_seconds=float(task.constraints.get("timeout_seconds", 60.0)),
             max_output_chars=int(task.constraints.get("max_output_chars", 3000)),
+            metadata=metadata,
         )
 
     def execute_next_task(self, *, request_factory=None):

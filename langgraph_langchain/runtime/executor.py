@@ -32,6 +32,25 @@ class TaskExecutor:
         started_at = time.perf_counter()
         task = request.task
         tool_name = task.method or f"{task.executor_type}_task"
+        resolution_error = request.metadata.get("asset_resolution_error")
+        if isinstance(resolution_error, dict):
+            return build_execution_result(
+                request,
+                status="failed",
+                tool_name=tool_name,
+                stdout_preview=str(resolution_error.get("message", "")),
+                error={
+                    "type": str(
+                        resolution_error.get("type", "AssetResolutionError")
+                    ),
+                    "message": str(
+                        resolution_error.get(
+                            "message", "Input asset resolution failed"
+                        )
+                    ),
+                },
+                duration_ms=0.0,
+            )
         try:
             if task.executor_type == "structured":
                 if self._structured is None:
