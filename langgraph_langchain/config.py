@@ -91,7 +91,7 @@ RUNTIME_V2_ENABLED: bool = (
 # A failed analysis task remains a Runtime-owned failure and should be retried
 # or replanned, not silently taken over by the legacy agent.
 RUNTIME_V2_FALLBACK_ENABLED: bool = (
-    os.environ.get("RUNTIME_V2_FALLBACK_ENABLED", "true").strip().lower()
+    os.environ.get("RUNTIME_V2_FALLBACK_ENABLED", "false").strip().lower()
     in {"1", "true", "yes", "on"}
 )
 MAX_CONSECUTIVE_PYTHON_ERRORS: int = int(
