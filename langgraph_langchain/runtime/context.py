@@ -1239,10 +1239,13 @@ class AnalysisRuntime:
                 return False
             self.task = task
             self.run = AnalysisRun.model_validate(raw["run"])
-            self.assets = {
+            restored_assets = {
                 item["asset_id"]: DataAsset.model_validate(item)
                 for item in raw.get("assets", [])
             }
+            # Update in place so an existing AssetResolver keeps its mapping view.
+            self.assets.clear()
+            self.assets.update(restored_assets)
             self.executions = [
                 ExecutionResult.model_validate(item)
                 for item in raw.get("executions", [])
@@ -1311,7 +1314,7 @@ class AnalysisRuntime:
 
         self.task = parent_task.model_copy(deep=True)
         self.task.input_asset_ids = []
-        self.assets = {}
+        self.assets.clear()
         self.executions = []
         self.artifacts = {}
         self.findings = []
