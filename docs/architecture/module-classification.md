@@ -1,7 +1,8 @@
 # Phase 0 Module Classification
 
-Classification basis: actual imports, runtime call paths, and current tests at
-commit `5314055`.
+Classification basis: actual imports, runtime call paths, and current tests.
+Originally reviewed at commit `5314055`; reconciled with the current code by
+the B0 review at branch `codex/phase1-m2.4-sqlite-schema`, commit `0f4001e`.
 
 ## Legend
 
@@ -17,7 +18,9 @@ commit `5314055`.
 
 | Module | Responsibility | Notes |
 | --- | --- | --- |
-| `langgraph_langchain/data/sources.py` | File, memory, and query-result data source contract | Core Phase 1 foundation; no SQL adapter yet |
+| `langgraph_langchain/data/sources.py` | File, memory, and query-result data source contract | Core Phase 1 foundation |
+| `langgraph_langchain/data/database.py` | SQLite read-only connection, introspection, bounded execution (M2.4/M2.5) | Keep; added after the original review |
+| `langgraph_langchain/data/snapshots.py` | Immutable Parquet SnapshotStore for query-result DataAssets (M2.7.2) | Keep; not yet consumed by the Executor (M2.7.3) |
 | `langgraph_langchain/data/assets.py` | Data assets and schema snapshots | Keep |
 | `langgraph_langchain/data/cache.py` | Data cache | Keep |
 | `langgraph_langchain/data/sampling.py` | Deterministic sampling | Keep |
@@ -26,7 +29,7 @@ commit `5314055`.
 | `langgraph_langchain/runtime/scheduler.py` | Task scheduling | Keep |
 | `langgraph_langchain/runtime/runner.py` | Task runner | Keep |
 | `langgraph_langchain/runtime/graph.py` | Runtime V2 LangGraph controller | Keep |
-| `langgraph_langchain/runtime/context.py` | `AnalysisRuntime` state and orchestration | Large; needs Phase 1 refactor |
+| `langgraph_langchain/runtime/context.py` | `AnalysisRuntime` state and orchestration; registers SQLite results with verified snapshots (M2.6/M2.7.2) | Large; needs Phase 1 refactor |
 | `langgraph_langchain/execution/structured_executor.py` | Deterministic structured tool execution | Keep |
 | `langgraph_langchain/execution/python_executor.py` | Isolated Python execution | Keep |
 | `langgraph_langchain/execution/python_task_executor.py` | Runtime Python task adapter | Keep |

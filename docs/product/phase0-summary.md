@@ -26,8 +26,13 @@ Phase 0 produced the product and architecture baseline for Phase 1.
 
 ## What Is Missing For Phase 1
 
+Updated by B0 review at branch `codex/phase1-m2.4-sqlite-schema`,
+commit `0f4001e`:
+
 - Runtime V2 is not enabled by default.
-- No database adapter.
+- The SQLite adapter, query-result DataAssets, and SnapshotStore now exist
+  (M2.4-M2.7.2), but the Runtime Executor cannot yet resolve
+  `input_asset_ids` back into persisted DataFrames (M2.7.3).
 - No read-only SQL tool.
 - No data-aware generic planner wired into the default chat path.
 - No database golden e2e acceptance.

@@ -76,24 +76,47 @@ Definition of done:
 
 ### M2 — Database Source Adapter
 
-- Add `DatabaseDataSource`.
-- Support SQLite first.
-- Implement schema introspection.
-- Implement read-only SQL execution.
-- Enforce query timeout and row limit.
-- Add unit and integration tests.
+Status: implemented through M2.7.2 on branch `codex/phase1-m2.4-sqlite-schema`
+at commit `0f4001e` (reconciled by the B0 review).
+
+- Add `DatabaseDataSource`. — done (`langgraph_langchain/data/database.py`)
+- Support SQLite first. — done
+- Implement schema introspection. — done
+- Implement read-only SQL execution. — done
+- Enforce query timeout and row limit. — done
+- Add unit and integration tests. — done
+- Register query results as DataAssets. — done (M2.6)
+- Persist SQLite query-result snapshots. — done (M2.7.2,
+  `langgraph_langchain/data/snapshots.py`)
 
 Acceptance:
 
-- The SQLite fixture can be connected and scanned.
-- Schema introspection returns correct table and column information.
-- Read-only SQL execution returns a structured query result.
-- A query result can be converted into a runtime data asset.
-- SQL timeout, row limit, and result-size limits are enforced.
-- `INSERT`, `UPDATE`, `DELETE`, DDL, and other unsafe operations are rejected.
-- Connection close, exception cleanup, and resource release work correctly.
+- The SQLite fixture can be connected and scanned. — verified by tests
+- Schema introspection returns correct table and column information. — verified
+- Read-only SQL execution returns a structured query result. — verified
+- A query result can be converted into a runtime data asset. — verified
+- SQL timeout, row limit, and result-size limits are enforced. — verified
+- `INSERT`, `UPDATE`, `DELETE`, DDL, and other unsafe operations are rejected. — verified
+- Connection close, exception cleanup, and resource release work correctly. — verified
+- Snapshots survive Runtime restart with hash verification. — verified
+  (`tests/test_runtime_sqlite_query_asset.py`)
 
 Evidence wiring is not part of M2; it belongs to M6.
+
+### M2.7.3 — Snapshot Consumption / AssetResolver (next)
+
+The Runtime Executor still receives only `input_asset_ids` and cannot restore
+the persisted DataFrame for a task. M2.7.3 must add an asset-resolution step
+between `TaskExecutionRequest` construction and executor dispatch, loading the
+snapshot referenced by `DataAsset.source_metadata["snapshot_reference"]`.
+
+Entry condition: M2.7.2 SnapshotStore merged and green (satisfied at
+`0f4001e`).
+
+### M2.7.4 — Restart Recovery And Consumption E2E
+
+After M2.7.3, verify that a Runtime restart plus plan resume can consume
+previously persisted SQLite snapshots end to end, without re-executing SQL.
 
 ### M3 — Data Understanding Service
 

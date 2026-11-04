@@ -2,24 +2,29 @@
 
 ## Current Phase
 
-**Phase 1 / M2 — SQLite DataSource Adapter**
+**Phase 1 / M2 — SQLite DataSource Adapter (core complete; snapshot
+consumption next)**
 
-M1 Architecture Baseline has been completed and reviewed. The current
-implementation milestone is M2.
+M1 Architecture Baseline has been completed and reviewed.
 
-M2 focuses only on the database access layer:
+The M2 database access layer is implemented as of branch
+`codex/phase1-m2.4-sqlite-schema` at commit `0f4001e`:
 
 ```text
-SQLite fixture builder
-→ read-only connection
-→ schema introspection
-→ bounded SQL execution
-→ QueryResultDataSource / DataAsset
-→ adapter tests
+SQLite connection + read-only enforcement         (data/database.py)
+→ schema introspection and bounded execution     (M2.4/M2.5)
+→ QueryResultDataSource / DataAsset registration (M2.6)
+→ SnapshotStore for query-result DataAssets      (M2.7.2, data/snapshots.py)
+→ adapter + snapshot tests
 ```
 
-It does not implement the SQL Tool, Planner, Runtime V2 integration, Evidence,
-or Report layers; those belong to M4/M5a/M6/M7.
+Completed sub-milestones: M2.4 (SQLite schema), M2.5 (bounded reads),
+M2.6 (query assets), M2.7.1 (consumption inspection), M2.7.2 (snapshot store).
+
+The SnapshotStore persists SQLite query-result DataAssets, but the Runtime
+Executor does not yet resolve `input_asset_ids` back into DataFrames
+(M2.7.3). The SQL Tool, Planner, Runtime V2 integration, Evidence, and Report
+layers still belong to M4/M5a/M6/M7.
 
 Normative docs:
 

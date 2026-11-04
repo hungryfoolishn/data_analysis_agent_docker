@@ -12,6 +12,15 @@ file-and-SQL analysis loop. Until then, it remains an opt-in path.
 - Runtime V2 has strong structured tests, but the Phase 1 database and planner
   loop is not implemented yet.
 
+### Known Fallback Policy Gap (B0 review, commit `0f4001e`)
+
+`config.py` defaults `RUNTIME_V2_FALLBACK_ENABLED` to `true`, so legacy
+fallback is allowed without explicit configuration. This conflicts with the
+fallback policy above, which requires legacy ReAct to be an explicitly
+configured emergency path. Resolution is deferred to the M5a gate work:
+either the code default must flip to `false`, or the policy must accept the
+permissive default and document why. No runtime code was changed in B0.
+
 ## Gate Types
 
 There are two gates:
