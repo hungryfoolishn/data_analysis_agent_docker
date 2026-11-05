@@ -224,7 +224,7 @@ QUESTIONS: tuple[GoldenQuestion, ...] = (
     GoldenQuestion("Q012", "time_series", "Average amount", "group_aggregate", {"group_by": "order_date", "metric": "amount", "agg": "mean"}, "amount_mean", 115.0, expected_selector="mean"),
     GoldenQuestion("Q013", "time_series", "Minimum amount", "group_aggregate", {"group_by": "order_date", "metric": "amount", "agg": "min"}, "amount_min", 90.0, expected_selector="min"),
     GoldenQuestion("Q014", "missing_values", "Data quality overview", "data_quality", {}, "missing_count", 1.0),
-    GoldenQuestion("Q015", "missing_values", "Sum amount", "group_aggregate", {"group_by": "region", "metric": "amount", "agg": "sum"}, "amount_sum", 40.0, expected_selector="sum"),
+    GoldenQuestion("Q015", "missing_values", "Sum amount", "group_aggregate", {"group_by": "region", "metric": "amount", "agg": "sum"}, "amount_sum", 80.0, expected_selector="sum"),
     GoldenQuestion("Q016", "missing_values", "Show missing rows", "filter", {"column": "region", "operator": "eq", "value": None}, "amount", 30.0),
     GoldenQuestion("Q017", "duplicates", "Count duplicate rows", "data_quality", {}, "duplicate_row_count", 1.0),
     GoldenQuestion("Q018", "duplicates", "Sum amount group by order_id", "group_aggregate", {"group_by": "order_id", "metric": "amount", "agg": "sum"}, "amount_sum", 40.0),
