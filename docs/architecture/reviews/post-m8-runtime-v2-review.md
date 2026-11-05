@@ -1,9 +1,9 @@
 # Post-M8 Runtime V2 Productization Review (B9)
 
-Status: **review only**  
-Review date: 2026-11-05  
-Review branch: `codex/phase1-m2.4-sqlite-schema`  
-Review baseline: `211dfcd1b7242dcf90c5f0ec4e470393b4a41303` (`211dfcd`)  
+Status: **review only**
+Review date: 2026-11-05
+Review branch: `codex/phase1-m2.4-sqlite-schema`
+Review baseline: `211dfcd1b7242dcf90c5f0ec4e470393b4a41303` (`211dfcd`)
 Remote baseline at review start: `211dfcd1b7242dcf90c5f0ec4e470393b4a41303`
 
 ## 1. Executive decision
@@ -440,15 +440,15 @@ Before a follow-up switch review, complete at minimum:
 
 Split work into small, independently accepted phases rather than one broad refactor:
 
-1. **B10 Security Hotfix**  
+1. **B10 Security Hotfix**
    Fix upload path traversal, auth requirements, session-scoped file access, upload streaming/format allowlist. Add security tests.
-2. **B11 Production Chain Integration**  
+2. **B11 Production Chain Integration**
    Wire General Planner, AssetResolver-backed inputs, SQLite SQL Tool, SQL Evidence, and report validation into API/UI.
-3. **B12 Lifecycle and Cancellation**  
+3. **B12 Lifecycle and Cancellation**
    Unify API/Runtime statuses, partial success, cancellation propagation, and route logging.
-4. **B13 Deployment Verification**  
+4. **B13 Deployment Verification**
    Docker build, health check, live file and SQLite analysis, restart recovery, resource limits, backup runbook.
-5. **B14 Switch Review**  
+5. **B14 Switch Review**
    Re-run P0/P1 checklist and decide whether product default can change.
 
 ## 16. Review limitations
