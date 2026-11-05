@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -199,6 +200,8 @@ def test_string_database_path_is_accepted(tmp_path: Path):
 def test_special_character_database_paths_are_uri_encoded(
     tmp_path: Path, filename: str
 ):
+    if os.name == "nt" and "?" in filename:
+        pytest.skip("Windows filenames cannot contain question marks")
     db_path = tmp_path / filename
     create_golden_sqlite(db_path)
     database = SQLiteDatabase(SQLiteConnectionConfig(database_path=db_path))

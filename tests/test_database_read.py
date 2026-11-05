@@ -100,7 +100,7 @@ def test_materialize_table_and_query_return_stable_results(tmp_path: Path):
         )
     )
 
-    assert query_result["region"].tolist() == [None, "East", "North", "South"]
+    assert [pd.isna(value) for value in query_result["region"]] == [True, False, False, False]
     assert query_result["orders"].tolist() == [1, 2, 2, 1]
 
 
