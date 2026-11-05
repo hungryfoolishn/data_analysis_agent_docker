@@ -149,8 +149,11 @@ class SnapshotStore:
         temp_path = Path(raw_temp)
         try:
             dataframe.to_parquet(temp_path, index=False)
-            with temp_path.open("rb") as handle:
-                os.fsync(handle.fileno())
+            file_fd = os.open(temp_path, os.O_RDWR)
+            try:
+                os.fsync(file_fd)
+            finally:
+                os.close(file_fd)
             restored = pd.read_parquet(temp_path)
             if (
                 restored.shape != dataframe.shape
