@@ -237,6 +237,29 @@ class DataAsset(BaseModel):
         )
 
     @classmethod
+    def from_sqlite_database(
+        cls,
+        *,
+        database_path: Path,
+        schema_snapshot: Optional[SchemaSnapshot] = None,
+        source_metadata: Optional[dict[str, Any]] = None,
+        name: Optional[str] = None,
+    ) -> "DataAsset":
+        """Register a SQLite database source without exposing its path in metadata."""
+        resolved = Path(database_path).resolve()
+        if not resolved.is_file():
+            raise ValueError("SQLite database does not exist")
+        return cls(
+            name=name or resolved.stem,
+            source_type="sqlite_database",
+            location=str(resolved),
+            content_hash=hash_file(resolved),
+            schema_snapshot=schema_snapshot
+            or SchemaSnapshot(row_count=-1, column_count=0, columns=[]),
+            source_metadata=source_metadata or {},
+        )
+
+    @classmethod
     def from_sqlite_query(
         cls,
         *,
