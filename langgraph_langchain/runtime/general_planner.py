@@ -20,6 +20,8 @@ PLAN_OPERATIONS = {
     "sort": {"min_inputs": 1, "max_inputs": 1, "output": "dataframe"},
     "trend": {"min_inputs": 1, "max_inputs": 1, "output": "dataframe"},
     "detect_anomalies": {"min_inputs": 1, "max_inputs": 1, "output": "dataframe"},
+    "correlation": {"min_inputs": 1, "max_inputs": 1, "output": "dataframe"},
+    "data_quality": {"min_inputs": 1, "max_inputs": 1, "output": "dataframe"},
     "summarize": {"min_inputs": 1, "max_inputs": 1, "output": "metric"},
 }
 
@@ -31,6 +33,8 @@ OperationName = Literal[
     "sort",
     "trend",
     "detect_anomalies",
+    "correlation",
+    "data_quality",
     "summarize",
 ]
 ExpectedOutput = Literal["dataframe", "metric", "chart"]
@@ -114,6 +118,15 @@ def _valid_parameters(operation: str, parameters: Mapping[str, Any]) -> list[str
             errors.append("detect_anomalies requires value_column")
         if parameters.get("method", "iqr") != "iqr":
             errors.append("detect_anomalies only supports method=iqr")
+    elif operation == "correlation":
+        columns = parameters.get("columns")
+        if not isinstance(columns, list) or len(columns) < 2:
+            errors.append("correlation requires at least two columns")
+        elif not all(isinstance(item, str) for item in columns):
+            errors.append("correlation columns must be strings")
+    elif operation == "data_quality":
+        if not isinstance(parameters.get("time_column"), (str, type(None))):
+            errors.append("data_quality time_column must be text or null")
     return errors
 
 
@@ -151,9 +164,25 @@ def _operation_for_goal(goal: str) -> tuple[str | None, dict[str, Any]]:
         return "trend", parameters
     if re.search(r"\banomal(?:y|ies)\b|异常|离群", text):
         return "detect_anomalies", parameters
+    if re.search(r"\bcorrelation\b|相关", text):
+        return "correlation", parameters
+    if re.search(r"\bdata quality\b|质量问题|缺失|重复|数据质量", text):
+        return "data_quality", parameters
     if re.search(r"\bsummar(?:y|ize|ise)\b|概览|摘要|统计", text):
         return "summarize", parameters
     return None, parameters
+
+
+def _preferred_numeric_columns(columns: set[str]) -> list[str]:
+    preferred = [
+        column
+        for column in sorted(columns)
+        if any(
+            token in column.lower()
+            for token in ("amount", "value", "revenue", "sales", "price", "count", "metric")
+        )
+    ]
+    return preferred or sorted(columns)
 
 
 def _columns_for_asset(

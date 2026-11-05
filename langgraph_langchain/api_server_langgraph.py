@@ -68,6 +68,7 @@ from langgraph_langchain.config import (
     SESSION_TTL_HOURS,
     WORKSPACE_DIR,
     MAX_UPLOAD_SIZE_MB,
+    UPLOAD_ALLOWED_SUFFIXES,
     API_AUTH_TOKEN,
     CORS_ALLOWED_ORIGINS,
 )
@@ -1008,9 +1009,20 @@ async def upload_file_openai(file: UploadFile = File(...), purpose: str = "file-
             detail=f"File too large ({len(content) / (1024*1024):.1f}MB). Limit: {MAX_UPLOAD_SIZE_MB}MB.",
         )
     file_id = str(uuid.uuid4())
-    file_path = WORKSPACE_DIR / f"{file_id}_{file.filename}"
+    safe_name = Path(file.filename or "upload").name
+    if not safe_name or safe_name in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid upload filename")
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in UPLOAD_ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported upload type. Allowed: {sorted(UPLOAD_ALLOWED_SUFFIXES)}",
+        )
+    file_path = WORKSPACE_DIR / f"{file_id}_{safe_name}"
+    if file_path.exists():
+        raise HTTPException(status_code=409, detail="Upload target already exists")
     file_path.write_bytes(content)
-    return FileUploadResponse(id=file_id, filename=file.filename, purpose=purpose, bytes=len(content))
+    return FileUploadResponse(id=file_id, filename=safe_name, purpose=purpose, bytes=len(content))
 
 
 @app.post("/workspace/upload")
@@ -1030,10 +1042,21 @@ async def workspace_upload(file: UploadFile = File(...), session_id: Optional[st
             status_code=413,
             detail=f"File too large ({len(content) / (1024*1024):.1f}MB). Limit: {MAX_UPLOAD_SIZE_MB}MB.",
         )
-    file_path = session_workspace / file.filename
+    safe_name = Path(file.filename or "upload").name
+    if not safe_name or safe_name in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid upload filename")
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in UPLOAD_ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported upload type. Allowed: {sorted(UPLOAD_ALLOWED_SUFFIXES)}",
+        )
+    file_path = session_workspace / f"{uuid.uuid4().hex}_{safe_name}"
+    if file_path.exists():
+        raise HTTPException(status_code=409, detail="Upload target already exists")
     file_path.write_bytes(content)
     session.setdefault("files", []).append({
-        "filename": file.filename,
+        "filename": safe_name,
         "path": str(file_path),
         "relative_path": f"{session_id}/{file.filename}",
         "size": len(content),

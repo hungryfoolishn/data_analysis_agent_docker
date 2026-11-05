@@ -95,8 +95,10 @@ def analysis_tasks_from_plan(
             "strict_execution": plan.strict_execution,
         }
         method_defaults = defaults.get(step.method)
-        if method_defaults:
-            constraints["arguments"] = dict(method_defaults)
+        arguments = dict(method_defaults) if method_defaults else {}
+        arguments.update(step.parameters)
+        if arguments:
+            constraints["arguments"] = arguments
         tasks.append(
             AnalysisTask(
                 task_id=step.step_id,

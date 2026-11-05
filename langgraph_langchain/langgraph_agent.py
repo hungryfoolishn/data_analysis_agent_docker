@@ -838,8 +838,38 @@ class _Session:
             if force_new_run:
                 raise
             self.analysis_runtime = None
+        self.general_plan = None
+        self.file_analysis_fallback = False
         self.current_runtime_step_id: Optional[str] = None
         self.current_asset_id: Optional[str] = None
+        if self.analysis_runtime is not None and source_path:
+            try:
+                source_suffix = Path(source_path).suffix.lower()
+                if source_suffix in {".sqlite", ".db"}:
+                    from langgraph_langchain.runtime.sqlite_workflow import prepare_sqlite_analysis
+                    sqlite_asset, sqlite_schema, sqlite_plan = prepare_sqlite_analysis(
+                        self.analysis_runtime,
+                        Path(source_path),
+                        goal=user_question,
+                    )
+                    self.sqlite_schema = sqlite_schema.summary()
+                    self.current_asset_id = sqlite_asset.asset_id
+                else:
+                    from langgraph_langchain.runtime.analysis_workflow import prepare_file_analysis
+                    prepared = prepare_file_analysis(
+                        self.analysis_runtime,
+                        Path(source_path),
+                        goal=user_question,
+                    )
+                    self.general_plan = prepared.general_plan
+                    self.file_analysis_fallback = prepared.used_fallback_plan
+                    self.current_asset_id = prepared.asset.asset_id
+            except Exception as exc:
+                self.logger.warning(
+                    "asset_analysis_plan_failed session=%s error=%s",
+                    session_id,
+                    exc,
+                )
         self.ns["semantic_context"] = semantic_context
 
         # State machine for tracking analysis progress

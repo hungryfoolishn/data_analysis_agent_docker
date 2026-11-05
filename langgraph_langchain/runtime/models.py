@@ -36,6 +36,7 @@ class RuntimePlanStep(BaseModel):
     method: str
     required_inputs: list[str] = Field(default_factory=list)
     expected_outputs: list[str] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)
     depends_on: list[str] = Field(default_factory=list)
     status: Literal[
         "pending", "running", "paused", "succeeded", "needs_revision", "failed", "skipped"

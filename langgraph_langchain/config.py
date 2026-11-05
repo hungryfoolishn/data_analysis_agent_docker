@@ -141,6 +141,14 @@ CORS_ALLOWED_ORIGINS: list[str] = [
 WORKSPACE_DIR: Path = Path(os.environ.get("WORKSPACE_DIR", "./workspace"))
 MAX_WORKSPACE_SIZE_MB: int = int(os.environ.get("MAX_WORKSPACE_SIZE_MB", "1024"))
 MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
+UPLOAD_ALLOWED_SUFFIXES: frozenset[str] = frozenset(
+    item.strip().lower()
+    for item in os.environ.get(
+        "UPLOAD_ALLOWED_SUFFIXES",
+        ".csv,.xlsx,.xls,.parquet,.sqlite,.db",
+    ).split(",")
+    if item.strip()
+)
 MAX_IN_MEMORY_ROWS: int = int(os.environ.get("MAX_IN_MEMORY_ROWS", "500000"))
 """Rows above which file loading uses a disclosed deterministic sample."""
 
