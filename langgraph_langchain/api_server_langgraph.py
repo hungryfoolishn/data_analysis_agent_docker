@@ -1058,9 +1058,13 @@ def _validate_upload_file(path: Path, suffix: str) -> None:
             if header != bytes.fromhex("d0cf11e0a1b11ae1"):
                 raise ValueError("XLS must have OLE2 structure")
         elif suffix == ".parquet":
-            header = path.open("rb").read(4)
-            path.open("rb").seek(-4, os.SEEK_END)
-            footer = path.open("rb").read(4)
+            with path.open("rb") as handle:
+                header = handle.read(4)
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() < 8:
+                    raise ValueError("Parquet file is truncated")
+                handle.seek(-4, os.SEEK_END)
+                footer = handle.read(4)
             if header != b"PAR1" or footer != b"PAR1":
                 raise ValueError("Invalid Parquet structure")
         elif suffix in {".sqlite", ".db"}:
@@ -1140,11 +1144,11 @@ async def upload_file_openai(
     destination = _safe_upload_destination(session_workspace, file.filename or "")
     async with _upload_semaphore:
         temp_path = await _stream_upload(file, destination)
-    try:
-        _validate_upload_file(temp_path, destination.suffix.lower())
-        os.replace(temp_path, destination)
-    finally:
-        temp_path.unlink(missing_ok=True)
+        try:
+            _validate_upload_file(temp_path, destination.suffix.lower())
+            os.replace(temp_path, destination)
+        finally:
+            temp_path.unlink(missing_ok=True)
     size = destination.stat().st_size
     session.setdefault("files", []).append(
         {
@@ -1172,11 +1176,11 @@ async def workspace_upload(file: UploadFile = File(...), session_id: str = Form(
     destination = _safe_upload_destination(session_workspace, file.filename or "")
     async with _upload_semaphore:
         temp_path = await _stream_upload(file, destination)
-    try:
-        _validate_upload_file(temp_path, destination.suffix.lower())
-        os.replace(temp_path, destination)
-    finally:
-        temp_path.unlink(missing_ok=True)
+        try:
+            _validate_upload_file(temp_path, destination.suffix.lower())
+            os.replace(temp_path, destination)
+        finally:
+            temp_path.unlink(missing_ok=True)
     size = destination.stat().st_size
     safe_name = destination.name
     session.setdefault("files", []).append(

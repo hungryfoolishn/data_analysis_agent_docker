@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from langgraph_langchain import api_server_langgraph as api_module
+from langgraph_langchain.api_server_langgraph import _validate_upload_file
 
 
 @pytest.fixture()
@@ -214,3 +216,53 @@ def test_production_rejects_insecure_mode(monkeypatch):
     monkeypatch.setattr(api_module, "API_ALLOW_INSECURE_AUTH", True)
     with pytest.raises(RuntimeError, match="API_ALLOW_INSECURE_AUTH"):
         api_module._validate_security_configuration()
+
+
+def _write_parquet(path):
+    pd.DataFrame({"value": [1, 2]}).to_parquet(path, index=False)
+
+
+def test_parquet_upload_validates_header_and_footer(tmp_path):
+    path = tmp_path / "valid.parquet"
+    _write_parquet(path)
+
+    _validate_upload_file(path, ".parquet")
+
+
+def test_parquet_upload_rejects_wrong_footer(tmp_path):
+    path = tmp_path / "bad_footer.parquet"
+    path.write_bytes(b"PAR1" + b"x" * 8 + b"NOPE")
+
+    with pytest.raises(Exception, match="Invalid Parquet structure"):
+        _validate_upload_file(path, ".parquet")
+
+
+def test_parquet_upload_rejects_truncated_file(tmp_path):
+    path = tmp_path / "truncated.parquet"
+    path.write_bytes(b"PAR1")
+
+    with pytest.raises(Exception, match="truncated"):
+        _validate_upload_file(path, ".parquet")
+
+
+def test_parquet_upload_rejects_text_disguise(tmp_path):
+    path = tmp_path / "text.parquet"
+    path.write_bytes(b"not parquet")
+
+    with pytest.raises(Exception, match="Invalid Parquet structure"):
+        _validate_upload_file(path, ".parquet")
+
+
+def test_valid_parquet_upload_endpoint(client, tmp_path):
+    session_id = _unique_session()
+    path = tmp_path / "valid.parquet"
+    _write_parquet(path)
+    response = client.post(
+        "/workspace/upload",
+        files={"file": ("valid.parquet", path.read_bytes())},
+        data={"session_id": session_id},
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert Path(response.json()["file_path"]).suffix == ".parquet"
+    client.delete(f"/sessions/{session_id}?purge=true", headers=_headers())
