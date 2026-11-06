@@ -9,9 +9,12 @@ import re
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from langgraph_langchain.data.assets import DataAsset, hash_dataframe, hash_file
+from langgraph_langchain.evidence.models import CanonicalEvidence
+from langgraph_langchain.evidence.registry import EvidenceRegistry
+from langgraph_langchain.runtime.outcome import RuntimeOutcome
 from langgraph_langchain.data.snapshots import (
     SnapshotNotFoundError,
     SnapshotReference,
@@ -35,7 +38,12 @@ from langgraph_langchain.runtime.models import (
     new_id,
     utc_now,
 )
-from langgraph_langchain.runtime.plans import AnalysisPlan, validate_plan
+from langgraph_langchain.runtime.plans import (
+    AnalysisPlan,
+    PlanExecutionValidationError,
+    validate_plan,
+    validate_runtime_plan,
+)
 from langgraph_langchain.runtime.scheduler import TaskScheduler
 from langgraph_langchain.runtime.runner import TaskRunner
 from langgraph_langchain.runtime.executor import TaskExecutor
@@ -98,12 +106,16 @@ class AnalysisRuntime:
         )
         self.session_id = session_id or "default"
         self.assets: dict[str, DataAsset] = {}
+        self.artifacts: dict[str, RuntimeArtifact] = {}
+        self.evidence_registry = EvidenceRegistry(
+            assets=self.assets,
+            artifacts=self.artifacts,
+        )
         self.asset_resolver = AssetResolver(
             assets=self.assets,
             snapshot_store=self.snapshot_store,
         )
         self.executions: list[ExecutionResult] = []
-        self.artifacts: dict[str, RuntimeArtifact] = {}
         self.findings: list[dict[str, Any]] = []
         self.metric_definitions: list[dict[str, Any]] = []
         self.assumptions: list[dict[str, Any]] = []
@@ -325,6 +337,138 @@ class AnalysisRuntime:
             raise
         return asset
 
+    def build_runtime_outcome(
+        self,
+        *,
+        runtime_mode: str,
+        report=None,
+        fallback_used: bool = False,
+        error_code: str | None = None,
+    ) -> RuntimeOutcome:
+        """Derive a terminal Runtime outcome from persisted execution state."""
+        tasks = list(self.scheduler.tasks) if self.scheduler else []
+        completed = sum(task.status == "succeeded" for task in tasks)
+        failed = sum(task.status == "failed" for task in tasks)
+        cancelled = any(task.status == "cancelled" for task in tasks)
+        if cancelled:
+            status = "cancelled"
+        elif failed and completed:
+            status = "partial_success"
+        elif failed and not completed:
+            status = "failed"
+        elif completed:
+            status = "completed"
+        else:
+            status = "failed"
+        if report is not None:
+            evidence_ids = tuple(
+                evidence_id
+                for finding in report.findings
+                for evidence_id in finding.supported_by
+            )
+        else:
+            evidence_ids = tuple(
+                evidence.evidence_id
+                for evidence in self.evidence_registry.list(
+                    statuses={"verified"}
+                )
+            )
+        return RuntimeOutcome(
+            run_id=self.run.run_id,
+            status=status,
+            runtime_mode=runtime_mode,
+            report_id=report.report_id if report is not None else None,
+            completed_steps=completed,
+            failed_steps=failed,
+            evidence_ids=evidence_ids,
+            error_code=error_code
+            or (None if report is not None else "report_not_generated"),
+            fallback_used=fallback_used,
+        )
+
+    def build_verified_report(self):
+        """Build and validate a deterministic report from verified evidence."""
+        from langgraph_langchain.runtime.analysis_report import (
+            ReportFinding,
+            build_analysis_report,
+            render_analysis_report,
+            validate_analysis_report,
+        )
+
+        evidence_records = self.evidence_registry.report_records()
+        verified = self.evidence_registry.list(statuses={"verified"})
+        if not verified:
+            return None, None
+        failed_steps = sum(
+            task.status == "failed" for task in (self.scheduler.tasks if self.scheduler else [])
+        )
+        findings = []
+        for index, evidence in enumerate(verified, start=1):
+            limitations = (
+                ["The SQLite result was truncated."]
+                if evidence.source_metadata.get("truncated")
+                else []
+            )
+            findings.append(
+                ReportFinding(
+                    finding_id=f"F{index:03d}",
+                    claim="The deterministic analysis step completed successfully.",
+                    supported_by=[evidence.evidence_id],
+                    referenced_asset_ids=list(evidence.output_asset_ids),
+                    calculation_ref=f"{evidence.tool_name}:{evidence.execution_id}",
+                    limitation_notes=limitations,
+                )
+            )
+        artifact_ids = list(
+            dict.fromkeys(
+                artifact_id
+                for evidence in verified
+                for artifact_id in evidence.artifact_ids
+            )
+        )
+        limitations = [
+            "This report contains deterministic execution results, not LLM-generated business insights."
+        ]
+        if any(evidence.source_metadata.get("truncated") for evidence in verified):
+            limitations.append("One or more SQLite results were truncated.")
+        report = build_analysis_report(
+            task_id=self.task.task_id,
+            user_goal=self.task.question,
+            status="success" if failed_steps == 0 else "partial_success",
+            executive_summary=(
+                "The structured Runtime plan completed with verified evidence."
+                if failed_steps == 0
+                else "The structured Runtime plan completed partially with verified evidence."
+            ),
+            findings=findings,
+            artifact_ids=artifact_ids,
+            limitations=limitations,
+        )
+        validation = validate_analysis_report(
+            report,
+            evidence_records=evidence_records,
+            asset_ids=set(self.assets),
+            artifact_ids=set(self.artifacts),
+        )
+        if not validation.is_valid:
+            raise ValueError(
+                "Runtime report validation failed: " + "; ".join(validation.errors)
+            )
+        return report, render_analysis_report(report)
+
+    def register_canonical_evidence(
+        self,
+        evidence: CanonicalEvidence,
+        *,
+        artifact_ids: Sequence[str] | None = None,
+    ) -> CanonicalEvidence:
+        """Register and verify canonical evidence against Runtime references."""
+        evidence.artifact_ids = list(
+            artifact_ids if artifact_ids is not None else evidence.artifact_ids
+        )
+        registered = self.evidence_registry.register(evidence)
+        return self.evidence_registry.verify(registered.evidence_id)
+
     def register_artifact(
         self,
         path: Path,
@@ -392,12 +536,48 @@ class AnalysisRuntime:
         *,
         max_running_tasks: int = 1,
         argument_defaults_by_method: Optional[dict[str, dict[str, Any]]] = None,
+        execution_tools: Optional[Mapping[str, Any]] = None,
     ) -> TaskScheduler:
-        """Adopt an approved plan and hand scheduling control to Runtime V2."""
+        """Validate and adopt an approved plan for Runtime execution."""
         if max_running_tasks < 1:
             raise ValueError("max_running_tasks must be at least 1")
         if not plan.steps:
             raise ValueError("Plan has no steps")
+
+        from langgraph_langchain.tools.registry import registry
+
+        tool_names = (
+            list(execution_tools)
+            if execution_tools is not None
+            else registry.get_tool_names()
+        )
+        tool_schemas = {
+            name: tool.args_schema
+            for name, tool in (execution_tools or {}).items()
+            if hasattr(tool, "args_schema")
+        }
+        errors = validate_plan(
+            plan,
+            available_methods=tool_names,
+            available_asset_ids=self.assets,
+        )
+        if execution_tools is None:
+            errors = [
+                error
+                for error in errors
+                if not error.startswith("Unknown analysis method:")
+            ]
+        errors.extend(
+            validate_runtime_plan(
+                plan,
+                available_methods=tool_names,
+                available_asset_ids=self.assets,
+                tool_schemas=tool_schemas,
+                require_known_methods=execution_tools is not None,
+            )
+        )
+        if errors:
+            raise PlanExecutionValidationError(errors)
 
         self.plan = plan.model_copy(deep=True)
         self.run.plan = self.plan.model_dump(mode="json")

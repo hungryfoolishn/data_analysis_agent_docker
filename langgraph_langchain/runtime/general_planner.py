@@ -130,8 +130,21 @@ def _valid_parameters(operation: str, parameters: Mapping[str, Any]) -> list[str
     return errors
 
 
-def _operation_for_goal(goal: str) -> tuple[str | None, dict[str, Any]]:
+def _match_goal_columns(goal: str, columns: set[str]) -> list[str]:
+    lowered = goal.lower()
+    return [
+        column
+        for column in sorted(columns)
+        if column.lower() in lowered
+    ]
+
+
+def _operation_for_goal(
+    goal: str,
+    columns: set[str] | None = None,
+) -> tuple[str | None, dict[str, Any]]:
     text = goal.lower()
+    matched_columns = _match_goal_columns(goal, columns or set())
     parameters: dict[str, Any] = {}
 
     group_match = re.search(
@@ -164,10 +177,48 @@ def _operation_for_goal(goal: str) -> tuple[str | None, dict[str, Any]]:
         return "trend", parameters
     if re.search(r"\banomal(?:y|ies)\b|异常|离群", text):
         return "detect_anomalies", parameters
-    if re.search(r"\bcorrelation\b|相关", text):
+    if re.search(r"\bcorrelat(?:e|ion)\b|相关", text):
+        selected = matched_columns or sorted(columns or set())
+        if len(selected) >= 2:
+            parameters["columns"] = selected[:5]
         return "correlation", parameters
     if re.search(r"\bdata quality\b|质量问题|缺失|重复|数据质量", text):
         return "data_quality", parameters
+    top_match = re.search(r"\btop\s+(\d+)\b|前\s*(\d+)\s*名", text)
+    if top_match or re.search(r"\bsort\b|排序|rank|排名", text):
+        parameters["ascending"] = False if re.search(r"desc|descending|降序|top|rank|排名", text) else True
+        by_match = re.search(r"\bby\s+([\w\u4e00-\u9fff]+)|按\s*([\w\u4e00-\u9fff]+)", text)
+        if by_match:
+            parameters["by"] = by_match.group(1) or by_match.group(2)
+        elif matched_columns:
+            parameters["by"] = matched_columns[0]
+        return "sort", parameters
+
+    if re.search(r"\bfilter\b|过滤|筛选|missing rows|缺失行|greater than|大于|less than|小于", text):
+        if matched_columns:
+            parameters["column"] = matched_columns[0]
+        greater = re.search(r"(?:greater than|>)\s*(-?\d+(?:\.\d+)?)", text)
+        less = re.search(r"(?:less than|<)\s*(-?\d+(?:\.\d+)?)", text)
+        if greater:
+            parameters["operator"] = "gt"
+            parameters["value"] = float(greater.group(1))
+        elif less:
+            parameters["operator"] = "lt"
+            parameters["value"] = float(less.group(1))
+        elif re.search(r"missing rows|缺失行", text):
+            parameters["operator"] = "eq"
+            parameters["value"] = None
+        else:
+            parameters["operator"] = "eq"
+            parameters["value"] = matched_columns[0] if matched_columns else None
+        if "column" not in parameters and columns:
+            parameters["column"] = sorted(columns)[0]
+        if "value" not in parameters:
+            parameters["value"] = None
+        return "filter", parameters
+
+    if re.search(r"\bsum\b|总和|total|总计|average|avg|平均|count|计数|minimum|min|最小|maximum|max|最大", text):
+        return "summarize", parameters
     if re.search(r"\bsummar(?:y|ize|ise)\b|概览|摘要|统计", text):
         return "summarize", parameters
     return None, parameters
@@ -304,7 +355,11 @@ class DeterministicAnalysisPlanner:
                 ["Which input dataset should be analyzed?"]
             )
 
-        operation, parsed_parameters = _operation_for_goal(goal)
+        primary_asset = input_asset_ids[0]
+        columns = _columns_for_asset(asset_columns, primary_asset)
+        operation, parsed_parameters = _operation_for_goal(
+            goal, columns=set(columns)
+        )
         questions: list[str] = []
         if operation is None:
             raise PlannerClarificationError(
@@ -314,8 +369,6 @@ class DeterministicAnalysisPlanner:
                 ]
             )
 
-        primary_asset = input_asset_ids[0]
-        columns = _columns_for_asset(asset_columns, primary_asset)
         parameters = dict(parsed_parameters)
         if operation == "trend":
             if not parameters.get("time_column"):

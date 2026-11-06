@@ -14,7 +14,10 @@ from langgraph_langchain.data.database import (
     SQLiteDatabase,
     SQLiteDataSource,
 )
-from langgraph_langchain.evidence import collect_sqlite_query_evidence
+from langgraph_langchain.evidence import (
+    canonical_from_sqlite_query_evidence,
+    collect_sqlite_query_evidence,
+)
 from langgraph_langchain.runtime import SessionExecutionRecorder
 from langgraph_langchain.tools.sqlite_sql_tool import SQLiteQueryTool
 from langgraph_langchain.tools._shared import _validate_tool_stage_factory
@@ -106,6 +109,15 @@ def _factory(session):
             evidence.model_dump_json(indent=2), encoding="utf-8"
         )
         evidence_metadata = recorder.register_artifact(evidence_path)
+        canonical_evidence = canonical_from_sqlite_query_evidence(
+            evidence,
+            task_id=session.current_runtime_step_id,
+            artifact_ids=[evidence_metadata.get("artifact_id")],
+        )
+        runtime.register_canonical_evidence(
+            canonical_evidence,
+            artifact_ids=[evidence_metadata.get("artifact_id")],
+        )
         session.current_asset_id = output_asset.asset_id
         result_payload = {
             "status": "succeeded",

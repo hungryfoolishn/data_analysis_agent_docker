@@ -1501,6 +1501,12 @@ async def _run_runtime_v2_graph_stream(
     legacy ReAct stream.
     """
     from langgraph_langchain.evidence import EvidenceCollector
+    from langgraph_langchain.runtime.analysis_report import (
+        ReportFinding,
+        build_analysis_report,
+        render_analysis_report,
+        validate_analysis_report,
+    )
     from langgraph_langchain.execution.python_task_executor import PythonTaskExecutor
     from langgraph_langchain.execution.react_executor import ReactTaskExecutor
     from langgraph_langchain.execution.structured_executor import StructuredTaskExecutor
@@ -1512,27 +1518,28 @@ async def _run_runtime_v2_graph_stream(
     session.runtime_v2_fallback = False
     runtime = getattr(session, "analysis_runtime", None)
     if runtime is None or not runtime.run.plan:
-        session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
-        yield "\n\nRuntime V2 fallback: no structured plan.\n", []
+        session.runtime_v2_fallback = False
+        yield "\n\nRuntime V2 failed: no structured plan.\n", []
         return
 
     try:
         plan = AnalysisPlan.model_validate(runtime.run.plan)
     except Exception as exc:
-        session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
+        session.runtime_v2_fallback = False
         session.logger.warning("runtime_v2_plan_restore_failed error=%s", exc)
-        yield "\n\nRuntime V2 fallback: invalid structured plan.\n", []
+        yield "\n\nRuntime V2 failed: invalid structured plan.\n", []
         return
 
+    tool_map = {getattr(tool, "name", ""): tool for tool in tools}
     runtime.initialize_plan(
         plan,
         max_running_tasks=1,
         argument_defaults_by_method={
             "load_data": {"file_path": source_path, "sheet_name": ""},
         },
+        execution_tools=tool_map,
     )
 
-    tool_map = {getattr(tool, "name", ""): tool for tool in tools}
     unsupported = sorted({
         step.method
         for step in plan.steps
@@ -1541,12 +1548,13 @@ async def _run_runtime_v2_graph_stream(
         and not step.method.startswith("react_")
     })
     if unsupported:
-        session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
-        yield (
-            "\n\nRuntime V2 fallback: unsupported structured tools "
-            f"({', '.join(unsupported)}).\n",
-            [],
+        session.runtime_v2_fallback = False
+        message = (
+            "\n\nRuntime V2 failed: unsupported structured tools: "
+            + ", ".join(unsupported)
+            + ".\n"
         )
+        yield message, [],
         return
 
     session.runtime_v2_completed = False
@@ -1600,6 +1608,13 @@ async def _run_runtime_v2_graph_stream(
         ),
         react_executor=ReactTaskExecutor(
             agent=react_agent,
+            agent_runner=(
+                None
+                if react_agent is not None
+                else lambda request: (_ for _ in ()).throw(
+                    RuntimeError("React executor is not configured")
+                )
+            ),
             prompt_builder=lambda request: (
                 f"Task: {request.task.question}\n"
                 f"Data file: {source_path}\n"
@@ -1653,16 +1668,49 @@ async def _run_runtime_v2_graph_stream(
                 yield "", artifacts
 
             if update.get("action") in {"failed", "blocked", "incomplete", "limit_reached"}:
-                # A failed task is business-owned by Runtime. It should be retried
-                # or replanned later; only scheduling/runtime infrastructure is an
-                # emergency fallback boundary.
+                # A failed task is business-owned by Runtime.  Infrastructure
+                # fallback is controlled by RuntimeSelectionPolicy, never by this
+                # branch directly.
                 infrastructure_failure = update.get("action") in {
                     "blocked",
                     "incomplete",
                     "limit_reached",
                 } and update.get("result") is None
-                session.runtime_v2_fallback = bool(
-                    infrastructure_failure and _RUNTIME_V2_FALLBACK_ENABLED
+                from langgraph_langchain.runtime.runtime_route import (
+                    RuntimeSelectionPolicy,
+                    decide_runtime_route,
+                )
+
+                fallback_decision = decide_runtime_route(
+                    policy=RuntimeSelectionPolicy.from_env(),
+                    v2_action=update.get("action"),
+                    v2_has_result=update.get("result") is not None,
+                    error_type="RuntimeInfrastructureError",
+                )
+                session.runtime_route_decision = fallback_decision
+                session.runtime_v2_fallback = fallback_decision.fallback
+                try:
+                    report, report_markdown = runtime.build_verified_report()
+                    session.report = report_markdown
+                    report_path = runtime.workspace_dir / f"{report.report_id}.md"
+                    report_path.write_text(report_markdown, encoding="utf-8")
+                    register_session_artifact(
+                        session,
+                        report_path,
+                        created_by_tool="runtime_v2_report",
+                        step_id=session.current_runtime_step_id,
+                    )
+                except Exception as exc:
+                    report = None
+                    session.report = None
+                    session.logger.warning(
+                        "runtime_v2_report_closure_failed error=%s", exc
+                    )
+                session.runtime_outcome = runtime.build_runtime_outcome(
+                    runtime_mode="runtime_v2",
+                    report=report,
+                    fallback_used=session.runtime_v2_fallback,
+                    error_code=update.get("reason") or "runtime_plan_stopped",
                 )
                 _set_runtime_run_status(
                     session,
@@ -1675,22 +1723,72 @@ async def _run_runtime_v2_graph_stream(
         all_succeeded = all(task.status == "succeeded" for task in controller.scheduler.tasks)
         if not all_succeeded:
             session.runtime_v2_fallback = False
+            try:
+                report, report_markdown = runtime.build_verified_report()
+                session.report = report_markdown
+                report_path = runtime.workspace_dir / f"{report.report_id}.md"
+                report_path.write_text(report_markdown, encoding="utf-8")
+                register_session_artifact(
+                    session,
+                    report_path,
+                    created_by_tool="runtime_v2_report",
+                    step_id=session.current_runtime_step_id,
+                )
+            except Exception as exc:
+                report = None
+                session.report = None
+                session.logger.warning(
+                    "runtime_v2_report_closure_failed error=%s", exc
+                )
+            session.runtime_outcome = runtime.build_runtime_outcome(
+                runtime_mode="runtime_v2",
+                report=report,
+                fallback_used=False,
+                error_code=None if report is not None else "runtime_plan_stopped",
+            )
             yield "\n\nRuntime V2 stopped: plan did not finish successfully.\n", []
             return
-        if not session.report:
-            session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
-            yield "\n\nRuntime V2 fallback: structured plan completed without a report.\n", []
+
+        try:
+            report, report_markdown = runtime.build_verified_report()
+            if report is None:
+                raise ValueError("No verified evidence was produced")
+            session.report = report_markdown
+            report_path = runtime.workspace_dir / f"{report.report_id}.md"
+            report_path.write_text(report_markdown, encoding="utf-8")
+            register_session_artifact(
+                session,
+                report_path,
+                created_by_tool="runtime_v2_report",
+                step_id=session.current_runtime_step_id,
+            )
+        except Exception as exc:
+            report = None
+            session.report = None
+            session.logger.warning("runtime_v2_report_closure_failed error=%s", exc)
+        session.runtime_outcome = runtime.build_runtime_outcome(
+            runtime_mode="runtime_v2",
+            report=report,
+            fallback_used=False,
+            error_code=None if report is not None else "report_not_generated",
+        )
+        if report is None:
+            yield "\n\nRuntime V2 failed: structured plan completed without verified evidence.\n", []
             return
 
         session.runtime_v2_completed = True
         yield "\n\n**Runtime V2 structured plan completed.**\n", []
     except Exception as exc:
-        session.runtime_v2_fallback = _RUNTIME_V2_FALLBACK_ENABLED
+        session.runtime_v2_fallback = False
         session.logger.warning("runtime_v2_stream_failed error=%s", exc)
         _set_runtime_run_status(session, "failed", error=str(exc))
+        session.runtime_outcome = runtime.build_runtime_outcome(
+            runtime_mode="runtime_v2",
+            report=None,
+            fallback_used=False,
+            error_code="runtime_stream_failed",
+        )
         yield "\n\n**Runtime V2 failed.**\n", []
-
-
 # ── Public async stream ───────────────────────────────────────────────────────
 async def run_analysis_stream(
     instruction: str,
@@ -1734,6 +1832,20 @@ async def run_analysis_stream(
     if restore_state and runtime is not None and runtime.run.status == "paused":
         runtime.resume_plan()
     tools = _make_tools(session)
+
+    from langgraph_langchain.runtime.runtime_route import (
+        RuntimeSelectionPolicy,
+        decide_runtime_route,
+        log_runtime_route,
+    )
+    policy = RuntimeSelectionPolicy.from_env()
+    route_decision = decide_runtime_route(policy=policy)
+    session.runtime_route_decision = route_decision
+    log_runtime_route(
+        session.logger,
+        route_decision,
+        session_id=session_id,
+    )
 
     # Build effective prompt: base sections + skills index + memory snapshot
     memory_snapshot = ""
@@ -1833,7 +1945,7 @@ async def run_analysis_stream(
         session_id, source_path, bool(restore_state), step,
     )
     active_runtime_steps: Dict[str, tuple[str, str]] = {}
-    if _RUNTIME_V2_ENABLED:
+    if route_decision.selected_runtime == "runtime_v2":
         async for chunk, artifacts in _run_runtime_v2_graph_stream(
             session,
             tools=tools,

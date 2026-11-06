@@ -15,6 +15,7 @@ def client(monkeypatch):
     monkeypatch.setattr(api_module, "API_AUTH_TOKEN", "test-token")
     monkeypatch.setattr(api_module, "API_ENVIRONMENT", "development")
     monkeypatch.setattr(api_module, "API_ALLOW_INSECURE_AUTH", False)
+    api_module._rate_limit_counters.clear()
     with TestClient(api_module.app) as test_client:
         yield test_client
 

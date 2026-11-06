@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,7 +27,7 @@ class PreparedFileAnalysis:
     general_plan: GeneralAnalysisPlan
     runtime_plan: AnalysisPlan
     row_estimate: int
-    used_fallback_plan: bool
+    used_fallback_plan: bool = False
 
 
 def register_file_asset(
@@ -61,15 +62,24 @@ def general_plan_to_runtime_plan(plan: GeneralAnalysisPlan) -> AnalysisPlan:
     steps: list[RuntimePlanStep] = []
     previous_step_id: str | None = None
     for item in plan.steps:
+        operation_parameters = {
+            key: value
+            for key, value in item.parameters.items()
+            if key not in {"asset_id", "parameters_json"}
+        }
         step = RuntimePlanStep(
             step_id=item.step_id,
             objective=f"{item.operation}: {plan.user_goal}",
             method="run_analysis_operation",
             required_inputs=list(plan.input_asset_ids),
             expected_outputs=[f"{item.step_id}:output"],
-            parameters=dict(item.parameters) | {
+            parameters={
+                "asset_id": item.input_refs[0],
                 "operation": item.operation,
-                "input_refs": list(item.input_refs),
+                **operation_parameters,
+                "parameters_json": json.dumps(
+                    operation_parameters, ensure_ascii=False, sort_keys=True
+                ),
             },
             depends_on=(
                 list(item.depends_on)
@@ -90,35 +100,6 @@ def general_plan_to_runtime_plan(plan: GeneralAnalysisPlan) -> AnalysisPlan:
     )
 
 
-def _fallback_plan(asset_id: str, goal: str) -> GeneralAnalysisPlan:
-    from uuid import uuid4
-
-    inspect_step_id = f"step_{uuid4().hex}"
-    quality_step_id = f"step_{uuid4().hex}"
-    return GeneralAnalysisPlan(
-        user_goal=goal,
-        input_asset_ids=[asset_id],
-        steps=[
-            GeneralPlanStep(
-                step_id=inspect_step_id,
-                operation="inspect",
-                input_refs=[asset_id],
-                parameters={"rows": 50},
-                expected_output="dataframe",
-                rationale="Ambiguous goal; inspect data before narrowing scope.",
-            ),
-            GeneralPlanStep(
-                step_id=quality_step_id,
-                operation="data_quality",
-                input_refs=[asset_id],
-                expected_output="dataframe",
-                depends_on=[inspect_step_id],
-                rationale="Produce deterministic quality context for a vague request.",
-            ),
-        ],
-    )
-
-
 def prepare_file_analysis(
     runtime: AnalysisRuntime,
     path: Path,
@@ -131,18 +112,12 @@ def prepare_file_analysis(
     asset_columns = {
         asset.asset_id: [column.name for column in source.scan_schema().schema_snapshot.columns]
     }
-    used_fallback = False
-    try:
-        result = DeterministicAnalysisPlanner().plan(
-            goal=goal,
-            input_asset_ids=[asset.asset_id],
-            asset_columns=asset_columns,
-        )
-        general_plan = result.plan
-    except PlannerClarificationError:
-        general_plan = _fallback_plan(asset.asset_id, goal)
-        used_fallback = True
-
+    result = DeterministicAnalysisPlanner().plan(
+        goal=goal,
+        input_asset_ids=[asset.asset_id],
+        asset_columns=asset_columns,
+    )
+    general_plan = result.plan
     runtime_plan = general_plan_to_runtime_plan(general_plan)
     runtime.initialize_plan(runtime_plan)
     scan = source.scan_schema()
@@ -151,5 +126,4 @@ def prepare_file_analysis(
         general_plan=general_plan,
         runtime_plan=runtime_plan,
         row_estimate=scan.estimated_rows,
-        used_fallback_plan=used_fallback,
     )

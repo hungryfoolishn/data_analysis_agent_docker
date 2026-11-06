@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -187,9 +188,9 @@ def build_sqlite_plan(
         required_inputs=[database_asset_id],
         expected_outputs=["query_result_asset"],
         parameters={
+            "asset_id": database_asset_id,
             "sql": sql,
-            "parameters": parameters,
-            "database_asset_id": database_asset_id,
+            "parameters_json": json.dumps(parameters, ensure_ascii=False),
         },
     )
     return AnalysisPlan(

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Optional
+import json
+from typing import Any, Iterable, Mapping, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -115,3 +116,188 @@ def default_analysis_plan(question: str) -> AnalysisPlan:
         require_confirmation=False,
         strict_execution=False,
     )
+
+
+class PlanExecutionValidationError(ValueError):
+    """Raised when a plan cannot safely be handed to Runtime execution."""
+
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = list(errors)
+        super().__init__("Plan execution validation failed: " + "; ".join(errors))
+
+
+def _has_multiple_statements(sql: str) -> bool:
+    quote: str | None = None
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        if quote is not None:
+            if char == quote:
+                if index + 1 < len(sql) and sql[index + 1] == quote:
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+        elif char == "[":
+            quote = "]"
+        elif sql.startswith("--", index):
+            end = sql.find("\n", index + 2)
+            if end < 0:
+                break
+            index = end + 1
+            continue
+        elif sql.startswith("/*", index):
+            end = sql.find("*/", index + 2)
+            if end < 0:
+                return True
+            index = end + 2
+            continue
+        elif char == ";" and sql[index + 1 :].strip():
+            return True
+        index += 1
+    return False
+
+
+def _first_sql_keyword(sql: str) -> str:
+    index = 0
+    while index < len(sql):
+        if sql[index].isspace():
+            index += 1
+            continue
+        if sql.startswith("--", index):
+            end = sql.find("\n", index + 2)
+            if end < 0:
+                break
+            index = end + 1
+            continue
+        if sql.startswith("/*", index):
+            end = sql.find("*/", index + 2)
+            if end < 0:
+                break
+            index = end + 2
+            continue
+        match = end = None
+        for token in ("SELECT", "WITH"):
+            if sql[index:].upper().startswith(token):
+                return token
+        break
+    return ""
+
+
+def validate_runtime_plan(
+    plan: AnalysisPlan,
+    *,
+    available_methods: Iterable[str],
+    available_asset_ids: Iterable[str],
+    tool_schemas: Mapping[str, type] | None = None,
+    require_known_methods: bool = True,
+) -> list[str]:
+    """Validate a Runtime plan immediately before TaskRunner execution."""
+    errors = list(
+        validate_plan(
+            plan,
+            available_methods=available_methods,
+            available_asset_ids=available_asset_ids,
+        )
+    )
+    if not require_known_methods:
+        errors = [
+            error
+            for error in errors
+            if not error.startswith("Unknown analysis method:")
+        ]
+    methods = set(available_methods)
+    assets = set(available_asset_ids)
+    schemas = tool_schemas or {}
+    step_ids = {step.step_id for step in plan.steps}
+    completed: set[str] = set()
+    visiting: set[str] = set()
+
+    def visit(step_id: str, path: list[str]) -> None:
+        if step_id in completed:
+            return
+        if step_id in visiting:
+            cycle = path[path.index(step_id) :] + [step_id]
+            errors.append("Plan dependency cycle: " + " -> ".join(cycle))
+            return
+        step = next((item for item in plan.steps if item.step_id == step_id), None)
+        if step is None:
+            return
+        visiting.add(step_id)
+        for dependency in step.depends_on:
+            visit(dependency, path + [step_id])
+        visiting.remove(step_id)
+        completed.add(step_id)
+
+    for step in plan.steps:
+        visit(step.step_id, [])
+        if not step.expected_outputs:
+            errors.append(f"Step '{step.step_id}' has no expected output")
+        if len(step.expected_outputs) != len(set(step.expected_outputs)):
+            errors.append(
+                f"Step '{step.step_id}' has duplicate expected outputs"
+            )
+
+        args = dict(step.parameters)
+        raw_parameters = args.get("parameters_json")
+        if isinstance(raw_parameters, str):
+            try:
+                parsed = json.loads(raw_parameters)
+                if isinstance(parsed, dict):
+                    args.update(parsed)
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                errors.append(
+                    f"Step '{step.step_id}' has invalid parameters_json: {exc}"
+                )
+                continue
+        schema = schemas.get(step.method)
+        if schema is not None:
+            try:
+                schema.model_validate(args)
+            except Exception as exc:
+                errors.append(
+                    f"Step '{step.step_id}' has invalid arguments for "
+                    f"'{step.method}': {exc}"
+                )
+
+        if step.method == "run_analysis_operation":
+            from langgraph_langchain.runtime.general_planner import (
+                PLAN_OPERATIONS,
+                _valid_parameters,
+            )
+
+            operation = args.get("operation")
+            if operation not in PLAN_OPERATIONS:
+                errors.append(
+                    f"Step '{step.step_id}' uses unsupported analysis operation: "
+                    f"{operation}"
+                )
+            else:
+                errors.extend(
+                    f"Step '{step.step_id}': {error}"
+                    for error in _valid_parameters(
+                        operation,
+                        {
+                            key: value
+                            for key, value in args.items()
+                            if key not in {"asset_id", "parameters_json"}
+                        },
+                    )
+                )
+        elif step.method == "run_sqlite_query":
+            sql = args.get("sql")
+            if not isinstance(sql, str) or not sql.strip():
+                errors.append(f"Step '{step.step_id}' has no SQLite query")
+            elif _has_multiple_statements(sql):
+                errors.append(
+                    f"Step '{step.step_id}' contains multiple SQL statements"
+                )
+            elif _first_sql_keyword(sql) not in {"SELECT", "WITH"}:
+                errors.append(
+                    f"Step '{step.step_id}' is not a read-only SQLite query"
+                )
+
+    return errors

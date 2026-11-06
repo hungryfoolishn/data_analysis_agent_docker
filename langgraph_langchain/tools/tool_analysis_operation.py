@@ -9,6 +9,10 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from langgraph_langchain.evidence import (
+    canonical_from_operation_evidence,
+    collect_operation_evidence,
+)
 from langgraph_langchain.runtime import SessionExecutionRecorder
 from langgraph_langchain.runtime.analysis_operations import (
     AnalysisOperationError,
@@ -97,6 +101,26 @@ def _factory(session):
             },
         )
         metadata = recorder.register_artifact(output_path)
+        operation_evidence = collect_operation_evidence(
+            execution_id=execution_id,
+            operation=operation,
+            parameters=parameters,
+            input_asset_ids=[asset_id],
+            output_asset=asset,
+            numeric_values={
+                "row_count": float(len(output)),
+                "column_count": float(len(output.columns)),
+            },
+        )
+        canonical_evidence = canonical_from_operation_evidence(
+            operation_evidence,
+            task_id=session.current_runtime_step_id,
+            artifact_ids=[metadata.get("artifact_id")],
+        )
+        runtime.register_canonical_evidence(
+            canonical_evidence,
+            artifact_ids=[metadata.get("artifact_id")],
+        )
         session.current_asset_id = asset.asset_id
         preview = output.head(20).to_string(index=False)
         recorder.succeed(
