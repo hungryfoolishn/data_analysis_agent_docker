@@ -10,11 +10,17 @@ SENSITIVE_NAME = re.compile(r"(password|secret|token|api[_-]?key|authorization|e
 
 
 def verify_bearer_token(header: str | None, configured_token: str) -> bool:
+    """Return whether *header* carries the configured bearer token.
+
+    An empty configured token never authenticates a request.  Deployment code
+    decides whether an explicitly configured development mode may bypass auth.
+    """
     if not configured_token:
-        return True
+        return False
     if not header or not header.startswith("Bearer "):
         return False
-    return hmac.compare_digest(header[7:].strip(), configured_token)
+    presented = header[len("Bearer ") :].strip()
+    return bool(presented) and hmac.compare_digest(presented, configured_token)
 
 
 def redact_sensitive(value: Any) -> Any:

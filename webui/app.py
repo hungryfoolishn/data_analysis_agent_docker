@@ -924,7 +924,8 @@ def main():
                     # 保存临时文件
                     temp_dir = Path("temp_uploads")
                     temp_dir.mkdir(exist_ok=True)
-                    temp_path = temp_dir / uploaded_file.name
+                    safe_name = Path(uploaded_file.name).name
+                    temp_path = temp_dir / f"{uuid.uuid4().hex}_{safe_name}"
 
                     with open(temp_path, "wb") as f:
                         f.write(uploaded_file.getbuffer())

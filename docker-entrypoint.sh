@@ -20,6 +20,12 @@ conda activate smolagents
 find /app/langgraph_langchain /app/webui -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 find /app/langgraph_langchain /app/webui -name "*.pyc" -delete 2>/dev/null || true
 
+# Validate security configuration before starting services.
+if [ "${API_ENVIRONMENT:-production}" = "production" ] && [ -z "${API_AUTH_TOKEN:-}" ]; then
+    echo "[entrypoint] ERROR: API_AUTH_TOKEN is required when API_ENVIRONMENT=production" >&2
+    exit 1
+fi
+
 # Validate required env
 if [ -z "$DEEPSEEK_API_KEY" ]; then
     echo "[entrypoint] WARNING: DEEPSEEK_API_KEY is empty. Backend will fail to call DeepSeek." >&2

@@ -128,6 +128,12 @@ REQUIRED_STEP_MARKER_ALIASES: dict[str, tuple[str, ...]] = {
 MAX_CONCURRENT_AGENTS: int = int(os.environ.get("MAX_CONCURRENT_AGENTS", "3"))
 SESSION_TTL_HOURS: float = float(os.environ.get("SESSION_TTL_HOURS", "24"))
 API_AUTH_TOKEN: str = os.environ.get("API_AUTH_TOKEN", "")
+API_ENVIRONMENT: str = os.environ.get("API_ENVIRONMENT", "development").strip().lower()
+API_ALLOW_INSECURE_AUTH: bool = (
+    os.environ.get("API_ALLOW_INSECURE_AUTH", "").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+MAX_CONCURRENT_UPLOADS: int = int(os.environ.get("MAX_CONCURRENT_UPLOADS", "5"))
 CORS_ALLOWED_ORIGINS: list[str] = [
     item.strip()
     for item in os.environ.get(

@@ -19,6 +19,8 @@ import asyncio
 import json
 import os
 import shutil
+import sqlite3
+import tempfile
 import uuid
 import zipfile
 from contextlib import asynccontextmanager
@@ -27,7 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -70,6 +72,9 @@ from langgraph_langchain.config import (
     MAX_UPLOAD_SIZE_MB,
     UPLOAD_ALLOWED_SUFFIXES,
     API_AUTH_TOKEN,
+    API_ENVIRONMENT,
+    API_ALLOW_INSECURE_AUTH,
+    MAX_CONCURRENT_UPLOADS,
     CORS_ALLOWED_ORIGINS,
 )
 
@@ -78,6 +83,9 @@ WORKSPACE_DIR.mkdir(exist_ok=True)
 _SESSIONS_FILE = WORKSPACE_DIR / ".sessions.json"
 _SESSION_TTL = timedelta(hours=max(SESSION_TTL_HOURS, 0.0))
 _agent_semaphore: asyncio.Semaphore | None = None
+_upload_semaphore = asyncio.Semaphore(max(1, MAX_CONCURRENT_UPLOADS))
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
+_MAX_WORKSHEET_CELLS = 10_000_000
 
 # ── Metrics response cache (TTL = 10 s) ──────────────────────────────────────
 _METRICS_CACHE_TTL = 10.0  # seconds
@@ -363,23 +371,6 @@ def _failure_detail(
 def _is_report_rejected(output: str) -> bool:
     normalized = (output or "").lstrip()
     return normalized.startswith("REPORT REJECTED") or normalized.startswith("[REPORT REJECTED]")
-
-
-def _workspace_file_response(filename: str) -> FileResponse:
-    requested = WORKSPACE_DIR / filename
-    try:
-        resolved = requested.resolve(strict=True)
-        workspace_root = WORKSPACE_DIR.resolve(strict=True)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="File not found") from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail="Invalid file path") from exc
-
-    if workspace_root not in resolved.parents and resolved != workspace_root:
-        raise HTTPException(status_code=404, detail="File not found")
-    if not resolved.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(resolved, filename=resolved.name)
 
 
 def _serialize_session(session: Dict[str, Any]) -> Dict[str, Any]:
@@ -934,9 +925,21 @@ class FileUploadResponse(BaseModel):
     bytes: int
 
 
+def _validate_security_configuration() -> None:
+    if API_ENVIRONMENT == "production" and not API_AUTH_TOKEN:
+        raise RuntimeError(
+            "API_AUTH_TOKEN is required when API_ENVIRONMENT=production"
+        )
+    if API_ENVIRONMENT == "production" and API_ALLOW_INSECURE_AUTH:
+        raise RuntimeError(
+            "API_ALLOW_INSECURE_AUTH cannot be enabled in production"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _agent_semaphore
+    _validate_security_configuration()
     _agent_semaphore = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
     _load_sessions()
     _prune_stale_sessions()
@@ -949,8 +952,21 @@ app = FastAPI(title="LangGraph ReAct Data Analysis API", lifespan=lifespan)
 @app.middleware("http")
 async def api_security_middleware(request: Request, call_next):
     from langgraph_langchain.security import verify_bearer_token
-    if request.url.path != "/health" and not verify_bearer_token(request.headers.get("authorization"), API_AUTH_TOKEN):
-        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    if request.url.path == "/health":
+        return await call_next(request)
+    if not verify_bearer_token(request.headers.get("authorization"), API_AUTH_TOKEN):
+        allow_insecure = (
+            API_ENVIRONMENT == "development" and API_ALLOW_INSECURE_AUTH
+        )
+        if not API_AUTH_TOKEN and allow_insecure:
+            return await call_next(request)
+        status = 503 if not API_AUTH_TOKEN else 401
+        detail = (
+            "API authentication is not configured"
+            if not API_AUTH_TOKEN
+            else "Unauthorized"
+        )
+        return JSONResponse(status_code=status, content={"detail": detail})
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -977,10 +993,123 @@ async def rate_limit_middleware(request, call_next):
 
 async def _startup():
     """Backward-compatible helper for tests."""
+    _validate_security_configuration()
     global _agent_semaphore
     _agent_semaphore = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
     _load_sessions()
     _prune_stale_sessions()
+
+
+async def _stream_upload(file: UploadFile, destination: Path) -> Path:
+    """Stream an upload to a same-directory temp file with byte accounting."""
+    max_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    suffix = destination.suffix or ".upload"
+    fd, raw_temp = tempfile.mkstemp(
+        dir=destination.parent, prefix=".upload_", suffix=suffix
+    )
+    temp_path = Path(raw_temp)
+    written = 0
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            while chunk := await file.read(_UPLOAD_CHUNK_SIZE):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            f"File too large ({written / (1024 * 1024):.1f}MB). "
+                            f"Limit: {MAX_UPLOAD_SIZE_MB}MB."
+                        ),
+                    )
+                handle.write(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+        return temp_path
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def _validate_upload_file(path: Path, suffix: str) -> None:
+    """Validate declared upload type by structure, not by extension alone."""
+    try:
+        if suffix == ".csv":
+            import pandas as pd
+
+            pd.read_csv(path, nrows=2)
+        elif suffix in {".xlsx"}:
+            if not zipfile.is_zipfile(path):
+                raise ValueError("XLSX must be a ZIP container")
+            from openpyxl import load_workbook
+
+            workbook = load_workbook(path, read_only=True, data_only=True)
+            try:
+                worksheet = workbook.active
+                if worksheet is None:
+                    raise ValueError("Workbook has no worksheets")
+                rows = worksheet.max_row or 0
+                columns = worksheet.max_column or 0
+                if rows * columns > _MAX_WORKSHEET_CELLS:
+                    raise ValueError("Worksheet exceeds cell limit")
+            finally:
+                workbook.close()
+        elif suffix == ".xls":
+            header = path.open("rb").read(8)
+            if header != bytes.fromhex("d0cf11e0a1b11ae1"):
+                raise ValueError("XLS must have OLE2 structure")
+        elif suffix == ".parquet":
+            header = path.open("rb").read(4)
+            path.open("rb").seek(-4, os.SEEK_END)
+            footer = path.open("rb").read(4)
+            if header != b"PAR1" or footer != b"PAR1":
+                raise ValueError("Invalid Parquet structure")
+        elif suffix in {".sqlite", ".db"}:
+            if path.open("rb").read(16) != b"SQLite format 3\x00":
+                raise ValueError("Invalid SQLite header")
+            connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                check = connection.execute("PRAGMA quick_check").fetchone()
+                if not check or check[0] != "ok":
+                    raise ValueError("SQLite integrity check failed")
+            finally:
+                connection.close()
+        else:
+            raise ValueError("Unsupported upload type")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Upload content validation failed: {exc}",
+        ) from exc
+
+
+def _safe_upload_destination(directory: Path, filename: str) -> Path:
+    safe_name = Path(filename or "upload").name
+    if not safe_name or safe_name in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid upload filename")
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in UPLOAD_ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported upload type. Allowed: {sorted(UPLOAD_ALLOWED_SUFFIXES)}",
+        )
+    destination = directory / f"{uuid.uuid4().hex}_{safe_name}"
+    if destination.exists():
+        raise HTTPException(status_code=409, detail="Upload target already exists")
+    return destination
+
+
+def _session_file_response(session_id: str, relative_path: str) -> FileResponse:
+    session_workspace = get_session_workspace(session_id).resolve()
+    requested = (session_workspace / relative_path).resolve()
+    try:
+        requested.relative_to(session_workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+    if not requested.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(requested, filename=requested.name)
 
 
 @app.post("/release/candidate/assess")
@@ -1000,99 +1129,102 @@ async def health_check():
 
 
 @app.post("/v1/files", response_model=FileUploadResponse)
-async def upload_file_openai(file: UploadFile = File(...), purpose: str = "file-extract"):
-    content = await file.read()
-    max_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large ({len(content) / (1024*1024):.1f}MB). Limit: {MAX_UPLOAD_SIZE_MB}MB.",
-        )
-    file_id = str(uuid.uuid4())
-    safe_name = Path(file.filename or "upload").name
-    if not safe_name or safe_name in {".", ".."}:
-        raise HTTPException(status_code=400, detail="Invalid upload filename")
-    suffix = Path(safe_name).suffix.lower()
-    if suffix not in UPLOAD_ALLOWED_SUFFIXES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported upload type. Allowed: {sorted(UPLOAD_ALLOWED_SUFFIXES)}",
-        )
-    file_path = WORKSPACE_DIR / f"{file_id}_{safe_name}"
-    if file_path.exists():
-        raise HTTPException(status_code=409, detail="Upload target already exists")
-    file_path.write_bytes(content)
-    return FileUploadResponse(id=file_id, filename=safe_name, purpose=purpose, bytes=len(content))
+async def upload_file_openai(
+    file: UploadFile = File(...),
+    session_id: str = Form(..., min_length=1),
+    purpose: str = Form("file-extract"),
+):
+    """OpenAI-compatible upload scoped to an analysis session."""
+    session_id, session = await get_or_create_session(session_id)
+    session_workspace = get_session_workspace(session_id)
+    destination = _safe_upload_destination(session_workspace, file.filename or "")
+    async with _upload_semaphore:
+        temp_path = await _stream_upload(file, destination)
+    try:
+        _validate_upload_file(temp_path, destination.suffix.lower())
+        os.replace(temp_path, destination)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    size = destination.stat().st_size
+    session.setdefault("files", []).append(
+        {
+            "filename": destination.name,
+            "path": str(destination),
+            "relative_path": f"{session_id}/{destination.name}",
+            "size": size,
+            "uploaded_at": datetime.now().isoformat(),
+        }
+    )
+    _save_sessions()
+    return FileUploadResponse(
+        id=destination.stem,
+        filename=destination.name,
+        purpose=purpose,
+        bytes=size,
+    )
 
 
 @app.post("/workspace/upload")
-async def workspace_upload(file: UploadFile = File(...), session_id: Optional[str] = Form(None)):
-    # session_id is sent by the frontend as a multipart form field (requests
-    # `data={"session_id": ...}` alongside `files=`). Without Form() FastAPI
-    # treats a bare `str` param as a query parameter, so the field was silently
-    # ignored, the backend generated a UUID session, and the analysis request
-    # (which sends the same session_id) ended up in a *different* session -
-    # causing load_data to reject the uploaded file as cross-session.
+async def workspace_upload(file: UploadFile = File(...), session_id: str = Form(..., min_length=1)):
+    """Upload a file into one authorized analysis session."""
     session_id, session = await get_or_create_session(session_id)
     session_workspace = get_session_workspace(session_id)
-    content = await file.read()
-    max_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large ({len(content) / (1024*1024):.1f}MB). Limit: {MAX_UPLOAD_SIZE_MB}MB.",
-        )
-    safe_name = Path(file.filename or "upload").name
-    if not safe_name or safe_name in {".", ".."}:
-        raise HTTPException(status_code=400, detail="Invalid upload filename")
-    suffix = Path(safe_name).suffix.lower()
-    if suffix not in UPLOAD_ALLOWED_SUFFIXES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported upload type. Allowed: {sorted(UPLOAD_ALLOWED_SUFFIXES)}",
-        )
-    file_path = session_workspace / f"{uuid.uuid4().hex}_{safe_name}"
-    if file_path.exists():
-        raise HTTPException(status_code=409, detail="Upload target already exists")
-    file_path.write_bytes(content)
-    session.setdefault("files", []).append({
-        "filename": safe_name,
-        "path": str(file_path),
-        "relative_path": f"{session_id}/{file.filename}",
-        "size": len(content),
-        "uploaded_at": datetime.now().isoformat(),
-    })
+    destination = _safe_upload_destination(session_workspace, file.filename or "")
+    async with _upload_semaphore:
+        temp_path = await _stream_upload(file, destination)
+    try:
+        _validate_upload_file(temp_path, destination.suffix.lower())
+        os.replace(temp_path, destination)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    size = destination.stat().st_size
+    safe_name = destination.name
+    session.setdefault("files", []).append(
+        {
+            "filename": safe_name,
+            "path": str(destination),
+            "relative_path": f"{session_id}/{safe_name}",
+            "size": size,
+            "uploaded_at": datetime.now().isoformat(),
+        }
+    )
     _save_sessions()
     return {
         "success": True,
-        "filename": file.filename,
+        "filename": safe_name,
         "session_id": session_id,
-        "file_path": str(file_path),
-        "size": len(content),
+        "file_path": str(destination),
+        "size": size,
     }
 
 
 @app.get("/workspace/files")
-async def list_workspace_files(session_id: Optional[str] = None):
-    if session_id:
-        s = await _check_session(session_id)
-        return {"files": s.get("files", []), "artifacts": s.get("artifacts", [])}
-    files = [
-        {
-            "filename": f.name,
-            "size": f.stat().st_size,
-            "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-        }
-        for f in WORKSPACE_DIR.glob("*")
-        if f.is_file()
-    ]
-    return {"files": files}
+async def list_workspace_files(session_id: str):
+    session = await _check_session(session_id)
+    return {
+        "session_id": session_id,
+        "files": session.get("files", []),
+        "artifacts": session.get("artifacts", []),
+    }
 
 
 @app.get("/workspace/files/{filename:path}")
-async def download_workspace_file(filename: str):
-    return _workspace_file_response(filename)
-
+async def download_workspace_file(
+    filename: str,
+    session_id: Optional[str] = Query(default=None),
+):
+    parts = [part for part in filename.split("/") if part]
+    if session_id is None:
+        if len(parts) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="session_id is required for workspace file access",
+            )
+        session_id = parts[0]
+    await _check_session(session_id)
+    relative_parts = parts[1:] if parts and parts[0] == session_id else parts
+    relative_path = "/".join(relative_parts)
+    return _session_file_response(session_id, relative_path)
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, purge: bool = False):
