@@ -1,8 +1,8 @@
 # B10 Security Hardening
 
-Status: complete  
-Baseline: `0c24290e95ad5b4095187130e4b93983e9e4aa3e`  
-Scope: API authentication, session/workspace isolation, streaming upload, deployment gate.  
+Status: complete
+Baseline: `0c24290e95ad5b4095187130e4b93983e9e4aa3e`
+Scope: API authentication, session/workspace isolation, streaming upload, deployment gate.
 Runtime V2 default was not changed.
 
 ## Authentication

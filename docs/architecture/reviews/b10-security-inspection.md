@@ -1,7 +1,7 @@
 # B10 Security Inspection (Pre-hardening)
 
-Review baseline: `0c24290e95ad5b4095187130e4b93983e9e4aa3e`  
-Branch: `codex/phase1-m2.4-sqlite-schema`  
+Review baseline: `0c24290e95ad5b4095187130e4b93983e9e4aa3e`
+Branch: `codex/phase1-m2.4-sqlite-schema`
 Scope: API authentication, session/workspace boundary, upload flow, and deployment configuration.
 
 ## Route inventory
