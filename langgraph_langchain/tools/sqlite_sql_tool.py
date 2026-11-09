@@ -70,7 +70,10 @@ class SQLiteQueryTool:
             timeout_seconds=timeout_seconds,
         )
         try:
-            asset = self.runtime.register_sqlite_result(result=result)
+            asset = self.runtime.register_sqlite_result(
+                result=result,
+                execution_id=execution_id,
+            )
         except Exception as exc:
             raise SQLiteQueryToolError(
                 "SQL execution succeeded but result asset registration failed"

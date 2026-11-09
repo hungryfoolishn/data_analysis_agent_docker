@@ -191,7 +191,10 @@ def test_canonical_evidence_lifecycle(tmp_path: Path):
         dataframe=output,
         source_path=output_path,
         source_type="parquet",
-        source_metadata={"operation": "group_aggregate"},
+        source_metadata={
+            "operation": "group_aggregate",
+            "execution_id": "exec_evidence_1",
+        },
     )
     artifact = runtime.register_artifact(output_path, created_by_tool="run_analysis_operation")
     operation_evidence = collect_operation_evidence(
@@ -200,7 +203,7 @@ def test_canonical_evidence_lifecycle(tmp_path: Path):
         parameters={"group_by": "region", "metric": "amount", "agg": "sum"},
         input_asset_ids=[prepared.asset.asset_id],
         output_asset=output_asset,
-        numeric_values={"amount_sum": 300.0},
+        numeric_values={"row_count": float(len(output)), "column_count": float(len(output.columns))},
     )
     execution = runtime.record_execution(
         tool_name="run_analysis_operation",
@@ -253,7 +256,10 @@ def test_report_closure_success_and_partial(tmp_path: Path):
         dataframe=output,
         source_path=output_path,
         source_type="parquet",
-        source_metadata={"operation": "group_aggregate"},
+        source_metadata={
+            "operation": "group_aggregate",
+            "execution_id": "exec_report_1",
+        },
     )
     artifact = runtime.register_artifact(output_path, created_by_tool="run_analysis_operation")
     evidence = collect_operation_evidence(
@@ -262,7 +268,7 @@ def test_report_closure_success_and_partial(tmp_path: Path):
         parameters={"group_by": "region", "metric": "amount", "agg": "sum"},
         input_asset_ids=[prepared.asset.asset_id],
         output_asset=output_asset,
-        numeric_values={"amount_sum": 300.0},
+        numeric_values={"row_count": float(len(output)), "column_count": float(len(output.columns))},
     )
     execution = runtime.record_execution(
         tool_name="run_analysis_operation",
@@ -272,7 +278,7 @@ def test_report_closure_success_and_partial(tmp_path: Path):
     )
     canonical = canonical_from_operation_evidence(
         evidence,
-        task_id="step_1",
+        task_id=runtime.scheduler.tasks[0].task_id,
         artifact_ids=[artifact.artifact_id],
     )
     runtime.register_canonical_evidence(canonical)
@@ -423,11 +429,12 @@ def test_evidence_without_content_validator_cannot_be_verified():
     registry = EvidenceRegistry(
         assets={"asset_1": object()},
         artifacts={"artifact_1": object()},
-        executions={"exec_1": object()},
+        executions={"exec_1": type("Execution", (), {"task_id": "task_1", "tool_name": "run_analysis_operation", "status": "succeeded"})()},
     )
     evidence = CanonicalEvidence(
         evidence_type="analysis_operation",
         execution_id="exec_1",
+        task_id="task_1",
         tool_name="run_analysis_operation",
         input_asset_ids=["asset_1"],
         artifact_ids=["artifact_1"],
@@ -453,3 +460,182 @@ def test_runtime_outcome_maps_skipped_and_cancelled(tmp_path: Path):
     runtime.scheduler.tasks[1].status = "cancelled"
     outcome = runtime.build_runtime_outcome(runtime_mode="runtime_v2")
     assert outcome.status == "cancelled"
+
+def test_evidence_rejects_wrong_task_execution(tmp_path: Path):
+    runtime = _runtime(tmp_path)
+    prepared = _file_plan(tmp_path, runtime)
+    runtime.record_execution(
+        tool_name="run_analysis_operation",
+        status="succeeded",
+        execution_id="exec_real",
+        task_id="task_other",
+        step_id="step_other",
+    )
+    evidence = CanonicalEvidence(
+        evidence_type="analysis_operation",
+        execution_id="exec_real",
+        task_id="task_expected",
+        tool_name="run_analysis_operation",
+        input_asset_ids=[prepared.asset.asset_id],
+        evidence_text="wrong task association",
+    )
+    with pytest.raises(EvidenceRegistryError, match="task_id does not match"):
+        runtime.register_canonical_evidence(evidence)
+
+
+def test_evidence_rejects_wrong_tool_execution(tmp_path: Path):
+    runtime = _runtime(tmp_path)
+    prepared = _file_plan(tmp_path, runtime)
+    runtime.record_execution(
+        tool_name="other_tool",
+        status="succeeded",
+        execution_id="exec_real",
+        task_id="task_1",
+        step_id="step_1",
+    )
+    evidence = CanonicalEvidence(
+        evidence_type="analysis_operation",
+        execution_id="exec_real",
+        task_id="task_1",
+        tool_name="run_analysis_operation",
+        input_asset_ids=[prepared.asset.asset_id],
+        evidence_text="wrong tool association",
+    )
+    with pytest.raises(EvidenceRegistryError, match="tool_name does not match"):
+        runtime.register_canonical_evidence(evidence)
+
+
+def test_evidence_rejects_failed_execution(tmp_path: Path):
+    runtime = _runtime(tmp_path)
+    prepared = _file_plan(tmp_path, runtime)
+    runtime.record_execution(
+        tool_name="run_analysis_operation",
+        status="failed",
+        execution_id="exec_failed",
+        task_id="task_1",
+        step_id="step_1",
+    )
+    evidence = CanonicalEvidence(
+        evidence_type="analysis_operation",
+        execution_id="exec_failed",
+        task_id="task_1",
+        tool_name="run_analysis_operation",
+        input_asset_ids=[prepared.asset.asset_id],
+        evidence_text="failed execution",
+    )
+    with pytest.raises(EvidenceRegistryError, match="not successful"):
+        runtime.register_canonical_evidence(evidence)
+
+
+def test_operation_evidence_requires_output_asset_and_counts(tmp_path: Path):
+    runtime = _runtime(tmp_path)
+    prepared = _file_plan(tmp_path, runtime)
+    runtime.record_execution(
+        tool_name="run_analysis_operation",
+        status="succeeded",
+        execution_id="exec_op",
+        task_id="task_op",
+        step_id="step_op",
+    )
+    evidence = CanonicalEvidence(
+        evidence_type="analysis_operation",
+        execution_id="exec_op",
+        task_id="task_op",
+        tool_name="run_analysis_operation",
+        input_asset_ids=[prepared.asset.asset_id],
+        evidence_text="missing output",
+    )
+    registered = runtime.register_canonical_evidence(evidence)
+    with pytest.raises(
+        EvidenceRegistryError,
+        match="requires exactly one output_asset_id",
+    ):
+        runtime.verify_canonical_evidence(registered.evidence_id)
+
+    output_asset = runtime.register_dataframe(
+        dataframe=pd.DataFrame({"value": [1]}),
+        source_path=tmp_path / "output.parquet",
+        source_type="parquet",
+        source_metadata={"execution_id": "exec_op"},
+    )
+    evidence.output_asset_ids = [output_asset.asset_id]
+    registered = runtime.register_canonical_evidence(evidence, replace=True)
+    with pytest.raises(EvidenceRegistryError, match="requires row_count"):
+        runtime.verify_canonical_evidence(registered.evidence_id)
+
+
+def test_sqlite_evidence_requires_snapshot_fields(tmp_path: Path):
+    runtime = _runtime(tmp_path)
+    prepared = _file_plan(tmp_path, runtime)
+    runtime.record_execution(
+        tool_name="run_sqlite_query",
+        status="succeeded",
+        execution_id="exec_sql",
+        task_id="task_sql",
+        step_id="step_sql",
+    )
+    output_asset = runtime.register_dataframe(
+        dataframe=pd.DataFrame({"value": [1]}),
+        source_path=tmp_path / "query.parquet",
+        source_type="parquet",
+        source_metadata={"execution_id": "exec_sql"},
+    ).model_copy(
+        update={
+            "source_type": "sqlite",
+            "location": None,
+            "source_metadata": {"execution_id": "exec_sql"},
+        }
+    )
+    runtime.assets[output_asset.asset_id] = output_asset
+    evidence = CanonicalEvidence(
+        evidence_type="sqlite_query",
+        execution_id="exec_sql",
+        task_id="task_sql",
+        tool_name="run_sqlite_query",
+        input_asset_ids=[prepared.asset.asset_id],
+        output_asset_ids=[output_asset.asset_id],
+        evidence_text="sqlite result",
+        numeric_values={"returned_row_count": 1.0},
+        source_metadata={
+            "query_fingerprint": "a" * 64,
+            "source_asset_id": prepared.asset.asset_id,
+        },
+    )
+    registered = runtime.register_canonical_evidence(evidence)
+    with pytest.raises(EvidenceRegistryError, match="no snapshot_reference"):
+        runtime.verify_canonical_evidence(registered.evidence_id)
+
+    evidence.source_metadata["snapshot_reference"] = {
+        "snapshot_id": "snap_x",
+        "snapshot_hash": "hash",
+    }
+    runtime.assets[output_asset.asset_id] = output_asset.model_copy(
+        update={
+            "source_metadata": {
+                **output_asset.source_metadata,
+                "snapshot_reference": evidence.source_metadata[
+                    "snapshot_reference"
+                ],
+            }
+        }
+    )
+    with pytest.raises(EvidenceRegistryError, match="no row_count"):
+        runtime.verify_canonical_evidence(registered.evidence_id)
+
+    evidence.source_metadata["snapshot_reference"] = {
+        "snapshot_id": "snap_x",
+        "snapshot_hash": "hash",
+        "row_count": 99,
+    }
+    runtime.assets[output_asset.asset_id] = output_asset.model_copy(
+        update={
+            "source_metadata": {
+                **output_asset.source_metadata,
+                "snapshot_reference": evidence.source_metadata[
+                    "snapshot_reference"
+                ],
+            }
+        }
+    )
+    with pytest.raises(EvidenceRegistryError, match="row count mismatch"):
+        runtime.verify_canonical_evidence(registered.evidence_id)

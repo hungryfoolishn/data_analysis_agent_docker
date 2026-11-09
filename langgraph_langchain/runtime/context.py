@@ -239,6 +239,7 @@ class AnalysisRuntime:
         *,
         result,
         name: Optional[str] = None,
+        execution_id: Optional[str] = None,
     ) -> DataAsset:
         """Register a bounded SQLite read with a verified data snapshot."""
         dataframe = getattr(result, "dataframe", None)
@@ -314,7 +315,8 @@ class AnalysisRuntime:
                 selected_columns=selected_columns,
                 truncated=truncated,
                 source_metadata={
-                    "snapshot_reference": reference.model_dump(mode="json")
+                    "snapshot_reference": reference.model_dump(mode="json"),
+                    "execution_id": execution_id,
                 },
                 name=name,
             )
@@ -466,6 +468,7 @@ class AnalysisRuntime:
         evidence: CanonicalEvidence,
         *,
         artifact_ids: Sequence[str] | None = None,
+        replace: bool = False,
     ) -> CanonicalEvidence:
         """Register canonical evidence after reference validation.
 
@@ -475,7 +478,7 @@ class AnalysisRuntime:
         evidence.artifact_ids = list(
             artifact_ids if artifact_ids is not None else evidence.artifact_ids
         )
-        return self.evidence_registry.register(evidence)
+        return self.evidence_registry.register(evidence, replace=replace)
 
     def verify_canonical_evidence(self, evidence_id: str) -> CanonicalEvidence:
         """Verify canonical evidence content against Runtime sources."""
@@ -489,54 +492,196 @@ class AnalysisRuntime:
         evidence: CanonicalEvidence,
     ) -> list[str]:
         errors: list[str] = []
+        execution = self._lookup_execution(evidence.execution_id)
+        if execution is None:
+            errors.append(f"Execution does not exist: {evidence.execution_id}")
+            return errors
+        if execution.task_id != evidence.task_id:
+            errors.append(
+                "Evidence task_id does not match execution "
+                f"{evidence.execution_id}"
+            )
+        if execution.tool_name != evidence.tool_name:
+            errors.append(
+                "Evidence tool_name does not match execution "
+                f"{evidence.execution_id}"
+            )
+
+        if evidence.evidence_type == "analysis_operation":
+            errors.extend(
+                self._validate_operation_evidence_content(evidence, execution)
+            )
+        elif evidence.evidence_type == "sqlite_query":
+            errors.extend(
+                self._validate_sqlite_evidence_content(evidence, execution)
+            )
+        else:
+            errors.append(
+                "Legacy evidence requires an explicit content validator and "
+                "cannot be verified from execution metadata alone"
+            )
+        return errors
+
+    def _validate_operation_evidence_content(
+        self,
+        evidence: CanonicalEvidence,
+        execution,
+    ) -> list[str]:
+        errors: list[str] = []
+        if not evidence.input_asset_ids:
+            errors.append("Operation evidence requires input_asset_ids")
+        if len(evidence.output_asset_ids) != 1:
+            errors.append(
+                "Operation evidence requires exactly one output_asset_id"
+            )
+        if not evidence.artifact_ids:
+            errors.append("Operation evidence requires artifact_ids")
+        row_count = evidence.numeric_values.get("row_count")
+        column_count = evidence.numeric_values.get("column_count")
+        if row_count is None:
+            errors.append("Operation evidence requires row_count")
+        if column_count is None:
+            errors.append("Operation evidence requires column_count")
+
         for asset_id in evidence.output_asset_ids:
             asset = self.assets.get(asset_id)
             if asset is None:
                 errors.append(f"Output asset does not exist: {asset_id}")
+                continue
+            output_execution_id = asset.source_metadata.get("execution_id")
+            if output_execution_id != evidence.execution_id:
+                errors.append(
+                    f"Output asset {asset_id} was not produced by execution "
+                    f"{evidence.execution_id}"
+                )
+            if row_count is not None and asset.schema_snapshot.row_count != int(
+                row_count
+            ):
+                errors.append(
+                    f"Output asset row count mismatch for {asset_id}: "
+                    f"expected {int(row_count)}, got "
+                    f"{asset.schema_snapshot.row_count}"
+                )
+            if column_count is not None and len(
+                asset.schema_snapshot.columns
+            ) != int(column_count):
+                errors.append(
+                    f"Output asset column count mismatch for {asset_id}: "
+                    f"expected {int(column_count)}, got "
+                    f"{len(asset.schema_snapshot.columns)}"
+                )
 
         for artifact_id in evidence.artifact_ids:
             artifact = self.artifacts.get(artifact_id)
             if artifact is None:
                 errors.append(f"Artifact does not exist: {artifact_id}")
                 continue
+            if artifact.execution_id not in {None, evidence.execution_id}:
+                errors.append(
+                    f"Artifact {artifact_id} does not belong to execution "
+                    f"{evidence.execution_id}"
+                )
             artifact_path = Path(artifact.path)
             if not artifact_path.is_file():
                 errors.append(f"Artifact file does not exist: {artifact_id}")
+        return errors
 
-        row_count = evidence.numeric_values.get("row_count")
-        if row_count is not None:
-            for asset_id in evidence.output_asset_ids:
-                asset = self.assets.get(asset_id)
-                if asset is None:
-                    continue
-                actual_rows = asset.schema_snapshot.row_count
-                if actual_rows != int(row_count):
-                    errors.append(
-                        f"Output asset row count mismatch for {asset_id}: "
-                        f"expected {int(row_count)}, got {actual_rows}"
-                    )
+    def _validate_sqlite_evidence_content(
+        self,
+        evidence: CanonicalEvidence,
+        execution,
+    ) -> list[str]:
+        errors: list[str] = []
+        if not evidence.input_asset_ids:
+            errors.append("SQLite evidence requires input_asset_ids")
+        if len(evidence.output_asset_ids) != 1:
+            errors.append(
+                "SQLite evidence requires exactly one output_asset_id"
+            )
+        query_fingerprint = evidence.source_metadata.get("query_fingerprint")
+        if not query_fingerprint:
+            errors.append("SQLite evidence requires query_fingerprint")
+        source_asset_id = evidence.source_metadata.get("source_asset_id")
+        if not source_asset_id:
+            errors.append("SQLite evidence requires source_asset_id")
+        elif source_asset_id not in evidence.input_asset_ids:
+            errors.append(
+                "SQLite source_asset_id is not listed in input_asset_ids"
+            )
 
         returned_rows = evidence.numeric_values.get("returned_row_count")
-        if returned_rows is not None:
-            for asset_id in evidence.output_asset_ids:
-                asset = self.assets.get(asset_id)
-                if asset is None:
-                    continue
-                snapshot_reference = asset.source_metadata.get(
-                    "snapshot_reference"
+        if returned_rows is None:
+            errors.append("SQLite evidence requires returned_row_count")
+
+        for asset_id in evidence.output_asset_ids:
+            asset = self.assets.get(asset_id)
+            if asset is None:
+                errors.append(f"Output asset does not exist: {asset_id}")
+                continue
+            if asset.source_type != "sqlite":
+                errors.append(
+                    f"Output asset {asset_id} is not a SQLite query result"
                 )
-                actual_rows = (
-                    snapshot_reference.get("row_count")
-                    if isinstance(snapshot_reference, dict)
-                    else None
+            if asset.location is not None:
+                errors.append(
+                    f"SQLite output asset {asset_id} must not expose a file path"
                 )
-                if actual_rows is not None and int(actual_rows) != int(
-                    returned_rows
-                ):
-                    errors.append(
-                        f"SQLite result row count mismatch for {asset_id}: "
-                        f"expected {int(returned_rows)}, got {actual_rows}"
-                    )
+            output_execution_id = asset.source_metadata.get("execution_id")
+            if output_execution_id != evidence.execution_id:
+                errors.append(
+                    f"Output asset {asset_id} was not produced by execution "
+                    f"{evidence.execution_id}"
+                )
+            snapshot_payload = asset.source_metadata.get("snapshot_reference")
+            if not isinstance(snapshot_payload, dict):
+                errors.append(
+                    f"SQLite output asset {asset_id} has no snapshot_reference"
+                )
+                continue
+            snapshot_id = snapshot_payload.get("snapshot_id")
+            snapshot_hash = snapshot_payload.get("snapshot_hash")
+            actual_rows = snapshot_payload.get("row_count")
+            if not snapshot_id:
+                errors.append(
+                    f"SQLite snapshot for {asset_id} has no snapshot_id"
+                )
+            if not snapshot_hash:
+                errors.append(
+                    f"SQLite snapshot for {asset_id} has no snapshot_hash"
+                )
+            if actual_rows is None:
+                errors.append(
+                    f"SQLite snapshot for {asset_id} has no row_count"
+                )
+            elif returned_rows is not None and int(actual_rows) != int(
+                returned_rows
+            ):
+                errors.append(
+                    f"SQLite result row count mismatch for {asset_id}: "
+                    f"expected {int(returned_rows)}, got {actual_rows}"
+                )
+            if returned_rows is not None and asset.schema_snapshot.row_count != int(
+                returned_rows
+            ):
+                errors.append(
+                    f"SQLite output asset row count mismatch for {asset_id}: "
+                    f"expected {int(returned_rows)}, got "
+                    f"{asset.schema_snapshot.row_count}"
+                )
+
+        for artifact_id in evidence.artifact_ids:
+            artifact = self.artifacts.get(artifact_id)
+            if artifact is None:
+                errors.append(f"Artifact does not exist: {artifact_id}")
+                continue
+            if artifact.execution_id not in {None, evidence.execution_id}:
+                errors.append(
+                    f"Artifact {artifact_id} does not belong to execution "
+                    f"{evidence.execution_id}"
+                )
+            artifact_path = Path(artifact.path)
+            if not artifact_path.is_file():
+                errors.append(f"Artifact file does not exist: {artifact_id}")
         return errors
 
     def _verify_canonical_evidence_for_execution(
@@ -600,10 +745,12 @@ class AnalysisRuntime:
         duration_ms: float = 0.0,
         execution_id: Optional[str] = None,
         step_id: Optional[str] = None,
+        task_id: Optional[str] = None,
     ) -> ExecutionResult:
         result = ExecutionResult(
             execution_id=execution_id or new_id("exec"),
             run_id=self.run.run_id,
+            task_id=task_id or step_id or self.task.task_id,
             step_id=step_id,
             tool_name=tool_name,
             status=status,

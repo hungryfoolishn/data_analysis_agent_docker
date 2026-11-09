@@ -65,10 +65,33 @@ class EvidenceRegistry:
         errors: list[str] = []
         if not evidence.execution_id:
             errors.append("execution_id is required")
-        elif self._lookup_execution(evidence.execution_id) is None:
-            errors.append(
-                f"Unknown execution_id: {evidence.execution_id}"
-            )
+        else:
+            execution = self._lookup_execution(evidence.execution_id)
+            if execution is None:
+                errors.append(
+                    f"Unknown execution_id: {evidence.execution_id}"
+                )
+            else:
+                execution_task_id = getattr(execution, "task_id", None)
+                execution_tool_name = getattr(execution, "tool_name", None)
+                execution_status = getattr(execution, "status", None)
+                if evidence.task_id != execution_task_id:
+                    errors.append(
+                        "Evidence task_id does not match execution "
+                        f"{evidence.execution_id}: evidence="
+                        f"{evidence.task_id!r}, execution={execution_task_id!r}"
+                    )
+                if evidence.tool_name != execution_tool_name:
+                    errors.append(
+                        "Evidence tool_name does not match execution "
+                        f"{evidence.execution_id}: evidence="
+                        f"{evidence.tool_name!r}, execution={execution_tool_name!r}"
+                    )
+                if execution_status != "succeeded":
+                    errors.append(
+                        "Evidence execution is not successful: "
+                        f"{evidence.execution_id}"
+                    )
         if not evidence.tool_name:
             errors.append("tool_name is required")
         if not evidence.evidence_text.strip():
