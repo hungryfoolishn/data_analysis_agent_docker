@@ -114,10 +114,6 @@ def _factory(session):
             task_id=session.current_runtime_step_id,
             artifact_ids=[evidence_metadata.get("artifact_id")],
         )
-        runtime.register_canonical_evidence(
-            canonical_evidence,
-            artifact_ids=[evidence_metadata.get("artifact_id")],
-        )
         session.current_asset_id = output_asset.asset_id
         result_payload = {
             "status": "succeeded",
@@ -132,6 +128,10 @@ def _factory(session):
             "preview": bounded.dataframe.head(20).to_string(index=False),
         }
         recorder.succeed(json.dumps(result_payload, ensure_ascii=False))
+        runtime.register_canonical_evidence(
+            canonical_evidence,
+            artifact_ids=[evidence_metadata.get("artifact_id")],
+        )
         return json.dumps(result_payload, ensure_ascii=False)
 
     return run_sqlite_query

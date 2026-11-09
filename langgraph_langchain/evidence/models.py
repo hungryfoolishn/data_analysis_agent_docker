@@ -9,7 +9,9 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 EvidenceType = Literal["analysis_operation", "sqlite_query", "legacy"]
-EvidenceStatus = Literal["unverified", "verified", "failed"]
+EvidenceStatus = Literal[
+    "unverified", "reference_validated", "verified", "failed"
+]
 
 
 def utc_now_iso() -> str:

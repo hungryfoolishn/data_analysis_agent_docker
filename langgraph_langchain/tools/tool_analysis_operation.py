@@ -117,25 +117,22 @@ def _factory(session):
             task_id=session.current_runtime_step_id,
             artifact_ids=[metadata.get("artifact_id")],
         )
+        session.current_asset_id = asset.asset_id
+        preview = output.head(20).to_string(index=False)
+        result_payload = {
+            "status": "succeeded",
+            "operation": operation,
+            "output_asset_id": asset.asset_id,
+            "row_count": len(output),
+            "column_count": len(output.columns),
+            "evidence_id": canonical_evidence.evidence_id,
+            "artifact": metadata,
+            "preview": preview,
+        }
+        recorder.succeed(json.dumps(result_payload, ensure_ascii=False))
         runtime.register_canonical_evidence(
             canonical_evidence,
             artifact_ids=[metadata.get("artifact_id")],
-        )
-        session.current_asset_id = asset.asset_id
-        preview = output.head(20).to_string(index=False)
-        recorder.succeed(
-            json.dumps(
-                {
-                    "status": "succeeded",
-                    "operation": operation,
-                    "output_asset_id": asset.asset_id,
-                    "row_count": len(output),
-                    "column_count": len(output.columns),
-                    "artifact": metadata,
-                    "preview": preview,
-                },
-                ensure_ascii=False,
-            )
         )
         return json.dumps(
             {
@@ -144,6 +141,7 @@ def _factory(session):
                 "output_asset_id": asset.asset_id,
                 "row_count": len(output),
                 "column_count": len(output.columns),
+                "evidence_id": canonical_evidence.evidence_id,
                 "artifact_id": metadata.get("artifact_id"),
             },
             ensure_ascii=False,

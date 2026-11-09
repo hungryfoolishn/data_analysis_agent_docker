@@ -104,14 +104,11 @@ def canonical_from_legacy_evidence_item(
         artifact_ids=list(evidence.source_artifact_ids),
         evidence_text=evidence.evidence_text,
         numeric_values=numeric_values,
-        validation_status=(
-            "verified"
-            if evidence.verification_status == "verified"
-            else "unverified"
-        ),
+        validation_status="unverified",
         source_metadata={
             "calculation_method": evidence.calculation_method,
             "verification_result_id": evidence.verification_result_id,
+            "legacy_validation_status": evidence.verification_status,
         },
         created_at=evidence.created_at or "",
     )

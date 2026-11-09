@@ -202,6 +202,12 @@ def test_canonical_evidence_lifecycle(tmp_path: Path):
         output_asset=output_asset,
         numeric_values={"amount_sum": 300.0},
     )
+    execution = runtime.record_execution(
+        tool_name="run_analysis_operation",
+        status="succeeded",
+        execution_id="exec_evidence_1",
+        step_id="step_1",
+    )
     canonical = canonical_from_operation_evidence(
         operation_evidence,
         task_id="step_1",
@@ -209,8 +215,11 @@ def test_canonical_evidence_lifecycle(tmp_path: Path):
     )
     assert canonical.validation_status == "unverified"
     registered = runtime.register_canonical_evidence(canonical)
-    assert registered.validation_status == "verified"
+    assert registered.validation_status == "reference_validated"
     assert runtime.evidence_registry.get(registered.evidence_id) is registered
+
+    verified = runtime.verify_canonical_evidence(registered.evidence_id)
+    assert verified.validation_status == "verified"
 
     with pytest.raises(EvidenceRegistryError):
         runtime.register_canonical_evidence(canonical, artifact_ids=[])
@@ -255,12 +264,19 @@ def test_report_closure_success_and_partial(tmp_path: Path):
         output_asset=output_asset,
         numeric_values={"amount_sum": 300.0},
     )
+    execution = runtime.record_execution(
+        tool_name="run_analysis_operation",
+        status="succeeded",
+        execution_id="exec_report_1",
+        step_id=runtime.scheduler.tasks[0].task_id,
+    )
     canonical = canonical_from_operation_evidence(
         evidence,
         task_id="step_1",
         artifact_ids=[artifact.artifact_id],
     )
     runtime.register_canonical_evidence(canonical)
+    runtime.verify_canonical_evidence(canonical.evidence_id)
 
     report, markdown = runtime.build_verified_report()
     assert report is not None
@@ -278,6 +294,12 @@ def test_report_closure_success_and_partial(tmp_path: Path):
         input_asset_ids=[prepared.asset.asset_id],
         output_asset=output_asset,
         numeric_values={"row_count": 3.0},
+    )
+    runtime.record_execution(
+        tool_name="run_analysis_operation",
+        status="succeeded",
+        execution_id="exec_report_2",
+        step_id=runtime.scheduler.tasks[1].task_id,
     )
     second_canonical = canonical_from_operation_evidence(
         second_evidence,
@@ -306,6 +328,12 @@ def test_report_closure_requires_verified_evidence(tmp_path: Path):
         tool_name="run_analysis_operation",
         input_asset_ids=[prepared.asset.asset_id],
         evidence_text="unverified operation",
+    )
+    runtime.record_execution(
+        tool_name="run_analysis_operation",
+        status="succeeded",
+        execution_id="exec_unverified",
+        step_id="step_1",
     )
     runtime.evidence_registry.register(evidence)
     report, markdown = runtime.build_verified_report()
@@ -354,3 +382,74 @@ def test_runtime_v2_file_execution_creates_report_and_outcome(tmp_path: Path):
     assert session.runtime_outcome.status == "completed"
     assert session.runtime_outcome.runtime_mode == "runtime_v2"
     assert len(runtime.evidence_registry.list(statuses={"verified"})) >= 1
+
+def test_evidence_registry_rejects_fake_execution():
+    registry = EvidenceRegistry(
+        assets={"asset_1": object()},
+        artifacts={"artifact_1": object()},
+        executions={"exec_real": object()},
+    )
+    evidence = CanonicalEvidence(
+        evidence_type="analysis_operation",
+        execution_id="exec_fake",
+        tool_name="run_analysis_operation",
+        input_asset_ids=["asset_1"],
+        artifact_ids=["artifact_1"],
+        evidence_text="fabricated execution",
+    )
+    with pytest.raises(EvidenceRegistryError, match="Unknown execution_id"):
+        registry.register(evidence)
+
+
+def test_legacy_evidence_does_not_inherit_verified_status():
+    from langgraph_langchain.schemas import EvidenceItem
+    from langgraph_langchain.evidence import canonical_from_legacy_evidence_item
+
+    evidence = EvidenceItem(
+        evidence_id="evid_legacy",
+        evidence_text="legacy verified evidence",
+        verification_status="verified",
+        verification_result_id="verify_1",
+        source_execution_ids=["exec_legacy"],
+        source_asset_ids=["asset_legacy"],
+        source_artifact_ids=["artifact_legacy"],
+    )
+    canonical = canonical_from_legacy_evidence_item(evidence)
+    assert canonical.validation_status == "unverified"
+    assert canonical.source_metadata["legacy_validation_status"] == "verified"
+
+
+def test_evidence_without_content_validator_cannot_be_verified():
+    registry = EvidenceRegistry(
+        assets={"asset_1": object()},
+        artifacts={"artifact_1": object()},
+        executions={"exec_1": object()},
+    )
+    evidence = CanonicalEvidence(
+        evidence_type="analysis_operation",
+        execution_id="exec_1",
+        tool_name="run_analysis_operation",
+        input_asset_ids=["asset_1"],
+        artifact_ids=["artifact_1"],
+        evidence_text="references are valid",
+    )
+    registry.register(evidence)
+    with pytest.raises(
+        EvidenceRegistryError,
+        match="content validator is required",
+    ):
+        registry.verify(evidence.evidence_id)
+
+
+def test_runtime_outcome_maps_skipped_and_cancelled(tmp_path: Path):
+    runtime = _runtime(tmp_path)
+    prepared = _file_plan(tmp_path, runtime)
+    runtime.scheduler.tasks[0].status = "succeeded"
+    runtime.scheduler.tasks[1].status = "skipped"
+
+    outcome = runtime.build_runtime_outcome(runtime_mode="runtime_v2")
+    assert outcome.status == "partial_success"
+
+    runtime.scheduler.tasks[1].status = "cancelled"
+    outcome = runtime.build_runtime_outcome(runtime_mode="runtime_v2")
+    assert outcome.status == "cancelled"

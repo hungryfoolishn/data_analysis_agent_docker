@@ -14,7 +14,7 @@ from typing import Any, Optional, Sequence
 from langgraph_langchain.data.assets import DataAsset, hash_dataframe, hash_file
 from langgraph_langchain.evidence.models import CanonicalEvidence
 from langgraph_langchain.evidence.registry import EvidenceRegistry
-from langgraph_langchain.runtime.outcome import RuntimeOutcome
+from langgraph_langchain.runtime.outcome import RuntimeOutcome, derive_runtime_status
 from langgraph_langchain.data.snapshots import (
     SnapshotNotFoundError,
     SnapshotReference,
@@ -110,6 +110,7 @@ class AnalysisRuntime:
         self.evidence_registry = EvidenceRegistry(
             assets=self.assets,
             artifacts=self.artifacts,
+            executions=self._lookup_execution,
         )
         self.asset_resolver = AssetResolver(
             assets=self.assets,
@@ -349,17 +350,7 @@ class AnalysisRuntime:
         tasks = list(self.scheduler.tasks) if self.scheduler else []
         completed = sum(task.status == "succeeded" for task in tasks)
         failed = sum(task.status == "failed" for task in tasks)
-        cancelled = any(task.status == "cancelled" for task in tasks)
-        if cancelled:
-            status = "cancelled"
-        elif failed and completed:
-            status = "partial_success"
-        elif failed and not completed:
-            status = "failed"
-        elif completed:
-            status = "completed"
-        else:
-            status = "failed"
+        status = derive_runtime_status(tasks)
         if report is not None:
             evidence_ids = tuple(
                 evidence_id
@@ -399,9 +390,9 @@ class AnalysisRuntime:
         verified = self.evidence_registry.list(statuses={"verified"})
         if not verified:
             return None, None
-        failed_steps = sum(
-            task.status == "failed" for task in (self.scheduler.tasks if self.scheduler else [])
-        )
+        tasks = list(self.scheduler.tasks) if self.scheduler else []
+        failed_steps = sum(task.status == "failed" for task in tasks)
+        skipped_steps = sum(task.status == "skipped" for task in tasks)
         findings = []
         for index, evidence in enumerate(verified, start=1):
             limitations = (
@@ -434,10 +425,14 @@ class AnalysisRuntime:
         report = build_analysis_report(
             task_id=self.task.task_id,
             user_goal=self.task.question,
-            status="success" if failed_steps == 0 else "partial_success",
+            status=(
+                "success"
+                if failed_steps == 0 and skipped_steps == 0
+                else "partial_success"
+            ),
             executive_summary=(
                 "The structured Runtime plan completed with verified evidence."
-                if failed_steps == 0
+                if failed_steps == 0 and skipped_steps == 0
                 else "The structured Runtime plan completed partially with verified evidence."
             ),
             findings=findings,
@@ -456,18 +451,112 @@ class AnalysisRuntime:
             )
         return report, render_analysis_report(report)
 
+    def _lookup_execution(self, execution_id: str):
+        return next(
+            (
+                item
+                for item in self.executions
+                if item.execution_id == execution_id
+            ),
+            None,
+        )
+
     def register_canonical_evidence(
         self,
         evidence: CanonicalEvidence,
         *,
         artifact_ids: Sequence[str] | None = None,
     ) -> CanonicalEvidence:
-        """Register and verify canonical evidence against Runtime references."""
+        """Register canonical evidence after reference validation.
+
+        Content verification is deferred until the real ExecutionResult has
+        been recorded and the output/artifact content can be checked.
+        """
         evidence.artifact_ids = list(
             artifact_ids if artifact_ids is not None else evidence.artifact_ids
         )
-        registered = self.evidence_registry.register(evidence)
-        return self.evidence_registry.verify(registered.evidence_id)
+        return self.evidence_registry.register(evidence)
+
+    def verify_canonical_evidence(self, evidence_id: str) -> CanonicalEvidence:
+        """Verify canonical evidence content against Runtime sources."""
+        return self.evidence_registry.verify(
+            evidence_id,
+            content_validator=self._validate_canonical_evidence_content,
+        )
+
+    def _validate_canonical_evidence_content(
+        self,
+        evidence: CanonicalEvidence,
+    ) -> list[str]:
+        errors: list[str] = []
+        for asset_id in evidence.output_asset_ids:
+            asset = self.assets.get(asset_id)
+            if asset is None:
+                errors.append(f"Output asset does not exist: {asset_id}")
+
+        for artifact_id in evidence.artifact_ids:
+            artifact = self.artifacts.get(artifact_id)
+            if artifact is None:
+                errors.append(f"Artifact does not exist: {artifact_id}")
+                continue
+            artifact_path = Path(artifact.path)
+            if not artifact_path.is_file():
+                errors.append(f"Artifact file does not exist: {artifact_id}")
+
+        row_count = evidence.numeric_values.get("row_count")
+        if row_count is not None:
+            for asset_id in evidence.output_asset_ids:
+                asset = self.assets.get(asset_id)
+                if asset is None:
+                    continue
+                actual_rows = asset.schema_snapshot.row_count
+                if actual_rows != int(row_count):
+                    errors.append(
+                        f"Output asset row count mismatch for {asset_id}: "
+                        f"expected {int(row_count)}, got {actual_rows}"
+                    )
+
+        returned_rows = evidence.numeric_values.get("returned_row_count")
+        if returned_rows is not None:
+            for asset_id in evidence.output_asset_ids:
+                asset = self.assets.get(asset_id)
+                if asset is None:
+                    continue
+                snapshot_reference = asset.source_metadata.get(
+                    "snapshot_reference"
+                )
+                actual_rows = (
+                    snapshot_reference.get("row_count")
+                    if isinstance(snapshot_reference, dict)
+                    else None
+                )
+                if actual_rows is not None and int(actual_rows) != int(
+                    returned_rows
+                ):
+                    errors.append(
+                        f"SQLite result row count mismatch for {asset_id}: "
+                        f"expected {int(returned_rows)}, got {actual_rows}"
+                    )
+        return errors
+
+    def _verify_canonical_evidence_for_execution(
+        self,
+        execution_id: str,
+    ) -> None:
+        for evidence in self.evidence_registry.list(
+            execution_id=execution_id,
+            statuses={"reference_validated", "unverified"},
+        ):
+            try:
+                self.verify_canonical_evidence(evidence.evidence_id)
+            except Exception as exc:
+                logger.warning(
+                    "canonical_evidence_content_validation_failed "
+                    "execution_id=%s evidence_id=%s error=%s",
+                    execution_id,
+                    evidence.evidence_id,
+                    exc,
+                )
 
     def register_artifact(
         self,
@@ -1001,6 +1090,8 @@ class AnalysisRuntime:
         self._sync_runtime_step_from_task(result_like)
 
         self.record_task_evaluation(result, persist=False)
+
+        self._verify_canonical_evidence_for_execution(result.execution_id)
 
         self.run.updated_at = utc_now()
         self._persist()

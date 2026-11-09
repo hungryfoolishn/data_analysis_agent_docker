@@ -12,17 +12,34 @@ class EvidenceRegistryError(ValueError):
 
 
 class EvidenceRegistry:
-    """Store canonical evidence and validate its references."""
+    """Store canonical evidence and validate references, execution, and content."""
 
     def __init__(
         self,
         *,
         assets: Mapping[str, object] | None = None,
         artifacts: Mapping[str, object] | None = None,
+        executions: (
+            Mapping[str, object] | Callable[[str], object | None] | None
+        ) = None,
     ) -> None:
         self._assets = assets if assets is not None else {}
         self._artifacts = artifacts if artifacts is not None else {}
         self._records: dict[str, CanonicalEvidence] = {}
+        if executions is None:
+            self._execution_provider: Callable[[str], object | None] = (
+                lambda execution_id: None
+            )
+        elif callable(executions):
+            self._execution_provider = executions
+        else:
+            execution_map = dict(executions)
+            self._execution_provider = execution_map.get
+
+    @staticmethod
+    def _reference_validated(evidence: CanonicalEvidence) -> CanonicalEvidence:
+        evidence.validation_status = "reference_validated"
+        return evidence
 
     def register(
         self,
@@ -39,6 +56,8 @@ class EvidenceRegistry:
             raise EvidenceRegistryError(
                 "Invalid evidence references: " + "; ".join(errors)
             )
+        # Reference validation never preserves a caller-supplied verified state.
+        evidence.validation_status = "reference_validated"
         self._records[evidence.evidence_id] = evidence
         return evidence
 
@@ -46,6 +65,10 @@ class EvidenceRegistry:
         errors: list[str] = []
         if not evidence.execution_id:
             errors.append("execution_id is required")
+        elif self._lookup_execution(evidence.execution_id) is None:
+            errors.append(
+                f"Unknown execution_id: {evidence.execution_id}"
+            )
         if not evidence.tool_name:
             errors.append("tool_name is required")
         if not evidence.evidence_text.strip():
@@ -62,6 +85,9 @@ class EvidenceRegistry:
         if unknown_artifacts:
             errors.append("Unknown artifact IDs: " + ", ".join(unknown_artifacts))
         return errors
+
+    def _lookup_execution(self, execution_id: str) -> object | None:
+        return self._execution_provider(execution_id)
 
     def get(self, evidence_id: str) -> CanonicalEvidence:
         evidence = self._records.get(evidence_id)
@@ -87,12 +113,17 @@ class EvidenceRegistry:
         self,
         evidence_id: str,
         *,
-        extra_validator: Callable[[CanonicalEvidence], list[str]] | None = None,
+        content_validator: Callable[[CanonicalEvidence], list[str]] | None = None,
     ) -> CanonicalEvidence:
+        """Verify evidence references and caller-provided content checks."""
         evidence = self.get(evidence_id)
+        if content_validator is None:
+            evidence.validation_status = "failed"
+            raise EvidenceRegistryError(
+                "Evidence content validator is required before verification"
+            )
         errors = self.validate_references(evidence)
-        if extra_validator is not None:
-            errors.extend(extra_validator(evidence))
+        errors.extend(content_validator(evidence))
         if errors:
             evidence.validation_status = "failed"
             raise EvidenceRegistryError(
