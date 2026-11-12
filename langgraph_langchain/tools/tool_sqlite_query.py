@@ -47,6 +47,7 @@ def _factory(session):
         parameters_json: str = "{}",
         max_rows: int = 100000,
         timeout_seconds: float = 30.0,
+        execution_id: str = "",
     ) -> str:
         """Run one read-only SQLite query against a registered database asset.
 
@@ -56,12 +57,14 @@ def _factory(session):
             parameters_json: JSON object or array of bound parameters.
             max_rows: Maximum rows returned by the bounded query.
             timeout_seconds: SQLite progress-handler deadline.
+            execution_id: Canonical execution id injected by the Runtime (v3 §5.2).
         """
         error_msg = _validate("run_sqlite_query")
         recorder = SessionExecutionRecorder(
             session,
             tool_name="run_sqlite_query",
             code_or_query=sql,
+            execution_id=execution_id or None,
         )
         if error_msg:
             recorder.fail(error_msg, error_type="StageValidationError")
@@ -117,7 +120,9 @@ def _factory(session):
         session.current_asset_id = output_asset.asset_id
         result_payload = {
             "status": "succeeded",
+            "execution_id": recorder.execution_id,
             "output_asset_id": output_asset.asset_id,
+            "output_assets": {"query_result_asset": output_asset.asset_id},
             "row_count": tool_result.row_count,
             "column_count": tool_result.column_count,
             "truncated": tool_result.truncated,

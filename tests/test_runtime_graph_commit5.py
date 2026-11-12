@@ -121,7 +121,8 @@ def test_runtime_graph_stops_after_failed_task():
     assert state["reason"] == "runtime graph failed"
     assert state["result"].task_id == first.step_id
     assert controller.scheduler.get_task(first.step_id).status == "failed"
-    assert controller.scheduler.get_task(second.step_id).status == "pending"
+    # v3 §9.2: pending dependents cascade to skipped after a failure.
+    assert controller.scheduler.get_task(second.step_id).status == "skipped"
 
 
 def test_build_runtime_controller_uses_scheduler_and_runner():
@@ -215,7 +216,8 @@ def test_runtime_graph_invokes_finish_callback_for_failed_task():
     assert state["status"] == "failed"
     assert started == [first.step_id]
     assert finished == [first.step_id]
-    assert controller.scheduler.get_task(second.step_id).status == "pending"
+    # v3 §9.2: pending dependents cascade to skipped after a failure.
+    assert controller.scheduler.get_task(second.step_id).status == "skipped"
 
 
 

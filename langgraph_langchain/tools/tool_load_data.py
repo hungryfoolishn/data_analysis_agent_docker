@@ -28,7 +28,7 @@ def _factory(session):
     _validate = _validate_tool_stage_factory(session)
 
     @tool
-    def load_data(file_path: str, sheet_name: str = "") -> str:
+    def load_data(file_path: str, sheet_name: str = "", execution_id: str = "") -> str:
         """Load a CSV or Excel file and return its shape, column types, and a 5-row preview.
 
         Args:
@@ -37,6 +37,7 @@ def _factory(session):
                 (``workspace/<session>/data.csv``), or a workspace-relative path
                 (``<session>/data.csv``).
             sheet_name: Sheet name for Excel files (ignored for CSV).
+            execution_id: Canonical execution id injected by the Runtime (v3 §5.2).
         """
         # Validate stage before execution
         error_msg = _validate("load_data")
@@ -80,6 +81,7 @@ def _factory(session):
                     tool_name="load_data",
                     status="failed",
                     code_or_query=file_path,
+                    execution_id=execution_id or None,
                     error={"type": type(e).__name__, "message": str(e)},
                     duration_ms=(time.monotonic() - started_at) * 1000,
                 )
@@ -144,6 +146,7 @@ def _factory(session):
                 sheet_name=actual if suffix in (".xlsx", ".xls") else None,
                 source_metadata={
                     **scan.metadata,
+                    "execution_id": execution_id or None,
                     "source_hash": scan.source_hash,
                     "estimated_rows": scan.estimated_rows,
                     "cache_key": load_key,
@@ -194,6 +197,7 @@ def _factory(session):
                 tool_name="load_data",
                 status="succeeded",
                 code_or_query=str(path),
+                execution_id=execution_id or None,
                 input_asset_ids=[current_asset_id] if current_asset_id else [],
                 stdout_preview=result,
                 duration_ms=(time.monotonic() - started_at) * 1000,
@@ -205,6 +209,7 @@ def _factory(session):
                 tool_name="load_data",
                 status="failed",
                 code_or_query=file_path,
+                execution_id=execution_id or None,
                 error={"type": type(exc).__name__, "message": str(exc)},
                 duration_ms=(time.monotonic() - started_at) * 1000,
             )

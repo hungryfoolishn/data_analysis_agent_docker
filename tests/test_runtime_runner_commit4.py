@@ -137,7 +137,7 @@ def test_task_runner_completes_full_dependency_chain():
     ]
 
 
-def test_task_runner_stops_on_failure_and_blocks_downstream():
+def test_task_runner_stops_on_failure_and_skips_downstream():
     tools = {
         "load_data": FailingTool(RuntimeError("bad source"))
     }
@@ -162,9 +162,11 @@ def test_task_runner_stops_on_failure_and_blocks_downstream():
     assert summary.reason == "bad source"
     assert summary.executed_task_ids == ["task_load"]
     assert summary.failed_task_ids == ["task_load"]
-    assert summary.blocked_task_ids == ["task_compare"]
+    # v3 §9.2: pending dependents cascade to skipped after a failure, so the
+    # scheduler converges instead of leaving them blocked forever.
+    assert summary.blocked_task_ids == []
     assert scheduler.get_task("task_load").status == "failed"
-    assert scheduler.get_task("task_compare").status == "pending"
+    assert scheduler.get_task("task_compare").status == "skipped"
 
 
 def test_task_runner_without_stop_on_failure_reports_blocked_state():
@@ -192,8 +194,9 @@ def test_task_runner_without_stop_on_failure_reports_blocked_state():
     assert summary.status == "failed"
     assert summary.reason == "Execution stopped because tasks failed: task_load"
     assert summary.failed_task_ids == ["task_load"]
-    assert summary.blocked_task_ids == ["task_compare"]
+    assert summary.blocked_task_ids == []
     assert scheduler.get_task("task_load").status == "failed"
+    assert scheduler.get_task("task_compare").status == "skipped"
 
 
 def test_task_runner_respects_max_steps():

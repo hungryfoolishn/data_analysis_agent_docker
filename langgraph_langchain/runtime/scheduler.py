@@ -375,3 +375,56 @@ class TaskScheduler:
     def error(self, task_id: str) -> Optional[str]:
         return self._errors.get(task_id)
 
+    def dependents_of(self, task_id: str) -> list[str]:
+        return [
+            task.task_id
+            for task in self._tasks.values()
+            if task_id in task.depends_on
+        ]
+
+    def skip_dependents(
+        self, task_id: str, *, error: Optional[str] = "upstream_failed"
+    ) -> list[str]:
+        """Mark the transitive pending dependents of a failed task skipped.
+
+        v3 §9.2: only ``pending`` tasks are transitioned; ``running`` tasks
+        keep running and already-terminal tasks are untouched.
+        """
+        root = self._tasks.get(task_id)
+        if root is None or root.status not in {"failed", "cancelled"}:
+            return []
+        skipped: list[str] = []
+        stack = [task_id]
+        while stack:
+            current = stack.pop()
+            for child_id in self.dependents_of(current):
+                child = self._tasks[child_id]
+                if child.status == "pending":
+                    child.status = "skipped"
+                    if error:
+                        child.error = error
+                        self._errors[child_id] = error
+                    skipped.append(child_id)
+                    stack.append(child_id)
+        return skipped
+
+    def demote_to_failed(
+        self, task_id: str, *, error: Optional[str] = None
+    ) -> "AnalysisTask":
+        """Transition a succeeded task to failed (output contract violation).
+
+        Used exclusively by ``AnalysisRuntime.record_execution_result`` when
+        binding adjudication flips a result after the runner marked it
+        succeeded (v3 §5.4 / §9).
+        """
+        task = self._require_task(task_id)
+        if task.status != "succeeded":
+            raise ValueError(
+                f"Task '{task_id}' must be succeeded to demote, got '{task.status}'"
+            )
+        task.status = "failed"
+        if error:
+            self._errors[task_id] = error
+            task.error = error
+        return task
+

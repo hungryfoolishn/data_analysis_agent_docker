@@ -32,6 +32,7 @@ def _factory(session):
         asset_id: str,
         operation: str,
         parameters_json: str = "{}",
+        execution_id: str = "",
     ) -> str:
         """Run one allowlisted dataframe analysis operation and register its output.
 
@@ -39,6 +40,7 @@ def _factory(session):
             asset_id: Registered input DataAsset ID.
             operation: One of the planner allowlist operations.
             parameters_json: JSON object with operation parameters.
+            execution_id: Canonical execution id injected by the Runtime (v3 §5.2).
         """
         error_msg = _validate("run_analysis_operation")
         recorder = SessionExecutionRecorder(
@@ -49,6 +51,7 @@ def _factory(session):
                 ensure_ascii=False,
                 sort_keys=True,
             ),
+            execution_id=execution_id or None,
         )
         if error_msg:
             recorder.fail(error_msg, error_type="StageValidationError")
@@ -122,7 +125,9 @@ def _factory(session):
         result_payload = {
             "status": "succeeded",
             "operation": operation,
+            "execution_id": execution_id,
             "output_asset_id": asset.asset_id,
+            "output_assets": {"output": asset.asset_id},
             "row_count": len(output),
             "column_count": len(output.columns),
             "evidence_id": canonical_evidence.evidence_id,
@@ -138,7 +143,9 @@ def _factory(session):
             {
                 "status": "succeeded",
                 "operation": operation,
+                "execution_id": execution_id,
                 "output_asset_id": asset.asset_id,
+                "output_assets": {"output": asset.asset_id},
                 "row_count": len(output),
                 "column_count": len(output.columns),
                 "evidence_id": canonical_evidence.evidence_id,

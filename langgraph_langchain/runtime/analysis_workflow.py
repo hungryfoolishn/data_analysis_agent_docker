@@ -72,7 +72,7 @@ def general_plan_to_runtime_plan(plan: GeneralAnalysisPlan) -> AnalysisPlan:
             objective=f"{item.operation}: {plan.user_goal}",
             method="run_analysis_operation",
             required_inputs=list(plan.input_asset_ids),
-            expected_outputs=[f"{item.step_id}:output"],
+            expected_outputs=["output"],
             parameters={
                 "asset_id": item.input_refs[0],
                 "operation": item.operation,

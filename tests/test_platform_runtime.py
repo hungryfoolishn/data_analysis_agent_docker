@@ -85,7 +85,8 @@ def test_runtime_persists_and_restores_metadata(tmp_path):
     assert restored.run.run_id == runtime.run.run_id
     assert asset.asset_id in restored.assets
     assert restored.executions[0].execution_id == execution.execution_id
-    assert raw["version"] == 1
+    assert raw["version"] == 2
+    # Snapshot v2 adds output_bindings (B11.2.1 output asset binding).
 
 
 def test_runtime_deduplicates_same_source_asset(tmp_path):

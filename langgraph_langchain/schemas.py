@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from langgraph_langchain.state_machine import AnalysisStage
 
@@ -434,3 +434,57 @@ class SessionLineage(BaseModel):
     # Report
     final_report: Optional[str] = Field(default=None, description="最终报告")
     report_references_findings: List[str] = Field(default_factory=list, description="报告引用的 finding IDs")
+
+
+def utc_now_iso() -> str:
+    """UTC ISO timestamp for schema-level contracts (B11.2.1)."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+class OutputAssetBinding(BaseModel):
+    """Immutable link between one logical step output and a physical DataAsset.
+
+    Uniqueness key: ``(run_id, step_id, output_name, attempt)``.  Registration
+    semantics are enforced by ``runtime/output_bindings.py`` (B11.2.1.0 v3 §3.1).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    step_id: str
+    output_name: str
+    asset_id: str
+    execution_id: str
+    attempt: int = Field(ge=1)
+    created_at: str = Field(default_factory=utc_now_iso)
+
+
+class ExecutionOutputAsset(BaseModel):
+    """One named output DataAsset produced by an execution (B11.2.1.0 v3 §3.3).
+
+    ``output_name`` may be empty while still unnamed; the Runtime resolves the
+    final name against the step's ``expected_outputs``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    output_name: str = ""
+    asset_id: str
+
+
+class ResolvedLogicalRef(BaseModel):
+    """A resolved logical input reference kept for lineage audit (v3 §7.2)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    reference: str
+    step_id: str
+    output_name: str
+    binding: OutputAssetBinding
+
+
+class ResolvedTaskInputs(BaseModel):
+    """Actual physical inputs consumed by one execution, plus logical lineage."""
+
+    asset_ids: list[str] = Field(default_factory=list)
+    logical_refs: list[ResolvedLogicalRef] = Field(default_factory=list)

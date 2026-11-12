@@ -9,6 +9,11 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, model_validator
 
 from langgraph_langchain.runtime.models import RuntimePlanStep
+from langgraph_langchain.runtime.output_bindings import (
+    OutputBindingConflictError,
+    classify_input_reference,
+    parse_logical_reference,
+)
 
 
 class PlanBudget(BaseModel):
@@ -196,13 +201,108 @@ def validate_runtime_plan(
     require_known_methods: bool = True,
 ) -> list[str]:
     """Validate a Runtime plan immediately before TaskRunner execution."""
+    assets = set(available_asset_ids)
+    step_ids = {step.step_id for step in plan.steps}
+
+    # v3 §7.3: classify physical asset IDs vs logical output references across
+    # required_inputs AND planner arguments (including parsed parameters_json).
+    # Logical references must never enter the physical asset check of
+    # validate_plan(), or they would be rejected as unknown input assets.
+    errors: list[str] = []
+    logical_refs: list[tuple[RuntimePlanStep, str]] = []
+    filtered_steps: list[RuntimePlanStep] = []
+    for step in plan.steps:
+        physical_required: list[str] = []
+        candidate_values: list[str] = []
+        for item in step.required_inputs:
+            if isinstance(item, str):
+                candidate_values.append(item)
+        argument_values = dict(step.parameters)
+        raw_parameters = argument_values.get("parameters_json")
+        if isinstance(raw_parameters, str):
+            try:
+                parsed = json.loads(raw_parameters)
+                if isinstance(parsed, dict):
+                    argument_values.update(parsed)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass  # reported by the dedicated parameters_json check below
+        candidate_values.extend(
+            value for value in argument_values.values() if isinstance(value, str)
+        )
+        physical_set: set[str] = set()
+        for value in candidate_values:
+            try:
+                kind = classify_input_reference(value, step_ids, assets)
+            except OutputBindingConflictError as exc:
+                errors.append(f"Step '{step.step_id}': {exc}")
+                kind = "asset_id"
+            if kind == "logical_ref":
+                if value in step.required_inputs:
+                    logical_refs.append((step, value))
+                else:
+                    logical_refs.append((step, value))
+            elif value in step.required_inputs:
+                physical_set.add(value)
+        physical_required = [
+            item for item in step.required_inputs if item in physical_set
+        ]
+        filtered_steps.append(
+            step.model_copy(update={"required_inputs": physical_required})
+        )
+    typed_plan = plan.model_copy(update={"steps": filtered_steps})
     errors = list(
         validate_plan(
-            plan,
+            typed_plan,
             available_methods=available_methods,
             available_asset_ids=available_asset_ids,
         )
     )
+
+    # Logical reference validation: producer exists, belongs to the step's
+    # dependency closure, and declares the referenced output name.
+    steps_by_id = {step.step_id: step for step in plan.steps}
+    closures: dict[str, set[str]] = {}
+
+    def closure_for(target_step_id: str) -> set[str]:
+        if target_step_id not in closures:
+            computed: set[str] = set()
+            stack = list(steps_by_id[target_step_id].depends_on)
+            while stack:
+                current = stack.pop()
+                if current in computed:
+                    continue
+                computed.add(current)
+                producer_step = steps_by_id.get(current)
+                if producer_step is not None:
+                    stack.extend(producer_step.depends_on)
+            closures[target_step_id] = computed
+        return closures[target_step_id]
+
+    for step, reference in logical_refs:
+        try:
+            producer_id, output_name = parse_logical_reference(reference)
+        except OutputBindingConflictError as exc:
+            errors.append(f"Step '{step.step_id}': {exc}")
+            continue
+        producer = steps_by_id.get(producer_id)
+        if producer is None:
+            errors.append(
+                f"Step '{step.step_id}' references unknown step '{producer_id}'"
+            )
+            continue
+        if producer_id != step.step_id and producer_id not in closure_for(
+            step.step_id
+        ):
+            errors.append(
+                f"Step '{step.step_id}' references '{reference}' which is not "
+                "one of its dependencies"
+            )
+            continue
+        if output_name not in producer.expected_outputs:
+            errors.append(
+                f"Step '{step.step_id}' references output '{output_name}' which "
+                f"is not declared by step '{producer_id}'"
+            )
     if not require_known_methods:
         errors = [
             error

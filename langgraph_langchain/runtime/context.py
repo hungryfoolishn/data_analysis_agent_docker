@@ -27,6 +27,14 @@ from langgraph_langchain.runtime.asset_resolver import (
     AssetResolutionError,
     AssetResolver,
 )
+from langgraph_langchain.schemas import (
+    EvidenceItem,
+    ExecutionOutputAsset,
+    Finding,
+    OutputAssetBinding,
+    ResolvedLogicalRef,
+    VerificationResult,
+)
 from langgraph_langchain.runtime.models import (
     AnalysisRun,
     AnalysisTask,
@@ -44,6 +52,13 @@ from langgraph_langchain.runtime.plans import (
     validate_plan,
     validate_runtime_plan,
 )
+from langgraph_langchain.runtime.output_bindings import (
+    OutputBindingConflictError,
+    OutputBindingNotFoundError,
+    OutputBindingRegistry,
+    classify_input_reference,
+    parse_logical_reference,
+)
 from langgraph_langchain.runtime.scheduler import TaskScheduler
 from langgraph_langchain.runtime.runner import TaskRunner
 from langgraph_langchain.runtime.executor import TaskExecutor
@@ -54,11 +69,13 @@ from langgraph_langchain.runtime.learning import (
     TaskEvaluation,
     build_task_evaluation,
 )
-from langgraph_langchain.schemas import Finding, EvidenceItem, VerificationResult
-
 _RUNTIME_STATE_FILE = ".analysis_runtime.json"
 _RUN_HISTORY_DIR = ".analysis_runs"
 logger = logging.getLogger(__name__)
+
+
+class BindingResolutionError(RuntimeError):
+    """Raised when logical input references cannot be resolved (v3 §7.1)."""
 _ARTIFACT_TYPES = {
     ".png": "chart",
     ".jpg": "chart",
@@ -116,6 +133,7 @@ class AnalysisRuntime:
             assets=self.assets,
             snapshot_store=self.snapshot_store,
         )
+        self.output_bindings = OutputBindingRegistry()
         self.executions: list[ExecutionResult] = []
         self.findings: list[dict[str, Any]] = []
         self.metric_definitions: list[dict[str, Any]] = []
@@ -792,25 +810,15 @@ class AnalysisRuntime:
             for name, tool in (execution_tools or {}).items()
             if hasattr(tool, "args_schema")
         }
-        errors = validate_plan(
+        # v3 §7.3: physical/logical typing happens inside validate_runtime_plan;
+        # a raw validate_plan() call on the untyped plan would reject logical
+        # output references as unknown input assets.
+        errors = validate_runtime_plan(
             plan,
             available_methods=tool_names,
             available_asset_ids=self.assets,
-        )
-        if execution_tools is None:
-            errors = [
-                error
-                for error in errors
-                if not error.startswith("Unknown analysis method:")
-            ]
-        errors.extend(
-            validate_runtime_plan(
-                plan,
-                available_methods=tool_names,
-                available_asset_ids=self.assets,
-                tool_schemas=tool_schemas,
-                require_known_methods=execution_tools is not None,
-            )
+            tool_schemas=tool_schemas,
+            require_known_methods=execution_tools is not None,
         )
         if errors:
             raise PlanExecutionValidationError(errors)
@@ -1016,12 +1024,128 @@ class AnalysisRuntime:
         arguments = task.constraints.get("arguments")
         return dict(arguments) if isinstance(arguments, dict) else {}
 
+    def _dependency_closure(self, task_ids: Sequence[str]) -> set[str]:
+        steps_by_id = {step.step_id: step for step in self.run.steps}
+        closure: set[str] = set()
+        stack = list(task_ids or [])
+        while stack:
+            step_id = stack.pop()
+            if step_id in closure:
+                continue
+            closure.add(step_id)
+            step = steps_by_id.get(step_id)
+            if step is not None:
+                stack.extend(step.depends_on)
+        return closure
+
+    def _step_succeeded(self, step_id: str) -> bool:
+        step = next(
+            (item for item in self.run.steps if item.step_id == step_id),
+            None,
+        )
+        return step is not None and step.status == "succeeded"
+
+    def _rewrite_parameters_json(self, raw: str, resolve_reference) -> str:
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            return raw
+        if not isinstance(parsed, dict):
+            return raw
+        changed = False
+        for key, value in list(parsed.items()):
+            if isinstance(value, str):
+                new_value = resolve_reference(value)
+                if new_value != value:
+                    parsed[key] = new_value
+                    changed = True
+        if not changed:
+            return raw
+        return json.dumps(parsed, ensure_ascii=False, sort_keys=True)
+
+    def _resolve_task_inputs(self, task):
+        """Resolve physical and logical inputs for one task (v3 §7.1/§7.2)."""
+        from langgraph_langchain.execution.task_models import ResolvedTaskInputs
+
+        known_step_ids = {step.step_id for step in self.run.steps}
+        registered_asset_ids = set(self.assets.keys())
+        resolved = ResolvedTaskInputs(asset_ids=[], logical_refs=[])
+        seen: set[str] = set()
+        for asset_id in task.input_asset_ids:
+            if asset_id and asset_id not in seen:
+                seen.add(asset_id)
+                resolved.asset_ids.append(asset_id)
+        closure = self._dependency_closure(task.depends_on)
+
+        def resolve_reference(reference: str) -> str:
+            kind = classify_input_reference(
+                reference, known_step_ids, registered_asset_ids
+            )
+            if kind != "logical_ref":
+                return reference
+            step_id, output_name = parse_logical_reference(reference)
+            if (
+                step_id != task.plan_step_id
+                and step_id not in closure
+                and not self._step_succeeded(step_id)
+            ):
+                raise BindingResolutionError(
+                    f"Logical reference '{reference}' does not point to a "
+                    f"dependency of task '{task.task_id}'"
+                )
+            try:
+                binding = self.output_bindings.resolve(
+                    run_id=self.run.run_id,
+                    step_id=step_id,
+                    output_name=output_name,
+                    attempt=self.run.attempt,
+                )
+            except OutputBindingNotFoundError as exc:
+                raise BindingResolutionError(
+                    f"Missing output binding for logical reference "
+                    f"'{reference}': {exc}"
+                ) from exc
+            resolved.logical_refs.append(
+                ResolvedLogicalRef(
+                    reference=reference,
+                    step_id=step_id,
+                    output_name=output_name,
+                    binding=binding,
+                )
+            )
+            if binding.asset_id not in seen:
+                seen.add(binding.asset_id)
+                resolved.asset_ids.append(binding.asset_id)
+            return binding.asset_id
+
+        for item in task.required_inputs:
+            kind = classify_input_reference(
+                item, known_step_ids, registered_asset_ids
+            )
+            if kind == "logical_ref":
+                resolve_reference(item)
+            elif item and item not in seen:
+                seen.add(item)
+                resolved.asset_ids.append(item)
+
+        arguments = self.resolve_arguments(task)
+        rewritten: dict[str, Any] = {}
+        for key, value in arguments.items():
+            if isinstance(value, str):
+                rewritten[key] = resolve_reference(value)
+            elif key == "parameters_json" and isinstance(value, str):
+                rewritten[key] = self._rewrite_parameters_json(value, resolve_reference)
+            else:
+                rewritten[key] = value
+        return resolved, rewritten
+
     def build_execution_request(self, task):
         from langgraph_langchain.execution.task_models import TaskExecutionRequest
 
         namespace = dict(self.execution_namespace)
         metadata: dict[str, Any] = {}
-        input_asset_ids = list(task.input_asset_ids)
+        resolved_inputs, arguments = self._resolve_task_inputs(task)
+        input_asset_ids = list(resolved_inputs.asset_ids)
         if input_asset_ids:
             try:
                 if "runtime_inputs" in namespace or "runtime_input_metadata" in namespace:
@@ -1048,7 +1172,9 @@ class AnalysisRuntime:
         return TaskExecutionRequest(
             task=task,
             run_id=self.run.run_id,
-            arguments=self.resolve_arguments(task),
+            execution_id=new_id("exec"),
+            resolved_inputs=resolved_inputs,
+            arguments=arguments,
             code=task.constraints.get("code"),
             namespace=namespace,
             workspace_dir=str(self.workspace_dir),
@@ -1058,21 +1184,74 @@ class AnalysisRuntime:
             metadata=metadata,
         )
 
+    def _fail_running_task_for_binding(self, exc: BindingResolutionError):
+        """Fail the running task when logical input resolution fails (v3 §7.1).
+
+        The tool is never executed; dependents are skipped; a failed
+        ExecutionResult is recorded for lineage.
+        """
+        running = [
+            task for task in self.scheduler.tasks if task.status == "running"
+        ]
+        if not running:
+            raise exc
+        task = running[0]
+        self.scheduler.mark_failed(task.task_id, error=str(exc))
+        self.scheduler.skip_dependents(task.task_id)
+        result = ExecutionResult(
+            run_id=self.run.run_id,
+            task_id=task.task_id,
+            step_id=task.plan_step_id,
+            tool_name=task.method or task.task_type,
+            status="failed",
+            input_asset_ids=list(task.input_asset_ids),
+            error={"type": "BindingResolutionError", "message": str(exc)},
+        )
+        self.executions.append(result.model_copy(deep=True))
+        self.failures.append(
+            {
+                "task_id": task.task_id,
+                "error": str(exc),
+                "execution_id": result.execution_id,
+                "created_at": utc_now(),
+            }
+        )
+        self.status = "failed"
+        self.run.status = "failed"
+        self._sync_runtime_step_from_task(task)
+        self._sync_runtime_step_from_task(result)
+        return result
+
     def execute_next_task(self, *, request_factory=None):
         """Execute one scheduler-ready task and record its full V2 lineage."""
         if self.runner is None or self.scheduler is None:
             raise RuntimeError("Runtime has no runner; call configure_executor first")
 
-        step = self.runner.execute_next(
-            run_id=self.run.run_id,
-            request_factory=request_factory or self.build_execution_request,
-        )
+        try:
+            step = self.runner.execute_next(
+                run_id=self.run.run_id,
+                request_factory=request_factory or self.build_execution_request,
+            )
+        except BindingResolutionError as exc:
+            result = self._fail_running_task_for_binding(exc)
+            self.run.updated_at = utc_now()
+            self._persist()
+            return result
         result = step.result
         if result is not None:
-            self.record_execution_result(result)
-            task = self.scheduler.get_task(result.task_id)
+            adjudicated = self.record_execution_result(result)
+            task = self.scheduler.get_task(adjudicated.task_id)
+            if adjudicated.status == "failed" and task.status == "succeeded":
+                message = (
+                    adjudicated.error.get("message")
+                    if isinstance(adjudicated.error, dict)
+                    and adjudicated.error.get("message")
+                    else "Output binding adjudication failed"
+                )
+                self.scheduler.demote_to_failed(adjudicated.task_id, error=message)
+                self.scheduler.skip_dependents(adjudicated.task_id)
             self._sync_runtime_step_from_task(task)
-            if result.status == "failed":
+            if adjudicated.status == "failed":
                 self.status = "failed"
                 self.run.status = "failed"
             elif all(
@@ -1124,18 +1303,41 @@ class AnalysisRuntime:
                 item
                 for item in self.executions
                 if item.execution_id == result.execution_id
-                or (
-                    result.step_id
-                    and item.step_id == result.step_id
-                    and item.tool_name == result.tool_name
-                )
             ),
             None,
         )
-        if existing is not None:
+        # Legacy tools record their own execution id before the executor result
+        # arrives; canonical results are matched by id only so a second
+        # execution of the same step is never conflated with the first (v3 §5.2).
+        legacy_record = None
+        if existing is None and result.step_id:
+            legacy_record = next(
+                (
+                    item
+                    for item in self.executions
+                    if item.step_id == result.step_id
+                    and item.tool_name == result.tool_name
+                ),
+                None,
+            )
+        mismatched = False
+        if legacy_record is not None and result.execution_id_source == "canonical":
+            # v3 §5.2: canonical ids are validated, never adopted.
+            mismatched = True
+            result.status = "failed"
+            result.error = {
+                "type": "ExecutionIdMismatch",
+                "message": (
+                    "Tool recorded execution "
+                    f"{legacy_record.execution_id} but the executor result carries "
+                    f"canonical execution {result.execution_id}"
+                ),
+            }
+        elif legacy_record is not None:
+            existing = legacy_record
             # Structured tools may already record the concrete execution via
-            # SessionExecutionRecorder.  The V2 wrapper must adopt that ID so
-            # artifacts, verification, and evidence share one execution node.
+            # SessionExecutionRecorder.  Legacy tools without canonical id
+            # injection keep the adoption path (logged, v3 §5.2 rule 4).
             actual_execution_id = existing.execution_id
             result.execution_id = actual_execution_id
             for verification in result.verification_results:
@@ -1155,10 +1357,10 @@ class AnalysisRuntime:
             if artifact is not None and not artifact.execution_id:
                 artifact.execution_id = result.execution_id
 
-        if existing is not None:
+        if existing is not None and not mismatched:
             # Reconcile artifacts registered directly by the wrapped tool.
             for artifact_id, artifact in self.artifacts.items():
-                if artifact.execution_id == actual_execution_id:
+                if artifact.execution_id == existing.execution_id:
                     artifact_ids.append(artifact_id)
 
             # Ensure each reconciled artifact has at least an existence check.
@@ -1180,14 +1382,20 @@ class AnalysisRuntime:
                                 "run_id": result.run_id,
                                 "task_id": result.task_id,
                                 "step_id": result.step_id,
-                                "execution_id": actual_execution_id,
+                                "execution_id": existing.execution_id,
                                 "artifact_id": artifact_id,
                             },
                         )
                     )
             result.output_artifact_ids = list(dict.fromkeys(artifact_ids))
 
-        if existing is None:
+        # Output binding adjudication (v3 §5.4): single Runtime-side write
+        # point, all-or-nothing; may flip a succeeded result to failed.
+        self._adjudicate_output_bindings(result)
+
+        if existing is None or mismatched:
+            # Keep the tool-side record and append the adjudicated result when
+            # the canonical execution id differs (v3 §5.6 audit trail).
             self.executions.append(result.model_copy(deep=True))
         else:
             index = self.executions.index(existing)
@@ -1243,6 +1451,148 @@ class AnalysisRuntime:
         self.run.updated_at = utc_now()
         self._persist()
         return result
+
+    def _fail_output_contract(
+        self,
+        result: ExecutionResult,
+        error_type: str,
+        message: str,
+    ) -> None:
+        """Flip a succeeded result to failed on an output contract violation.
+
+        Tool Recorder records stay untouched (v3 §5.6); no binding is written.
+        """
+        result.status = "failed"
+        result.error = {"type": error_type, "message": message}
+
+    def _adjudicate_output_bindings(self, result: ExecutionResult) -> None:
+        """Validate output mappings and register bindings (v3 §5.4).
+
+        All-or-nothing: bindings are written only when every check passes;
+        any violation flips the result to failed without partial bindings.
+        """
+        if result.status != "succeeded":
+            return
+        if not result.step_id:
+            return
+        step = next(
+            (item for item in self.run.steps if item.step_id == result.step_id),
+            None,
+        )
+        if step is None:
+            return
+        expected_outputs = list(step.expected_outputs)
+        outputs = list(result.output_assets)
+        unnamed = [item for item in outputs if not item.output_name]
+        if unnamed:
+            if len(outputs) == 1 and len(expected_outputs) == 1:
+                outputs = [
+                    ExecutionOutputAsset(
+                        output_name=expected_outputs[0],
+                        asset_id=unnamed[0].asset_id,
+                    )
+                ]
+            else:
+                self._fail_output_contract(
+                    result,
+                    "UnnamedMultiOutput",
+                    "Tool returned unnamed outputs without exactly one "
+                    "expected output name",
+                )
+                return
+        if not outputs and (step.method or "") == "load_data":
+            candidates = [
+                asset
+                for asset in self.assets.values()
+                if (asset.source_metadata or {}).get("execution_id")
+                == result.execution_id
+            ]
+            if not candidates:
+                # Dedup reuse (v3 §8.1): load_data may re-read a file already
+                # registered at session init; register_dataframe() then returns
+                # the existing asset whose metadata predates execution ids.
+                # The binding still points at the reused asset with the
+                # current execution id.
+                candidates = [
+                    asset
+                    for asset in self.assets.values()
+                    if not (asset.source_metadata or {}).get("execution_id")
+                ]
+            if len(candidates) == 1 and len(expected_outputs) == 1:
+                outputs = [
+                    ExecutionOutputAsset(
+                        output_name=expected_outputs[0],
+                        asset_id=candidates[0].asset_id,
+                    )
+                ]
+            else:
+                self._fail_output_contract(
+                    result,
+                    "AmbiguousOutputAsset",
+                    f"Expected exactly one execution-linked output asset for "
+                    f"step '{step.step_id}', found {len(candidates)}",
+                )
+                return
+        if not outputs:
+            # No declared data outputs (e.g. report/finding tools).
+            return
+        names = [item.output_name for item in outputs]
+        if len(names) != len(set(names)):
+            self._fail_output_contract(
+                result,
+                "DuplicateOutputName",
+                "Tool returned duplicate output names",
+            )
+            return
+        for item in outputs:
+            if item.output_name not in expected_outputs:
+                self._fail_output_contract(
+                    result,
+                    "UnknownOutputName",
+                    f"Output '{item.output_name}' is not declared in "
+                    f"expected_outputs of step '{step.step_id}'",
+                )
+                return
+            asset = self.assets.get(item.asset_id)
+            if asset is None:
+                self._fail_output_contract(
+                    result,
+                    "UnregisteredOutputAsset",
+                    f"Output asset '{item.asset_id}' is not registered",
+                )
+                return
+            metadata_execution_id = (asset.source_metadata or {}).get(
+                "execution_id"
+            )
+            if (
+                metadata_execution_id
+                and metadata_execution_id != result.execution_id
+                and asset.source_type != "sqlite"
+            ):
+                self._fail_output_contract(
+                    result,
+                    "ProvenanceMismatch",
+                    f"Output asset '{item.asset_id}' was produced by execution "
+                    f"{metadata_execution_id}, not {result.execution_id}",
+                )
+                return
+        bindings = [
+            OutputAssetBinding(
+                run_id=self.run.run_id,
+                step_id=step.step_id,
+                output_name=item.output_name,
+                asset_id=item.asset_id,
+                execution_id=result.execution_id,
+                attempt=self.run.attempt,
+            )
+            for item in outputs
+        ]
+        try:
+            self.output_bindings.register_many(bindings)
+        except OutputBindingConflictError as exc:
+            self._fail_output_contract(
+                result, "BindingRegistrationFailed", str(exc)
+            )
 
     def record_verification_results(
         self,
@@ -1621,11 +1971,15 @@ class AnalysisRuntime:
 
     def snapshot(self) -> dict:
         return {
-            "version": 1,
+            "version": 2,
             "task": self.task.model_dump(mode="json"),
             "run": self.run.model_dump(mode="json"),
             "assets": [asset.model_dump(mode="json") for asset in self.assets.values()],
             "executions": [item.model_dump(mode="json") for item in self.executions],
+            "output_bindings": [
+                item.model_dump(mode="json")
+                for item in self.output_bindings.list_all()
+            ],
             "artifacts": [item.model_dump(mode="json") for item in self.artifacts.values()],
             "findings": list(self.findings),
             "metric_definitions": list(self.metric_definitions),
@@ -1668,6 +2022,21 @@ class AnalysisRuntime:
                 ExecutionResult.model_validate(item)
                 for item in raw.get("executions", [])
             ]
+            self.output_bindings.clear()
+            succeeded_execution_ids = {
+                item.execution_id
+                for item in self.executions
+                if item.status == "succeeded"
+            }
+            for item in raw.get("output_bindings", []):
+                try:
+                    binding = OutputAssetBinding.model_validate(item)
+                except Exception:
+                    continue
+                # Orphan cleanup (v3 §4.2): drop bindings whose producing
+                # execution has no succeeded record in the restored run.
+                if binding.execution_id in succeeded_execution_ids:
+                    self.output_bindings.register(binding)
             self.artifacts = {
                 item["artifact_id"]: RuntimeArtifact.model_validate(item)
                 for item in raw.get("artifacts", [])
@@ -1735,6 +2104,7 @@ class AnalysisRuntime:
         self.assets.clear()
         self.executions = []
         self.artifacts = {}
+        self.output_bindings.clear()
         self.findings = []
         self.metric_definitions = []
         self.assumptions = []
@@ -1863,11 +2233,15 @@ class SessionExecutionRecorder:
         *,
         tool_name: str,
         code_or_query: Optional[str] = None,
+        execution_id: Optional[str] = None,
     ) -> None:
         self.session = session
         self.tool_name = tool_name
         self.code_or_query = code_or_query
-        self.execution_id = new_id("exec")
+        # Canonical execution id injection (v3 §5.2); legacy callers without a
+        # Runtime context keep generating their own id as a fallback.
+        self.execution_id = execution_id or new_id("exec")
+        self.execution_id_is_canonical = bool(execution_id)
         self.step_id = getattr(session, "current_runtime_step_id", None)
         self.started_at = time.monotonic()
         self.artifact_ids: list[str] = []

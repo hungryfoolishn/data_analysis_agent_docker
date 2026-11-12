@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from langgraph_langchain.schemas import EvidenceItem, VerificationResult
 
 
@@ -97,7 +97,11 @@ class ExecutionResult(BaseModel):
     status: Literal["succeeded", "needs_revision", "failed", "cancelled"]
     code_or_query: Optional[str] = None
     input_asset_ids: list[str] = Field(default_factory=list)
+    input_bindings: list["ResolvedLogicalRef"] = Field(default_factory=list)
     output_artifact_ids: list[str] = Field(default_factory=list)
+    output_assets: list["ExecutionOutputAsset"] = Field(default_factory=list)
+    output_asset_ids: list[str] = Field(default_factory=list)
+    execution_id_source: Optional[Literal["canonical", "tool", "legacy"]] = None
     stdout_preview: str = ""
     error: Optional[dict[str, Any]] = None
     duration_ms: float = 0.0
@@ -108,6 +112,33 @@ class ExecutionResult(BaseModel):
     verification_results: list[VerificationResult] = Field(default_factory=list)
     evidence: Optional[EvidenceItem] = None
     created_at: str = Field(default_factory=utc_now)
+
+
+# Binding contracts live in langgraph_langchain.schemas so execution-layer
+# modules can import them without a runtime-package cycle (B11.2.1 v3 §3).
+# Re-exported here for backwards-compatible imports.
+from langgraph_langchain.schemas import (  # noqa: E402
+    ExecutionOutputAsset,
+    OutputAssetBinding,
+    ResolvedLogicalRef,
+    ResolvedTaskInputs,
+)
+
+__all__ = [
+    "AnalysisTask",
+    "AnalysisRun",
+    "ExecutionResult",
+    "ExecutionOutputAsset",
+    "OutputAssetBinding",
+    "PlanConfirmation",
+    "PlanRevision",
+    "ResolvedLogicalRef",
+    "ResolvedTaskInputs",
+    "RuntimeArtifact",
+    "RuntimePlanStep",
+    "new_id",
+    "utc_now",
+]
 
 
 class RuntimeArtifact(BaseModel):

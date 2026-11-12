@@ -177,6 +177,10 @@ class TaskRunner:
         if result.error and result.error.get("message"):
             message = str(result.error["message"])
         self.scheduler.mark_failed(task_id, error=message)
+        # v3 §9.2: cascade pending dependents to skipped so the scheduler
+        # converges after a failure instead of leaving them blocked forever.
+        # stop_on_failure semantics in run() are unchanged.
+        self.scheduler.skip_dependents(task_id)
         return TaskRunnerStep(action="failed", result=result, reason=message)
 
     def execute_next(
@@ -190,6 +194,14 @@ class TaskRunner:
         if task is None:
             pending = [item for item in self.scheduler.tasks if item.status == "pending"]
             failed = [item for item in self.scheduler.tasks if item.status == "failed"]
+            if not pending and failed:
+                # All tasks terminal with failures: the run is failed, not
+                # completed (v3 §9.2 stop_on_failure=False convergence).
+                failed_ids = ", ".join(item.task_id for item in failed)
+                return TaskRunnerStep(
+                    action="failed",
+                    reason=f"Execution stopped because tasks failed: {failed_ids}",
+                )
             if not pending:
                 return TaskRunnerStep(action="completed")
             if failed:

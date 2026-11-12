@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pandas as pd
+
 import pytest
 
 from langgraph_langchain.execution.task_models import TaskExecutionRequest
@@ -29,6 +31,19 @@ def make_runtime(tmp_path, *, session_id: str = "session_v5") -> AnalysisRuntime
         workspace_dir=tmp_path / session_id,
         session_id=session_id,
         question="Analyze department revenue changes",
+    )
+
+
+def register_linked_asset(runtime: AnalysisRuntime, execution_id: str) -> None:
+    """Register the execution-linked DataAsset a real load_data tool would create."""
+    frame = pd.DataFrame({"a": [1]})
+    path = runtime.workspace_dir / f"linked_{execution_id}.csv"
+    frame.to_csv(path, index=False)
+    runtime.register_dataframe(
+        dataframe=frame,
+        source_path=path,
+        source_type="csv",
+        source_metadata={"execution_id": execution_id},
     )
 
 
@@ -161,6 +176,7 @@ def test_configure_executor_and_execute_next_task(tmp_path):
         ]
     )
     runtime.configure_executor(executor)
+    register_linked_asset(runtime, "execution_1")
 
     first_result = runtime.execute_next_task()
     second_result = runtime.execute_next_task()
@@ -255,6 +271,7 @@ def test_runtime_snapshot_restores_v2_lineage(tmp_path):
     runtime.initialize_plan(plan)
     task_id = plan.steps[0].step_id
     result = make_result(task_id)
+    register_linked_asset(runtime, result.execution_id)
     runtime.record_execution_result(result)
 
     restored = AnalysisRuntime(

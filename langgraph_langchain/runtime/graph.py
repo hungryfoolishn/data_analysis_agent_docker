@@ -183,7 +183,11 @@ class RuntimeV2Controller:
                 "reason": match.reason,
             }
 
-        request.metadata = metadata
+        # Merge instead of overwrite so runtime diagnostics such as
+        # asset_resolution_error survive skill metadata (B11.2.0 P2-1).
+        merged_metadata = dict(request.metadata)
+        merged_metadata.update(metadata)
+        request.metadata = merged_metadata
         return request
 
 
