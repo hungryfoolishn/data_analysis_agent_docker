@@ -199,6 +199,7 @@ def validate_runtime_plan(
     available_asset_ids: Iterable[str],
     tool_schemas: Mapping[str, type] | None = None,
     require_known_methods: bool = True,
+    asset_columns: Optional[dict[str, set[str]]] = None,
 ) -> list[str]:
     """Validate a Runtime plan immediately before TaskRunner execution."""
     assets = set(available_asset_ids)
@@ -255,6 +256,7 @@ def validate_runtime_plan(
             typed_plan,
             available_methods=available_methods,
             available_asset_ids=available_asset_ids,
+            asset_columns=asset_columns,
         )
     )
 

@@ -35,9 +35,15 @@ def test_strict_plan_rejects_unknown_method_and_unblocks_dependencies(tmp_path: 
     with pytest.raises(ValueError, match="Unknown analysis method"):
         runtime.propose_plan(invalid)
 
-    first = RuntimePlanStep(objective="Load", method="load_data")
+    # B11.2.1 contract: every plan step must declare its expected outputs.
+    first = RuntimePlanStep(
+        objective="Load", method="load_data", expected_outputs=["schema_snapshot"]
+    )
     second = RuntimePlanStep(
-        objective="Report", method="finish_report", depends_on=[first.step_id]
+        objective="Report",
+        method="finish_report",
+        expected_outputs=["report"],
+        depends_on=[first.step_id],
     )
     runtime.propose_plan(
         AnalysisPlan(goal="Analyze revenue", steps=[first, second], strict_execution=True)

@@ -1071,10 +1071,12 @@ class AnalysisRuntime:
         registered_asset_ids = set(self.assets.keys())
         resolved = ResolvedTaskInputs(asset_ids=[], logical_refs=[])
         seen: set[str] = set()
-        for asset_id in task.input_asset_ids:
+
+        def add_asset(asset_id: str) -> None:
             if asset_id and asset_id not in seen:
                 seen.add(asset_id)
                 resolved.asset_ids.append(asset_id)
+
         closure = self._dependency_closure(task.depends_on)
 
         def resolve_reference(reference: str) -> str:
@@ -1118,23 +1120,43 @@ class AnalysisRuntime:
                 resolved.asset_ids.append(binding.asset_id)
             return binding.asset_id
 
+        declared_physical: list[str] = []
+        declared_logical: list[str] = []
         for item in task.required_inputs:
             kind = classify_input_reference(
                 item, known_step_ids, registered_asset_ids
             )
             if kind == "logical_ref":
-                resolve_reference(item)
-            elif item and item not in seen:
-                seen.add(item)
-                resolved.asset_ids.append(item)
+                declared_logical.append(item)
+            else:
+                declared_physical.append(item)
+
+        # B11.2.1.1 lineage rule: a step that declares its own inputs consumes
+        # only those (plus resolved upstream outputs).  Run-level initial
+        # assets are inherited only when the step declares no inputs at all
+        # (legacy single-step compatibility).
+        seeds = (
+            declared_physical
+            if (declared_physical or declared_logical)
+            else list(task.input_asset_ids)
+        )
+        for asset_id in seeds:
+            add_asset(asset_id)
+        for reference in declared_logical:
+            resolve_reference(reference)
 
         arguments = self.resolve_arguments(task)
         rewritten: dict[str, Any] = {}
         for key, value in arguments.items():
-            if isinstance(value, str):
+            if key == "parameters_json" and isinstance(value, str):
+                # parameters_json is itself a string; it must be handled before
+                # the generic string branch or the JSON-internal logical
+                # references would never be rewritten (B11.2.1.1 P1-1).
+                rewritten[key] = self._rewrite_parameters_json(
+                    value, resolve_reference
+                )
+            elif isinstance(value, str):
                 rewritten[key] = resolve_reference(value)
-            elif key == "parameters_json" and isinstance(value, str):
-                rewritten[key] = self._rewrite_parameters_json(value, resolve_reference)
             else:
                 rewritten[key] = value
         return resolved, rewritten
@@ -1719,7 +1741,10 @@ class AnalysisRuntime:
             asset_id: {column.name for column in asset.schema_snapshot.columns}
             for asset_id, asset in self.assets.items()
         }
-        errors = validate_plan(
+        # B11.2.1.1 P1-2: Runtime plans must be validated through the typed
+        # validator so logical output references are recognized consistently
+        # across propose_plan() and initialize_plan().
+        errors = validate_runtime_plan(
             plan,
             available_methods=registry.get_tool_names(),
             available_asset_ids=self.assets,

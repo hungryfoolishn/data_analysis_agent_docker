@@ -202,6 +202,23 @@ def test_sqlite_dedup_reuse_binds_current_execution(tmp_path):
     assert binding.execution_id != "exec_parent"
 
 
+def test_sqlite_asset_with_current_execution_metadata_binds_normally(tmp_path):
+    """P2-2 boundary: the provenance exemption only covers genuine dedup reuse."""
+    runtime, step = _runtime_with_step(tmp_path, "named11", ["output"])
+    asset = register_asset(runtime, tmp_path, execution_id=None)
+    asset.source_type = "sqlite"
+    result = make_result(runtime, step, output_assets=[_named("output", asset.asset_id)])
+    adjudicated = runtime.record_execution_result(result)
+    assert adjudicated.status == "succeeded"
+    binding = runtime.output_bindings.resolve(
+        run_id=runtime.run.run_id,
+        step_id=step.step_id,
+        output_name="output",
+        attempt=1,
+    )
+    assert binding.execution_id == adjudicated.execution_id
+
+
 def test_binding_conflict_fails_and_keeps_original(tmp_path):
     runtime, step = _runtime_with_step(tmp_path, "named9", ["output"])
     asset_1 = register_asset(runtime, tmp_path)
