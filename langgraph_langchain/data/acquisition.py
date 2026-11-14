@@ -166,18 +166,43 @@ class AcquisitionHistory:
                 seen[digest] = entry
         return list(seen.values())
 
-    def find_by_asset_id(
-        self, asset_id: str, *, dataset_id: str | None = None
-    ) -> dict[str, Any] | None:
-        """Map a DataAsset id back to its acquisition record (read-only)."""
+    def _acquisitions_for_asset(
+        self, asset_id: str, *, dataset_id: str | None
+    ) -> list[dict[str, Any]]:
         dataset_ids = [dataset_id] if dataset_id else sorted(
             path.stem for path in self._dir.glob("*.json")
         )
+        matches: list[dict[str, Any]] = []
         for candidate in dataset_ids:
             for entry in self.history(candidate):
                 if entry.get("asset_id") == asset_id:
-                    return entry
-        return None
+                    matches.append(entry)
+        # History files are append-ordered; sort by fetched_at with the file
+        # order as the stable tiebreaker so the event sequence is explicit.
+        ordered = sorted(
+            enumerate(matches),
+            key=lambda pair: (str(pair[1].get("fetched_at") or ""), pair[0]),
+        )
+        return [entry for _, entry in ordered]
+
+    def find_by_asset_id(
+        self, asset_id: str, *, dataset_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Latest **committed acquisition event** for a DataAsset id.
+
+        Semantics (B8.11.1): DataAsset ≠ content version ≠ acquisition event.
+        One asset (same dataset_id + content_hash) can be re-acquired many
+        times; this returns the most recent committed event for the asset.
+        Pending/abandoned transaction records never appear here.
+        """
+        matches = self._acquisitions_for_asset(asset_id, dataset_id=dataset_id)
+        return matches[-1] if matches else None
+
+    def find_acquisitions_by_asset_id(
+        self, asset_id: str, *, dataset_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """All committed acquisition events for a DataAsset id, oldest first."""
+        return self._acquisitions_for_asset(asset_id, dataset_id=dataset_id)
 
 
 class AdapterHealthTracker:

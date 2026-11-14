@@ -264,3 +264,79 @@ def test_corrupted_transaction_journal_is_reported(tmp_path):
     path.write_text("{corrupt", encoding="utf-8")
     with pytest.raises(AcquisitionHistoryCorruptionError):
         service.recover_pending_transactions()
+
+
+# ---------------------------------------------------------------------------
+# B8.11.1-B: asset id ↔ acquisition event query semantics
+# ---------------------------------------------------------------------------
+
+
+def test_find_by_asset_id_returns_latest_committed_event(tmp_path):
+    service = _service(tmp_path, "latest", tag="1")
+    outcome = service.acquire(_request())
+    first_event = service.history.find_by_asset_id(outcome.asset.asset_id)
+    assert first_event["transaction_id"] == outcome.transaction_id
+
+    # Identical content re-acquisition reuses the asset and creates a new event.
+    second = service.acquire(_request())
+    assert second.asset.asset_id == outcome.asset.asset_id
+    latest = service.history.find_by_asset_id(outcome.asset.asset_id)
+    assert latest["transaction_id"] == second.transaction_id
+    assert latest["fetched_at"] >= first_event["fetched_at"]
+
+
+def test_find_acquisitions_by_asset_id_returns_all_events(tmp_path):
+    service = _service(tmp_path, "allevts", tag="1")
+    first = service.acquire(_request())
+    second = service.acquire(_request())
+    third = service.acquire(_request())  # still identical content
+    events = service.history.find_acquisitions_by_asset_id(first.asset.asset_id)
+    assert len(events) == 3
+    assert [e["transaction_id"] for e in events] == [
+        first.transaction_id,
+        second.transaction_id,
+        third.transaction_id,
+    ]
+    fetched = [str(e.get("fetched_at")) for e in events]
+    assert fetched == sorted(fetched)
+
+
+def test_same_content_hash_creates_no_new_content_version(tmp_path):
+    service = _service(tmp_path, "nocv", tag="1")
+    first = service.acquire(_request())
+    second = service.acquire(_request())
+    assert second.version_changed is False
+    assert second.asset.asset_id == first.asset.asset_id
+    assert len(service.history.content_versions("fred_gdp")) == 1
+    assert service.history.content_versions("fred_gdp")[0]["content_version"] == "v1"
+
+
+def test_same_content_hash_preserves_multiple_acquisition_events(tmp_path):
+    service = _service(tmp_path, "evts", tag="1")
+    service.acquire(_request())
+    service.acquire(_request())
+    entries = service.history.versions("fred_gdp")
+    assert len(entries) == 2
+    assert [e["content_version"] for e in entries] == ["v1", "v1"]
+
+
+def test_pending_events_are_not_visible_as_committed_history(tmp_path):
+    from langgraph_langchain.data.acquisition import new_transaction_id
+
+    service = _service(tmp_path, "invisible", tag="1")
+    outcome = service.acquire(_request())
+    before = service.history.history("fred_gdp")
+
+    # Pending transactions live in the journal, never in the committed history.
+    pending_id = new_transaction_id()
+    service.transactions.start(pending_id, {"dataset_id": "fred_gdp"})
+    service.transactions.update(
+        pending_id, status="asset_registered", asset_id="asset_fake"
+    )
+    assert service.history.history("fred_gdp") == before
+    assert service.history.latest("fred_gdp")["asset_id"] == outcome.asset.asset_id
+    assert service.history.find_acquisitions_by_asset_id("asset_fake") == []
+    assert service.history.find_by_asset_id("asset_fake") is None
+    assert service.history.content_versions("fred_gdp")[0]["asset_id"] == (
+        outcome.asset.asset_id
+    )
