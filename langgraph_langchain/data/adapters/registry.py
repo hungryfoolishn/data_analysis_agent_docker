@@ -64,12 +64,12 @@ class AdapterRegistry:
                 )
         return entries
 
-    def fetch(self, request: FetchRequest) -> FetchResult:
+    def fetch(self, request: FetchRequest, *, refresh: bool = False) -> FetchResult:
         entries = [entry for entry in self.catalog() if entry.dataset_id == request.dataset_id]
         if not entries:
             raise AdapterRequestError(f"Unknown dataset: {request.dataset_id}")
         adapter = self.get(entries[0].adapter_id)
-        return adapter.fetch(request)
+        return adapter.fetch(request, refresh=refresh)
 
 
 class DatasetCatalog:

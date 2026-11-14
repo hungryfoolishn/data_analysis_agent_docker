@@ -10,9 +10,12 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+import json
+
 from langgraph_langchain.data.adapters.base import (
     AdapterDescriptor,
     AdapterRequestError,
+    AdapterTemporaryError,
     DatasetSpec,
     FetchRequest,
     HttpJsonAdapter,
@@ -327,4 +330,99 @@ def default_adapter_registry():
     registry.register(BLSAdapter())
     registry.register(BEAAdapter())
     registry.register(SECAdapter())
+    registry.register(NBSAdapter())
     return registry
+
+
+class NBSAdapter(HttpJsonAdapter):
+    """China National Bureau of Statistics adapter (B8.5).
+
+    Uses the public easyquery JSON endpoint of data.stats.gov.cn.  Datasets
+    are annual national-series aggregates; the transport is injectable for
+    offline contract tests, and real network calls require no credentials.
+    """
+
+    descriptor = AdapterDescriptor(
+        adapter_id="nbs",
+        version="1.0.0",
+        source_type="nbs",
+        description="China National Bureau of Statistics annual series.",
+        requires_credentials=False,
+        rate_limit_seconds=1.0,
+    )
+
+    datasets = {
+        "nbs_gdp": DatasetSpec(
+            dataset_id="nbs_gdp",
+            name="China gross domestic product (annual)",
+            description="Annual GDP at current prices, national total.",
+            unit="100_million_cny",
+            frequency="annual",
+            source_url="https://data.stats.gov.cn/easyquery.htm?cn=E0103",
+            required_columns=("period", "value"),
+            time_column="period",
+            update_policy="annual_release",
+        ),
+        "nbs_cpi": DatasetSpec(
+            dataset_id="nbs_cpi",
+            name="China consumer price index (annual, same period last year = 100)",
+            description="Annual CPI, national total, same-period-last-year base.",
+            unit="same_period_last_year_100",
+            frequency="annual",
+            source_url="https://data.stats.gov.cn/easyquery.htm?cn=E0103",
+            required_columns=("period", "value"),
+            time_column="period",
+            update_policy="annual_release",
+        ),
+    }
+
+    _ZB_CODES = {"nbs_gdp": "A010101", "nbs_cpi": "A01030H"}
+
+    def _fetch_raw(self, request: FetchRequest, spec: DatasetSpec) -> Any:
+        start = request.start or "2015"
+        end = request.end or "2026"
+        value_code = f"{str(start)[:4]}-{str(end)[:4]}"
+        params = {
+            "m": "QueryData",
+            "dbcode": "hgnd",
+            "rowcode": "zb",
+            "colcode": "sj",
+            "wds": "[]",
+            "dfwds": json.dumps(
+                [
+                    {"wdcode": "zb", "valuecode": self._ZB_CODES.get(spec.dataset_id, "")},
+                    {"wdcode": "sj", "valuecode": value_code},
+                ],
+                ensure_ascii=False,
+            ),
+        }
+        return self._transport("https://data.stats.gov.cn/easyquery.htm", params)
+
+    def normalize(self, raw: Any, request: FetchRequest, spec: DatasetSpec) -> pd.DataFrame:
+        rows: list[dict[str, Any]] = []
+        if isinstance(raw, dict):
+            returncode = raw.get("returncode")
+            if returncode is not None and returncode != 200:
+                raise AdapterTemporaryError(
+                    f"NBS easyquery returned returncode {returncode}"
+                )
+            for ret in raw.get("ret", []) or []:
+                for node in ret.get("datanodes", []) or []:
+                    data = node.get("data") or {}
+                    period = data.get("sj")
+                    value = data.get("data")
+                    if period is None or value in (None, ""):
+                        continue
+                    try:
+                        numeric = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    rows.append(
+                        {
+                            "period": str(period),
+                            "value": numeric,
+                            "indicator": data.get("code", ""),
+                        }
+                    )
+        frame = pd.DataFrame(rows, columns=["period", "value", "indicator"])
+        return frame.drop_duplicates(subset=["period"]).sort_values("period").reset_index(drop=True)

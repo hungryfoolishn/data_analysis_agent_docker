@@ -109,6 +109,10 @@ class FetchResult:
     quality_report: QualityReport
     content_hash: str
     warnings: tuple[str, ...] = ()
+    # B8.1 contract fields: explicit provenance for acquisition lineage.
+    observation_period: tuple[str, str] | None = None
+    release_date: str | None = None
+    revision: str | None = None
 
     @classmethod
     def hash_frame(cls, frame: pd.DataFrame) -> str:
@@ -227,6 +231,47 @@ class DataSourceAdapter(ABC):
         )
 
 
+def detect_observation_gaps(
+    frame: pd.DataFrame,
+    time_column: str,
+    frequency: str | None,
+) -> tuple[str, ...]:
+    """Detect missing periods in a time-ordered observation frame (B8.0).
+
+    Returns human-readable gap descriptions; empty when the frequency is
+    unknown or no gaps exist.  Deterministic and bounded.
+    """
+    if not frequency or time_column not in frame.columns or frame.empty:
+        return ()
+    frequency_map = {
+        "annual": "Y",
+        "yearly": "Y",
+        "quarterly": "Q",
+        "monthly": "M",
+        "weekly": "W",
+        "daily": "D",
+    }
+    freq = frequency_map.get(str(frequency).lower())
+    if freq is None:
+        return ()
+    try:
+        observed = pd.to_datetime(frame[time_column].dropna().unique())
+    except (TypeError, ValueError, OverflowError):
+        return ()  # period labels are not real timestamps (e.g. BLS "M01")
+    if len(observed) == 0:
+        return ()
+    start = observed.min()
+    end = observed.max()
+    expected = pd.period_range(start=start, end=end, freq=freq)
+    observed_periods = {period for period in observed.to_period(freq)}
+    missing = [str(period) for period in expected if period not in observed_periods]
+    if not missing:
+        return ()
+    preview = ", ".join(missing[:10])
+    suffix = f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""
+    return (f"observation gaps for frequency {frequency}: {preview}{suffix}",)
+
+
 class HttpJsonAdapter(DataSourceAdapter):
     """Base adapter with cache, bounded retry, and backoff."""
 
@@ -243,6 +288,8 @@ class HttpJsonAdapter(DataSourceAdapter):
         self._transport = transport or self._http_get
         self.max_retries = max_retries
         self.retry_backoff_seconds = retry_backoff_seconds
+        # B8.2: enforce the declared rate limit (previously declaration-only).
+        self._last_request_monotonic: float | None = None
 
     def describe(self) -> AdapterDescriptor:
         return self.descriptor
@@ -257,6 +304,7 @@ class HttpJsonAdapter(DataSourceAdapter):
                 f"Unknown dataset for adapter {self.descriptor.adapter_id}: {request.dataset_id}"
             )
         self._validate_request(request, spec)
+        self._enforce_rate_limit()
         key = request.cache_key(self.descriptor.adapter_id)
         if not refresh:
             cached = self.cache.get(key)
@@ -265,12 +313,26 @@ class HttpJsonAdapter(DataSourceAdapter):
         raw = self._fetch_with_retry(request, spec)
         frame = self.normalize(raw, request, spec)
         quality = self.validate(frame, spec)
+        gap_warnings = detect_observation_gaps(frame, spec.time_column or "", spec.frequency)
+        if gap_warnings:
+            warnings = tuple(sorted({*quality.warnings, *gap_warnings}))
+            quality = QualityReport(
+                status="warning" if quality.status == "passed" else quality.status,
+                issues=quality.issues,
+                warnings=warnings,
+            )
+            if not quality.is_usable:
+                raise AdapterQualityError(
+                    f"Dataset {spec.dataset_id} failed quality validation: "
+                    + "; ".join(quality.issues)
+                )
         if not quality.is_usable:
             raise AdapterQualityError(
                 f"Dataset {spec.dataset_id} failed quality validation: "
                 + "; ".join(quality.issues)
             )
         fetched_at = utc_now_iso()
+        observation_period = self._observation_period(frame, spec)
         result = FetchResult(
             adapter_id=self.descriptor.adapter_id,
             adapter_version=self.descriptor.version,
@@ -299,13 +361,52 @@ class HttpJsonAdapter(DataSourceAdapter):
                 "quality_status": quality.status,
                 "quality_issues": list(quality.issues),
                 "quality_warnings": list(quality.warnings),
+                "observation_period": list(observation_period) if observation_period else None,
+                "release_date": self._release_date(spec),
+                "rate_limit_seconds": self.descriptor.rate_limit_seconds,
             },
             quality_report=quality,
             content_hash=FetchResult.hash_frame(frame),
             warnings=quality.warnings,
+            observation_period=observation_period,
+            release_date=self._release_date(spec),
         )
         self.cache.put(key, result)
         return result
+
+    def _observation_period(
+        self, frame: pd.DataFrame, spec: DatasetSpec
+    ) -> tuple[str, str] | None:
+        """Actual observation period from the normalized frame (B8.1 contract)."""
+        time_column = spec.time_column or (
+            "date" if "date" in frame.columns else None
+        )
+        if time_column is None or time_column not in frame.columns or frame.empty:
+            return None
+        try:
+            observed = pd.to_datetime(frame[time_column].dropna().unique())
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if len(observed) == 0:
+            return None
+        return (str(observed.min().date()), str(observed.max().date()))
+
+    def _release_date(self, spec: DatasetSpec) -> str | None:
+        """Release date when the source provides one; otherwise None (B8.1)."""
+        release = getattr(self, "_release_dates", None)
+        if isinstance(release, Mapping):
+            return release.get(spec.dataset_id)
+        return None
+
+    def _enforce_rate_limit(self) -> None:
+        """Enforce the declared rate limit before any outbound request (B8.2)."""
+        limit = self.descriptor.rate_limit_seconds
+        now = time.monotonic()
+        if limit > 0 and self._last_request_monotonic is not None:
+            wait = limit - (now - self._last_request_monotonic)
+            if wait > 0:
+                time.sleep(wait)
+        self._last_request_monotonic = time.monotonic()
 
     def _validate_request(self, request: FetchRequest, spec: DatasetSpec) -> None:
         if not isinstance(request.parameters, dict):

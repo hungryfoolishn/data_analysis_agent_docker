@@ -101,6 +101,11 @@ class AssetResolver:
             raise AssetNotFoundError(f"Input asset is not registered: {asset_id}")
         if asset.source_type in _FILE_SOURCE_TYPES:
             return self._resolve_file_asset(asset)
+        # B8.1: acquisition-registered assets carry a snapshot reference for
+        # any source type; resolution goes through the SnapshotStore exactly
+        # like sqlite query results (no SQL re-execution, verified load).
+        if isinstance(asset.source_metadata.get("snapshot_reference"), dict):
+            return self._resolve_snapshot_asset(asset)
         if asset.source_type != "sqlite":
             raise AssetUnsupportedError(
                 f"Asset '{asset_id}' is not a supported query-result asset"
@@ -202,6 +207,44 @@ class AssetResolver:
             row_count=int(len(dataframe)),
             truncated=False,
             snapshot_reference=None,
+        )
+
+    def _resolve_snapshot_asset(self, asset: DataAsset) -> ResolvedAsset:
+        """Load a snapshot-backed acquisition asset by verified reference."""
+        payload = asset.source_metadata.get("snapshot_reference")
+        try:
+            reference = SnapshotReference.model_validate(payload)
+        except ValidationError as exc:
+            raise AssetUnsupportedError(
+                f"Asset '{asset.asset_id}' has an invalid snapshot reference"
+            ) from exc
+        try:
+            dataframe = self._snapshot_store.load(reference)
+        except SnapshotError as exc:
+            raise AssetResolutionError(
+                f"Unable to load snapshot for asset '{asset.asset_id}'"
+            ) from exc
+        metadata = asset.source_metadata or {}
+        return ResolvedAsset(
+            asset_id=asset.asset_id,
+            dataframe=dataframe,
+            source_type=asset.source_type,
+            source_identity=(
+                metadata.get("source_identity")
+                if isinstance(metadata.get("source_identity"), str)
+                else None
+            ),
+            query_fingerprint=(
+                metadata.get("query_fingerprint")
+                if isinstance(metadata.get("query_fingerprint"), str)
+                else None
+            ),
+            query_type=None,
+            table_name=None,
+            selected_columns=tuple(str(column) for column in dataframe.columns),
+            row_count=int(len(dataframe)),
+            truncated=bool(metadata.get("truncated", False)),
+            snapshot_reference=reference,
         )
 
     def resolve_many(self, asset_ids: Sequence[str]) -> dict[str, ResolvedAsset]:

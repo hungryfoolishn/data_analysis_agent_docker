@@ -12,6 +12,7 @@ from langgraph_langchain.data.adapters.public import (
     BEAAdapter,
     BLSAdapter,
     FREDAdapter,
+    NBSAdapter,
     SECAdapter,
     default_adapter_registry,
 )
@@ -25,12 +26,35 @@ def params_check(actual, expected):
     return all(actual.get(key) == value for key, value in expected.items())
 
 
-def test_registry_contains_four_adapters_and_eight_datasets():
+def test_registry_contains_five_adapters_and_ten_datasets():
     registry = default_adapter_registry()
-    assert len(registry.adapters()) == 4
+    assert len(registry.adapters()) == 5
     catalog = registry.catalog()
-    assert len(catalog) == 8
-    assert len({entry.adapter_id for entry in catalog}) == 4
+    assert len(catalog) == 10
+    assert len({entry.adapter_id for entry in catalog}) == 5
+
+
+def test_nbs_adapter_fetches_and_normalizes():
+    adapter = NBSAdapter(cache=None)
+
+    def transport(url, params):
+        assert params["dbcode"] == "hgnd"
+        return {
+            "returncode": 200,
+            "ret": [
+                {
+                    "datanodes": [
+                        {"data": {"code": "A010101", "sj": "2024", "data": 1349084}},
+                        {"data": {"code": "A010101", "sj": "2025", "data": 1400500}},
+                    ]
+                }
+            ],
+        }
+
+    adapter._transport = transport
+    result = adapter.fetch(FetchRequest(dataset_id="nbs_gdp"))
+    assert result.dataframe["value"].tolist() == [1349084.0, 1400500.0]
+    assert result.quality_report.status == "passed"
 
 
 def test_fred_adapter_fetches_and_normalizes(tmp_path, monkeypatch):

@@ -358,6 +358,90 @@ class AnalysisRuntime:
             raise
         return asset
 
+    def register_fetch_result(self, result) -> DataAsset:
+        """Register an adapter FetchResult as a snapshot-backed DataAsset.
+
+        B8.1: the acquisition bridge between the Data Acquisition Platform and
+        the analysis runtime.  Reuses the DataAsset + SnapshotStore mechanisms
+        (no second registration system).  Dedup: an existing asset with the
+        same dataset_id and content_hash is returned unchanged.  The
+        snapshot/registration transaction mirrors register_sqlite_result.
+        """
+        from langgraph_langchain.data.assets import SchemaSnapshot
+
+        frame = result.dataframe
+        dataset_id = str(result.dataset_metadata.get("dataset_id", result.dataset_id))
+        for existing in self.assets.values():
+            metadata = existing.source_metadata or {}
+            if (
+                metadata.get("dataset_id") == dataset_id
+                and existing.content_hash == result.content_hash
+            ):
+                return existing
+
+        added = False
+        linked = False
+        asset = None
+        snapshot_reference = None
+        try:
+            snapshot_reference = self.snapshot_store.save(
+                frame,
+                snapshot_id=new_snapshot_id(),
+                content_hash=hash_dataframe(frame),
+                metadata={"dataset_id": dataset_id, "adapter_id": result.adapter_id},
+            )
+            fetch_metadata = dict(result.fetch_metadata or {})
+            asset = DataAsset(
+                name=dataset_id,
+                source_type=f"adapter:{result.adapter_id}",
+                content_hash=result.content_hash,
+                schema_snapshot=SchemaSnapshot.from_dataframe(frame),
+                source_metadata={
+                    "acquisition": "adapter",
+                    "snapshot_reference": snapshot_reference.model_dump(mode="json"),
+                    "dataset_id": dataset_id,
+                    "source_id": result.adapter_id,
+                    "adapter_version": result.adapter_version,
+                    "request_parameters": dict(result.source_metadata.get("request", {})),
+                    "source_url": result.dataset_metadata.get("source_url"),
+                    "unit": result.dataset_metadata.get("unit"),
+                    "frequency": result.dataset_metadata.get("frequency"),
+                    "fetched_at": fetch_metadata.get("fetched_at"),
+                    "observation_period": (
+                        list(result.observation_period)
+                        if result.observation_period
+                        else fetch_metadata.get("observation_period")
+                    ),
+                    "release_date": result.release_date,
+                    "revision": result.revision,
+                    "quality_report": {
+                        "status": result.quality_report.status,
+                        "issues": list(result.quality_report.issues),
+                        "warnings": list(result.quality_report.warnings),
+                    },
+                },
+            )
+            added = asset.asset_id not in self.assets
+            linked = asset.asset_id not in self.task.input_asset_ids
+            if added:
+                self.assets[asset.asset_id] = asset
+            if linked:
+                self.task.input_asset_ids.append(asset.asset_id)
+            self._persist()
+        except Exception:
+            if added and asset is not None:
+                self.assets.pop(asset.asset_id, None)
+            if (
+                linked
+                and asset is not None
+                and asset.asset_id in self.task.input_asset_ids
+            ):
+                self.task.input_asset_ids.remove(asset.asset_id)
+            if snapshot_reference is not None:
+                self.snapshot_store.delete(snapshot_reference)
+            raise
+        return asset
+
     def build_runtime_outcome(
         self,
         *,
@@ -425,7 +509,17 @@ class AnalysisRuntime:
                     finding_id=f"F{index:03d}",
                     claim="The deterministic analysis step completed successfully.",
                     supported_by=[evidence.evidence_id],
-                    referenced_asset_ids=list(evidence.output_asset_ids),
+                    # B8: report provenance includes both the produced output
+                    # assets and the consumed input assets (data source
+                    # disclosure, toDo.md Phase 2 acceptance).
+                    referenced_asset_ids=list(
+                        dict.fromkeys(
+                            [
+                                *(evidence.output_asset_ids or []),
+                                *(evidence.input_asset_ids or []),
+                            ]
+                        )
+                    ),
                     calculation_ref=f"{evidence.tool_name}:{evidence.execution_id}",
                     limitation_notes=limitations,
                 )
