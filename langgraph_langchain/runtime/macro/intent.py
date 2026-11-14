@@ -35,9 +35,9 @@ _CONCEPT_KEYWORDS = {
     "gdp": ("gdp", "国内生产总值", "经济总量", "产出"),
     "cpi": ("cpi", "通胀", "物价", "消费者价格", "通货膨胀"),
     "ppi": ("ppi", "生产者价格", "工业品价格"),
-    "nonfarm_payrolls": ("非农", "payrolls"),
+    "nonfarm_payrolls": ("非农", "payrolls", "就业"),
     "unemployment_rate": ("失业率", "unemployment"),
-    "policy_rate": ("利率", "政策利率", "加息", "降息", "联邦基金", "货币政策"),
+    "policy_rate": ("利率", "政策利率", "加息", "降息", "联邦基金", "货币政策", "实际利率"),
     "exports": ("出口", "exports"),
     "imports": ("进口", "imports"),
 }
@@ -93,6 +93,11 @@ class MacroIntentResolver:
             for country, keywords in _COUNTRY_KEYWORDS.items()
             if any(keyword in lowered for keyword in keywords)
         ]
+        # "中美"/"美中" implies comparison across both countries (B9 §9.2).
+        if any(marker in question for marker in ("中美", "美中")):
+            for country_code in ("us", "cn"):
+                if country_code not in countries:
+                    countries.append(country_code)
         years = 5
         for pattern, value in _PERIOD_PATTERNS:
             if pattern.search(lowered):
