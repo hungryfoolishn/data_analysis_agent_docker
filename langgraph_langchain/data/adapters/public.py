@@ -49,6 +49,56 @@ class FREDAdapter(HttpJsonAdapter):
             time_column="date",
             update_policy="quarterly_release",
         ),
+        "fred_unemployment": DatasetSpec(
+            dataset_id="fred_unemployment",
+            name="Civilian unemployment rate (UNRATE).",
+            description="Civilian labor force unemployment rate, percent, seasonally adjusted.",
+            unit="percent",
+            frequency="monthly",
+            source_url="https://fred.stlouisfed.org/series/UNRATE",
+            required_columns=("date", "value", "series_id"),
+            update_policy="monthly_release",
+        ),
+        "fred_ppi": DatasetSpec(
+            dataset_id="fred_ppi",
+            name="Producer price index (PPIACO).",
+            description="PPI all commodities, index 1982=100, not seasonally adjusted.",
+            unit="index_1982_100",
+            frequency="monthly",
+            source_url="https://fred.stlouisfed.org/series/PPIACO",
+            required_columns=("date", "value", "series_id"),
+            update_policy="monthly_release",
+        ),
+        "fred_fedfunds": DatasetSpec(
+            dataset_id="fred_fedfunds",
+            name="Effective federal funds rate (FEDFUNDS).",
+            description="Monthly effective federal funds rate, percent.",
+            unit="percent",
+            frequency="monthly",
+            source_url="https://fred.stlouisfed.org/series/FEDFUNDS",
+            required_columns=("date", "value", "series_id"),
+            update_policy="monthly_release",
+        ),
+        "fred_exports": DatasetSpec(
+            dataset_id="fred_exports",
+            name="US exports of goods and services (EXPGS).",
+            description="US exports, billions of dollars, seasonally adjusted.",
+            unit="billions_of_dollars",
+            frequency="monthly",
+            source_url="https://fred.stlouisfed.org/series/EXPGS",
+            required_columns=("date", "value", "series_id"),
+            update_policy="monthly_release",
+        ),
+        "fred_imports": DatasetSpec(
+            dataset_id="fred_imports",
+            name="US imports of goods and services (IMPGS).",
+            description="US imports, billions of dollars, seasonally adjusted.",
+            unit="billions_of_dollars",
+            frequency="monthly",
+            source_url="https://fred.stlouisfed.org/series/IMPGS",
+            required_columns=("date", "value", "series_id"),
+            update_policy="monthly_release",
+        ),
         "fred_cpi": DatasetSpec(
             dataset_id="fred_cpi",
             name="US CPI Urban Consumers",
@@ -86,7 +136,15 @@ class FREDAdapter(HttpJsonAdapter):
         return {"api_key": os.environ.get("FRED_API_KEY", "")}
 
     def _default_series(self, dataset_id: str) -> str:
-        return "GDP" if dataset_id == "fred_gdp" else "CPIAUCSL"
+        return {
+            "fred_gdp": "GDP",
+            "fred_cpi": "CPIAUCSL",
+            "fred_unemployment": "UNRATE",
+            "fred_ppi": "PPIACO",
+            "fred_fedfunds": "FEDFUNDS",
+            "fred_exports": "EXPGS",
+            "fred_imports": "IMPGS",
+        }.get(dataset_id, "CPIAUCSL")
 
     def normalize(self, raw: Any, request: FetchRequest, spec: DatasetSpec) -> pd.DataFrame:
         observations = raw.get("observations") if isinstance(raw, dict) else []
@@ -125,6 +183,16 @@ class BLSAdapter(HttpJsonAdapter):
             time_column="period",
             update_policy="monthly_release",
         ),
+        "bls_unemployment": DatasetSpec(
+            dataset_id="bls_unemployment",
+            name="Unemployment level (LNS14000000 series family).",
+            description="BLS unemployment series, monthly.",
+            unit="percent",
+            frequency="monthly",
+            source_url="https://www.bls.gov/cps/",
+            required_columns=("period", "value", "series_id"),
+            update_policy="monthly_release",
+        ),
         "bls_cpi": DatasetSpec(
             dataset_id="bls_cpi",
             name="US CPI All Urban Consumers",
@@ -151,7 +219,11 @@ class BLSAdapter(HttpJsonAdapter):
         )
 
     def _default_series(self, dataset_id: str) -> str:
-        return "CES0000000001" if dataset_id == "bls_employment" else "CUUR0000SA0"
+        return {
+            "bls_employment": "CES0000000001",
+            "bls_cpi": "CUUR0000SA0",
+            "bls_unemployment": "LNS14000000",
+        }.get(dataset_id, "CES0000000001")
 
     def normalize(self, raw: Any, request: FetchRequest, spec: DatasetSpec) -> pd.DataFrame:
         series = raw.get("Results", {}).get("series", []) if isinstance(raw, dict) else []

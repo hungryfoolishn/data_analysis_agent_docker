@@ -26,11 +26,11 @@ def params_check(actual, expected):
     return all(actual.get(key) == value for key, value in expected.items())
 
 
-def test_registry_contains_five_adapters_and_ten_datasets():
+def test_registry_contains_five_adapters_and_sixteen_datasets():
     registry = default_adapter_registry()
     assert len(registry.adapters()) == 5
     catalog = registry.catalog()
-    assert len(catalog) == 10
+    assert len(catalog) == 16
     assert len({entry.adapter_id for entry in catalog}) == 5
 
 
