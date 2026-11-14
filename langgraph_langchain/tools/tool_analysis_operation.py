@@ -33,6 +33,7 @@ def _factory(session):
         operation: str,
         parameters_json: str = "{}",
         execution_id: str = "",
+        output_name: str = "output",
     ) -> str:
         """Run one allowlisted dataframe analysis operation and register its output.
 
@@ -41,6 +42,8 @@ def _factory(session):
             operation: One of the planner allowlist operations.
             parameters_json: JSON object with operation parameters.
             execution_id: Canonical execution id injected by the Runtime (v3 §5.2).
+            output_name: Declared output name injected by the Runtime (B4.2.1
+                §8.3) so the emitted output key matches the plan declaration.
         """
         error_msg = _validate("run_analysis_operation")
         recorder = SessionExecutionRecorder(
@@ -127,7 +130,7 @@ def _factory(session):
             "operation": operation,
             "execution_id": execution_id,
             "output_asset_id": asset.asset_id,
-            "output_assets": {"output": asset.asset_id},
+            "output_assets": {output_name: asset.asset_id},
             "row_count": len(output),
             "column_count": len(output.columns),
             "evidence_id": canonical_evidence.evidence_id,
@@ -145,7 +148,7 @@ def _factory(session):
                 "operation": operation,
                 "execution_id": execution_id,
                 "output_asset_id": asset.asset_id,
-                "output_assets": {"output": asset.asset_id},
+                "output_assets": {output_name: asset.asset_id},
                 "row_count": len(output),
                 "column_count": len(output.columns),
                 "evidence_id": canonical_evidence.evidence_id,

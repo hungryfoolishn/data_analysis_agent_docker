@@ -49,12 +49,31 @@ class StructuredTaskExecutor:
     def _prepare_arguments(
         self, tool: Any, request: TaskExecutionRequest
     ) -> tuple[dict[str, Any], bool]:
-        """Build tool arguments, injecting the canonical execution id (v3 §5.2)."""
+        """Build tool arguments, injecting runtime-owned context (v3 §5.2, B4.2.1).
+
+        Injected fields (only when the tool schema declares them):
+        - ``execution_id``: the canonical execution id;
+        - ``output_name``: the declared output name of a single-output step,
+          so the tool's emitted output key matches the plan declaration.
+        """
         arguments = dict(request.arguments)
         injected = False
-        if request.execution_id and tool is not None and self._accepts_execution_id(tool):
+        if tool is None:
+            return arguments, injected
+        fields = getattr(getattr(tool, "args_schema", None), "model_fields", None)
+        declared = set(fields) if isinstance(fields, dict) else set()
+        if request.execution_id and "execution_id" in declared:
             arguments["execution_id"] = request.execution_id
             injected = True
+        expected_outputs = request.task.expected_outputs
+        if (
+            len(expected_outputs) == 1
+            and "output_name" in declared
+            and "output_name" not in arguments
+        ):
+            # Output-name injection does not affect execution_id_source; it
+            # only aligns the tool's emitted output key with the plan.
+            arguments["output_name"] = expected_outputs[0]
         return arguments, injected
 
     def _build_result(

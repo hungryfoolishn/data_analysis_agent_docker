@@ -62,6 +62,10 @@ class GeneralPlanStep(BaseModel):
     input_refs: list[str] = Field(min_length=1)
     parameters: dict[str, Any] = Field(default_factory=dict)
     expected_output: ExpectedOutput
+    # B4.2.1 §8.3: the declared output *name* (not the output type).  Runtime
+    # steps emit ``expected_outputs=[output_name]`` and downstream steps may
+    # reference ``{step_id}.{output_name}`` as a logical input reference.
+    output_name: str = Field(default="output", pattern=r"^[a-z][a-z0-9_]{0,63}$")
     depends_on: list[str] = Field(default_factory=list)
     rationale: str = Field(default="", max_length=1000)
 
@@ -242,12 +246,33 @@ def _columns_for_asset(
     return set(asset_columns.get(asset_id, []))
 
 
+def _parse_output_reference(ref: str) -> tuple[str, str] | None:
+    """Return ``(producer_step_id, output_name)`` for ``{step_id}.{output_name}``.
+
+    Anything that is not a known-step output reference (e.g. a physical asset
+    ID) returns ``None``.  The runtime shares this syntax (B11.2.1 §8.2).
+    """
+    if "." not in ref:
+        return None
+    step_id, _, output_name = ref.partition(".")
+    if not step_id.startswith("step_") or not step_id[5:].isalnum() or not output_name:
+        return None
+    return step_id, output_name
+
+
 def validate_general_plan(
     plan: GeneralAnalysisPlan,
     *,
     asset_columns: Mapping[str, Sequence[str]],
 ) -> list[str]:
-    """Return deterministic validation errors; an empty list means valid."""
+    """Return deterministic validation errors; an empty list means valid.
+
+    v2 (B4.2.1 §8): ``input_refs`` may reference initial assets or the declared
+    output of an earlier step (``{step_id}.{output_name}``).  Forward
+    references, self references, unknown steps, name mismatches and cycles are
+    rejected here — GeneralPlan validation is authoritative and must not rely
+    only on the second Runtime layer.
+    """
     errors: list[str] = []
     available_inputs = set(plan.input_asset_ids)
     output_by_step: dict[str, str] = {}
@@ -273,11 +298,78 @@ def validate_general_plan(
             errors.append(
                 f"Step {step.step_id} operation {step.operation} has invalid input count"
             )
+
+        if step.step_id in step.depends_on:
+            errors.append(f"Step {step.step_id} depends on itself")
+
+        # Joint cycle detection over depends_on edges and output references.
+        edges: dict[str, set[str]] = {}
+        for candidate in plan.steps:
+            deps = set(candidate.depends_on)
+            for ref in candidate.input_refs:
+                parsed = _parse_output_reference(ref)
+                if parsed is not None:
+                    deps.add(parsed[0])
+            edges[candidate.step_id] = deps
+        visiting: set[str] = set()
+        completed: set[str] = set()
+
+        def _has_cycle(node: str) -> bool:
+            if node in completed:
+                return False
+            if node in visiting:
+                return True
+            visiting.add(node)
+            for dep in edges.get(node, ()):
+                if _has_cycle(dep):
+                    return True
+            visiting.discard(node)
+            completed.add(node)
+            return False
+
+        if _has_cycle(step.step_id):
+            errors.append(f"Plan contains a dependency cycle at step {step.step_id}")
+
         for ref in step.input_refs:
-            if ref not in available_inputs:
+            parsed = _parse_output_reference(ref)
+            if parsed is None:
+                if ref not in available_inputs:
+                    errors.append(
+                        f"Step {step.step_id} references unknown input {ref}"
+                    )
+                continue
+            producer_id, output_name = parsed
+            if producer_id == step.step_id:
                 errors.append(
-                    f"Step {step.step_id} references unknown input {ref}"
+                    f"Step {step.step_id} references its own output {ref}"
                 )
+                continue
+            producer = next(
+                (item for item in plan.steps if item.step_id == producer_id),
+                None,
+            )
+            if producer is None:
+                errors.append(
+                    f"Step {step.step_id} references unknown step {producer_id}"
+                )
+                continue
+            if plan.steps.index(producer) >= index - 1:
+                errors.append(
+                    f"Step {step.step_id} references forward or self step {producer_id}"
+                )
+                continue
+            if producer.output_name != output_name:
+                errors.append(
+                    f"Step {step.step_id} references output {output_name} which "
+                    f"is not declared by step {producer_id} "
+                    f"(declared: {producer.output_name})"
+                )
+            if producer_id not in step.depends_on:
+                errors.append(
+                    f"Step {step.step_id} references {ref} without declaring "
+                    f"{producer_id} in depends_on"
+                )
+
         for dependency in step.depends_on:
             if dependency not in output_by_step:
                 errors.append(
@@ -290,20 +382,28 @@ def validate_general_plan(
                 f"Step {step.step_id} expected output does not match operation"
             )
 
+        # Column existence is only checkable for initial-asset inputs; columns
+        # of upstream step outputs are unknown at plan time and are validated
+        # at execution time by analysis_operations.
         for column_name in _parameter_columns(step.operation, step.parameters):
             inputs_with_columns = [
                 ref
                 for ref in step.input_refs
-                if ref in asset_columns and column_name in _columns_for_asset(asset_columns, ref)
+                if _parse_output_reference(ref) is None
+                and ref in asset_columns
+                and column_name in _columns_for_asset(asset_columns, ref)
             ]
-            if not inputs_with_columns:
+            if not inputs_with_columns and all(
+                _parse_output_reference(ref) is None
+                for ref in step.input_refs
+            ):
                 errors.append(
                     f"Step {step.step_id} references unknown column {column_name}"
                 )
 
         if errors:
             continue
-        output_by_step[step.step_id] = f"{step.step_id}:output"
+        output_by_step[step.step_id] = f"{step.step_id}.{step.output_name}"
 
     return errors
 

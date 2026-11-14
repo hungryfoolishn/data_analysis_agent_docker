@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+import json
+
 import numpy as np
 import pandas as pd
 
 from .general_planner import PLAN_OPERATIONS
+from .planner_models import GENERATOR_VERSION, PROFILE_VERSION
 
 
 class AnalysisOperationError(ValueError):
@@ -216,3 +219,208 @@ def execute_analysis_operation(
     if not isinstance(frame, pd.DataFrame):
         raise AnalysisOperationError("Input must be a pandas DataFrame")
     return _EXECUTORS[operation](frame, parameters or {})
+
+
+def build_data_profile(
+    frame: "pd.DataFrame",
+    *,
+    asset_id: str,
+    max_numeric_columns: int = 20,
+    top_k: int = 10,
+    max_profile_bytes: int = 64 * 1024,
+    duplicate_row_budget: int = 200_000,
+) -> "DataProfile":
+    """Build a bounded, deterministic DataProfile for planning (B4.2.1 §4).
+
+    Reuses the deterministic statistics behind the allowlisted operations;
+    never copies the full frame and never stores raw rows.  Cost limits are
+    explicit; exceeding any limit degrades the profile instead of failing.
+    """
+    from langgraph_langchain.runtime.planner_models import (
+        GENERATOR_VERSION,
+        PROFILE_VERSION,
+        ColumnProfile,
+        DataProfile,
+        DataProfileMeta,
+    )
+
+    row_count = int(len(frame))
+    truncated = False
+    reasons: list[str] = []
+    column_profiles: list[ColumnProfile] = []
+    numeric_candidates = [
+        name for name in frame.columns if pd.api.types.is_numeric_dtype(frame[name])
+    ]
+    if len(numeric_candidates) > max_numeric_columns:
+        truncated = True
+        reasons.append(
+            f"numeric columns truncated to {max_numeric_columns} of {len(numeric_candidates)}"
+        )
+        numeric_candidates = numeric_candidates[:max_numeric_columns]
+
+    duplicate_rows: int | None = None
+    if row_count <= duplicate_row_budget:
+        duplicate_rows = int(frame.duplicated().sum())
+    else:
+        truncated = True
+        reasons.append(
+            f"duplicate_rows skipped: row_count {row_count} exceeds budget {duplicate_row_budget}"
+        )
+
+    for name in frame.columns:
+        series = frame[name]
+        null_count = int(series.isna().sum())
+        missing_rate = null_count / row_count if row_count else 0.0
+        profile = ColumnProfile(
+            name=str(name),
+            dtype=str(series.dtype),
+            missing_rate=round(missing_rate, 6),
+        )
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        is_time = pd.api.types.is_datetime64_any_dtype(series)
+        if is_numeric and name in numeric_candidates:
+            description = series.describe()
+            summary_map = {
+                "count": "count",
+                "mean": "mean",
+                "std": "std",
+                "min": "min",
+                "p25": "25%",
+                "median": "50%",
+                "p75": "75%",
+                "max": "max",
+            }
+            profile.numeric_summary = {
+                key: float(description[index_key])
+                for key, index_key in summary_map.items()
+                if index_key in description.index
+            }
+            profile.unique_count = int(series.nunique(dropna=True))
+        elif is_time:
+            valid = series.dropna()
+            if len(valid):
+                profile.time_range = [
+                    str(valid.min()),
+                    str(valid.max()),
+                ]
+        else:
+            unique_count = int(series.nunique(dropna=True))
+            profile.unique_count = unique_count
+            if 0 < unique_count <= top_k * 100:
+                counts = series.value_counts(dropna=True).head(top_k)
+                profile.top_categories = [
+                    (str(key), int(value)) for key, value in counts.items()
+                ]
+        column_profiles.append(profile)
+
+    candidate_keys = [
+        str(name)
+        for name in frame.columns
+        if row_count > 0
+        and int(frame[name].isna().sum()) == 0
+        and int(frame[name].nunique(dropna=True)) == row_count
+    ]
+
+    profile = DataProfile(
+        meta=DataProfileMeta(
+            asset_id=asset_id,
+            data_version="",
+            profile_version=PROFILE_VERSION,
+            generator_version=GENERATOR_VERSION,
+            generated_at=_profile_generated_at(),
+            row_count=row_count,
+            column_count=int(len(frame.columns)),
+            duplicate_rows=duplicate_rows,
+        ),
+        columns=column_profiles,
+        candidate_keys=candidate_keys,
+        truncated=truncated,
+        incomplete_reasons=list(reasons),
+    )
+    payload = profile.model_dump(mode="json")
+    while len(json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")) > max_profile_bytes:
+        # Progressive degradation: drop category tops first, then numeric
+        # summaries, then per-column details — the meta block always survives.
+        dropped = False
+        for column in payload["columns"]:
+            if column.get("top_categories"):
+                column["top_categories"] = None
+                dropped = True
+                break
+        if not dropped:
+            for column in payload["columns"]:
+                if column.get("numeric_summary"):
+                    column["numeric_summary"] = None
+                    dropped = True
+                    break
+        if not dropped:
+            payload["columns"] = payload["columns"][:1]
+            profile.truncated = True
+            profile.incomplete_reasons.append(
+                "profile truncated to size limit; column details dropped"
+            )
+            return profile
+        profile = DataProfile.model_validate({"meta": payload["meta"], **{
+            key: value for key, value in payload.items() if key != "meta"
+        }})
+        profile.truncated = True
+        if "size limit degradation" not in profile.incomplete_reasons:
+            profile.incomplete_reasons.append("profile degraded to size limit")
+    return profile
+
+
+def _profile_generated_at() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def attach_profile(asset: "DataAsset", frame: "pd.DataFrame") -> str | None:
+    """Compute and persist the DataProfile for a registered asset.
+
+    Returns ``None`` on success, or an ``unavailable reason`` on failure.
+    Failure never invalidates the Asset (frozen contract §6.4): the asset and
+    its schema stay usable and planning degrades to schema-only context.
+    """
+    from langgraph_langchain.runtime.planner_models import DataProfile
+
+    try:
+        profile = build_data_profile(frame, asset_id=asset.asset_id)
+        profile.meta.data_version = asset.content_hash or ""
+        asset.source_metadata["profile"] = profile.model_dump(mode="json")
+        return None
+    except Exception as exc:  # noqa: BLE001 - profile must never break registration
+        asset.source_metadata["profile_unavailable"] = {
+            "reason": f"{type(exc).__name__}: {exc}"
+        }
+        return f"{type(exc).__name__}: {exc}"
+
+
+def resolve_asset_profile(asset: "DataAsset") -> tuple["DataProfile | None", str | None]:
+    """Resolve the persisted profile of an asset with version validation.
+
+    Returns ``(profile, None)`` when a current profile exists, otherwise
+    ``(None, reason_code)``.  Stale/incompatible/corrupted profiles are never
+    silently reused (frozen contract §6.4).
+    """
+    from langgraph_langchain.runtime.planner_models import DataProfile
+
+    metadata = asset.source_metadata or {}
+    if metadata.get("profile_unavailable"):
+        return None, "profile_unavailable"
+    payload = metadata.get("profile")
+    if not isinstance(payload, dict):
+        return None, "profile_missing"
+    try:
+        profile = DataProfile.model_validate(payload)
+    except Exception:
+        return None, "profile_corrupted"
+    if profile.meta.asset_id != asset.asset_id:
+        return None, "profile_asset_mismatch"
+    if profile.meta.profile_version != PROFILE_VERSION:
+        return None, "profile_version_incompatible"
+    if profile.meta.generator_version != GENERATOR_VERSION:
+        return None, "generator_changed"
+    if profile.meta.data_version != (asset.content_hash or ""):
+        return None, "profile_stale"
+    return profile, None

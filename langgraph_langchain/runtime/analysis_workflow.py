@@ -55,6 +55,11 @@ def register_file_asset(
             "source_hash": scan.source_hash,
         },
     )
+    # B4.2.1 §6: auxiliary DataProfile — failure degrades planning but never
+    # invalidates the registered asset.
+    from langgraph_langchain.runtime.analysis_operations import attach_profile
+
+    attach_profile(asset, dataframe)
     return asset, source
 
 
@@ -71,8 +76,11 @@ def general_plan_to_runtime_plan(plan: GeneralAnalysisPlan) -> AnalysisPlan:
             step_id=item.step_id,
             objective=f"{item.operation}: {plan.user_goal}",
             method="run_analysis_operation",
-            required_inputs=list(plan.input_asset_ids),
-            expected_outputs=["output"],
+            # B4.2.1 §8: a step consumes exactly what it declares — initial
+            # assets and/or upstream `{step_id}.{output_name}` logical refs
+            # (resolved by the B11.2.1 runtime input chain).
+            required_inputs=list(item.input_refs),
+            expected_outputs=[item.output_name],
             parameters={
                 "asset_id": item.input_refs[0],
                 "operation": item.operation,
