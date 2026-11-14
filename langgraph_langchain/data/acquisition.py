@@ -18,6 +18,7 @@ import os
 import re
 import tempfile
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -33,7 +34,23 @@ class AcquisitionHistoryCorruptionError(AcquisitionHistoryError):
     """Raised when a history file exists but is not valid version history."""
 
 
+class AcquisitionTransactionError(AcquisitionHistoryError):
+    """Raised when acquisition transaction recovery cannot complete safely."""
+
+
 _DATASET_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+_TRANSACTION_ID_PATTERN = re.compile(r"^acqtx_[0-9a-f]{32}$")
+
+
+def new_transaction_id() -> str:
+    """Unique, filesystem-safe acquisition transaction id (B8.11.1)."""
+    from uuid import uuid4
+
+    return f"acqtx_{uuid4().hex}"
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class AcquisitionHistory:
@@ -98,6 +115,13 @@ class AcquisitionHistory:
         path = self._path(dataset_id)
         with self._lock:
             entries = self._load(path)
+            # B8.11.1: recording the same transaction twice is a no-op so the
+            # saga recovery can safely retry a committed history event.
+            transaction_id = record.get("transaction_id")
+            if transaction_id and any(
+                entry.get("transaction_id") == transaction_id for entry in entries
+            ):
+                return
             content_hash = record.get("content_hash")
             record = dict(record)
             record.setdefault("schema_version", self.SCHEMA_VERSION)
@@ -231,6 +255,127 @@ class AdapterHealthTracker:
             return "degraded"
 
 
+class AcquisitionTransactionLog:
+    """Persistent acquisition saga journal (B8.11.1).
+
+    One journal file per acquisition transaction under
+    ``<history_dir>/transactions/``.  States:
+
+    - ``started``          — fetch phase; no snapshot/asset exists yet.
+    - ``asset_registered`` — snapshot + DataAsset are committed in the runtime
+      and may already be shared/referenced; the committed history event is
+      still pending.  This is the recoverable state.
+    - ``completed``        — history event committed and journal finalized
+      (terminal; history entries are the authoritative record).
+    - ``abandoned``        — failure or crash **before** asset registration
+      (terminal; no runtime resources were created, nothing to compensate).
+
+    Writes are atomic and corruption-checked like AcquisitionHistory.  The
+    journal never blocks normal history queries: pending/abandoned
+    transactions are invisible to ``AcquisitionHistory`` read APIs.
+    """
+
+    STATES = ("started", "asset_registered", "completed", "abandoned")
+    ACTIVE_STATES = ("started", "asset_registered")
+
+    def __init__(self, journal_dir: Path) -> None:
+        self._dir = Path(journal_dir)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+
+    def _path(self, transaction_id: str) -> Path:
+        if not _TRANSACTION_ID_PATTERN.fullmatch(str(transaction_id)):
+            raise ValueError(f"Unsafe transaction id: {transaction_id!r}")
+        return self._dir / f"{transaction_id}.json"
+
+    def _load(self, path: Path) -> dict[str, Any]:
+        if not path.is_file():
+            raise FileNotFoundError(f"Unknown transaction: {path.name}")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise AcquisitionHistoryCorruptionError(
+                f"Corrupted transaction journal file: {path.name}: {exc}"
+            ) from exc
+        if not isinstance(payload, dict) or "transaction_id" not in payload:
+            raise AcquisitionHistoryCorruptionError(
+                f"Corrupted transaction journal file: {path.name}"
+            )
+        return payload
+
+    def _save(self, payload: dict[str, Any]) -> None:
+        path = self._path(payload["transaction_id"])
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=str(self._dir)
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False, indent=2))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
+
+    def start(self, transaction_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            path = self._path(transaction_id)
+            if path.is_file():
+                raise AcquisitionTransactionError(
+                    f"Transaction already started: {transaction_id}"
+                )
+            record = {
+                "transaction_id": transaction_id,
+                "status": "started",
+                "started_at": _utc_now_iso(),
+                **payload,
+            }
+            self._save(record)
+            return record
+
+    def update(
+        self, transaction_id: str, *, status: str | None = None, **fields: Any
+    ) -> dict[str, Any]:
+        with self._lock:
+            record = self._load(self._path(transaction_id))
+            if status is not None:
+                if status not in self.STATES:
+                    raise ValueError(f"Unknown transaction status: {status}")
+                record["status"] = status
+            record.update(fields)
+            record["updated_at"] = _utc_now_iso()
+            self._save(record)
+            return record
+
+    def abandon(self, transaction_id: str, *, error: str) -> dict[str, Any]:
+        with self._lock:
+            record = self._load(self._path(transaction_id))
+            if record["status"] in self.ACTIVE_STATES:
+                record["status"] = "abandoned"
+                record["abandoned_at"] = _utc_now_iso()
+                record["error"] = str(error)
+                self._save(record)
+            return record
+
+    def get(self, transaction_id: str) -> dict[str, Any] | None:
+        path = self._path(transaction_id)
+        if not path.is_file():
+            return None
+        return self._load(path)
+
+    def pending(self) -> list[dict[str, Any]]:
+        """Active (started / asset_registered) transactions, oldest first."""
+        records = [
+            self._load(path)
+            for path in sorted(self._dir.glob("acqtx_*.json"))
+        ]
+        active = [r for r in records if r.get("status") in self.ACTIVE_STATES]
+        active.sort(key=lambda r: str(r.get("started_at") or ""))
+        return active
+
+
 class AcquisitionOutcome:
     """Result of one acquisition cycle: fetch + registration + bookkeeping."""
 
@@ -242,12 +387,14 @@ class AcquisitionOutcome:
         version_changed: bool,
         previous_content_hash: str | None,
         asset_created: bool,
+        transaction_id: str | None = None,
     ) -> None:
         self.asset = asset
         self.fetch_result = fetch_result
         self.version_changed = version_changed
         self.previous_content_hash = previous_content_hash
         self.asset_created = asset_created
+        self.transaction_id = transaction_id
 
 
 class AcquisitionService:
@@ -264,7 +411,11 @@ class AcquisitionService:
         self.runtime = runtime
         self.registry = registry
         self.history = AcquisitionHistory(history_dir)
+        self.transactions = AcquisitionTransactionLog(history_dir / "transactions")
         self.health = health or AdapterHealthTracker()
+        # B8.11.1: crash recovery runs at service startup; it is idempotent and
+        # never rolls back committed history or deletes shared resources.
+        self.recover_pending_transactions()
 
     def acquire(
         self,
@@ -272,6 +423,14 @@ class AcquisitionService:
         *,
         refresh: bool = False,
     ) -> AcquisitionOutcome:
+        transaction_id = new_transaction_id()
+        self.transactions.start(
+            transaction_id,
+            {
+                "dataset_id": request.dataset_id,
+                "request_parameters": dict(request.normalized().get("parameters") or {}),
+            },
+        )
         previous = self.history.latest(request.dataset_id)
         previous_hash = previous.get("content_hash") if previous else None
         try:
@@ -281,6 +440,7 @@ class AcquisitionService:
             # they never create a version-history entry, so a failed fetch can
             # not be mistaken for a content version or overwrite the previous
             # version (B8.9). B8.10 classifies the failure for the health state.
+            self.transactions.abandon(transaction_id, error=str(exc))
             self.health.record_failure(
                 self._adapter_for_dataset(request.dataset_id),
                 str(exc),
@@ -288,7 +448,27 @@ class AcquisitionService:
             )
             raise
         self.health.record_success(result.adapter_id)
-        asset = self.runtime.register_fetch_result(result)
+        self.transactions.update(
+            transaction_id,
+            adapter_id=result.adapter_id,
+            adapter_version=result.adapter_version,
+            content_hash=result.content_hash,
+            fetched_at=(result.fetch_metadata or {}).get("fetched_at"),
+            observation_period=(
+                list(result.observation_period) if result.observation_period else None
+            ),
+            release_date=result.release_date,
+            revision=result.revision,
+            quality_status=result.quality_report.status,
+        )
+        try:
+            asset = self.runtime.register_fetch_result(result)
+        except Exception as exc:
+            # register_fetch_result already rolled back its own snapshot/asset
+            # state; nothing shared exists at this point, so the transaction is
+            # safely abandoned (B8.11.1 scenario B/C).
+            self.transactions.abandon(transaction_id, error=str(exc))
+            raise
         # register_fetch_result dedups identical (dataset_id, content_hash);
         # a *new* asset id means the dataset content changed (version update).
         asset_created = all(
@@ -296,6 +476,17 @@ class AcquisitionService:
             for entry in self.history.history(request.dataset_id)
         )
         version_changed = previous_hash is not None and previous_hash != result.content_hash
+        self.transactions.update(
+            transaction_id,
+            status="asset_registered",
+            asset_id=asset.asset_id,
+            asset_created=asset_created,
+            version_changed=version_changed,
+        )
+        # Scenario D (B8.11.1): if this write fails, the transaction stays in
+        # ``asset_registered`` — the committed snapshot/asset is never deleted
+        # here (it may already be shared). ``recover_pending_transactions``
+        # commits the missing history event idempotently.
         self.history.record(
             {
                 "dataset_id": result.dataset_id,
@@ -316,19 +507,79 @@ class AcquisitionService:
                     (result.source_metadata or {}).get("request", {})
                 ),
                 "source_url": (result.dataset_metadata or {}).get("source_url"),
+                "transaction_id": transaction_id,
             }
         )
+        self.transactions.update(transaction_id, status="completed")
         return AcquisitionOutcome(
             asset=asset,
             fetch_result=result,
             version_changed=version_changed,
             previous_content_hash=previous_hash,
             asset_created=asset_created,
+            transaction_id=transaction_id,
         )
 
     def refresh(self, request: FetchRequest) -> AcquisitionOutcome:
         """Manual refresh: bypass caches and re-acquire the dataset."""
         return self.acquire(request, refresh=True)
+
+    def recover_pending_transactions(self) -> dict[str, int]:
+        """Saga recovery for interrupted acquisitions (B8.11.1, idempotent).
+
+        - ``started``: crashed before asset registration — no runtime resource
+          exists, the transaction is abandoned.
+        - ``asset_registered``: snapshot/asset are already committed and may be
+          shared; the compensation is the **idempotent** commit of the missing
+          history event, then the journal is finalized.  Committed history is
+          never rolled back and shared assets are never deleted.
+        """
+        summary = {"abandoned": 0, "completed": 0}
+        failures: list[str] = []
+        for tx in self.transactions.pending():
+            tx_id = tx["transaction_id"]
+            status = tx["status"]
+            try:
+                if status == "started":
+                    self.transactions.abandon(
+                        tx_id,
+                        error="recovered: interrupted before asset registration",
+                    )
+                    summary["abandoned"] += 1
+                elif status == "asset_registered":
+                    self._commit_history_for_transaction(tx)
+                    self.transactions.update(tx_id, status="completed", recovered=True)
+                    summary["completed"] += 1
+            except Exception as exc:  # noqa: BLE001 — surfaced, never swallowed
+                failures.append(f"{tx_id}: {exc}")
+        if failures:
+            raise AcquisitionTransactionError(
+                "Acquisition transaction recovery failed: " + "; ".join(failures)
+            )
+        return summary
+
+    def _commit_history_for_transaction(self, tx: dict[str, Any]) -> None:
+        """Commit the history event for an asset_registered transaction."""
+        self.history.record(
+            {
+                "dataset_id": tx.get("dataset_id"),
+                "adapter_id": tx.get("adapter_id"),
+                "adapter_version": tx.get("adapter_version"),
+                "content_hash": tx.get("content_hash"),
+                "fetched_at": tx.get("fetched_at"),
+                "observation_period": tx.get("observation_period"),
+                "release_date": tx.get("release_date"),
+                "revision": tx.get("revision"),
+                "quality_status": tx.get("quality_status"),
+                "asset_id": tx.get("asset_id"),
+                "asset_created": tx.get("asset_created"),
+                "version_changed": tx.get("version_changed"),
+                "request_parameters": tx.get("request_parameters"),
+                "source_url": tx.get("source_url"),
+                "transaction_id": tx["transaction_id"],
+                "recovered": True,
+            }
+        )
 
     @staticmethod
     def _health_error_type(exc: Exception) -> str | None:
