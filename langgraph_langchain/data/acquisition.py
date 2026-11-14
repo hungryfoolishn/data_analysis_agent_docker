@@ -157,38 +157,78 @@ class AcquisitionHistory:
 
 
 class AdapterHealthTracker:
-    """In-process adapter health status (Phase 2C: adapter health state)."""
+    """In-process adapter health status (Phase 2C / B8.10).
+
+    Health describes source reachability only — it is independent of data
+    quality. State machine:
+
+    - a single transient failure → ``degraded``;
+    - ``failure_threshold`` consecutive failures → ``failing``;
+    - an authentication failure → ``failing`` immediately (the source actively
+      rejected the request; retrying cannot help);
+    - any successful fetch resets the adapter to ``healthy``.
+
+    Updates are serialized for in-process concurrency; state is intentionally
+    not persisted across processes (health describes "now").
+    """
 
     def __init__(self, *, failure_threshold: int = 2) -> None:
-        self._failure_threshold = failure_threshold
+        self._failure_threshold = max(1, int(failure_threshold))
         self._stats: dict[str, dict[str, Any]] = {}
+        self._lock = threading.Lock()
 
     def record_success(self, adapter_id: str) -> None:
-        stats = self._stats.setdefault(
-            adapter_id,
-            {"consecutive_failures": 0, "last_status": None, "last_error": None},
-        )
-        stats["consecutive_failures"] = 0
-        stats["last_status"] = "healthy"
+        with self._lock:
+            stats = self._stats.setdefault(
+                adapter_id,
+                {
+                    "consecutive_failures": 0,
+                    "last_status": None,
+                    "last_error": None,
+                    "last_error_type": None,
+                    "auth_failed": False,
+                },
+            )
+            stats["consecutive_failures"] = 0
+            stats["last_status"] = "healthy"
+            stats["last_error"] = None
+            stats["last_error_type"] = None
+            stats["auth_failed"] = False
 
-    def record_failure(self, adapter_id: str, error: str) -> None:
-        stats = self._stats.setdefault(
-            adapter_id,
-            {"consecutive_failures": 0, "last_status": None, "last_error": None},
-        )
-        stats["consecutive_failures"] = int(stats["consecutive_failures"]) + 1
-        stats["last_status"] = "failing"
-        stats["last_error"] = error
+    def record_failure(
+        self, adapter_id: str, error: str, *, error_type: str | None = None
+    ) -> None:
+        """Record one upstream failure (never a data-quality problem)."""
+        with self._lock:
+            stats = self._stats.setdefault(
+                adapter_id,
+                {
+                    "consecutive_failures": 0,
+                    "last_status": None,
+                    "last_error": None,
+                    "last_error_type": None,
+                    "auth_failed": False,
+                },
+            )
+            stats["consecutive_failures"] = int(stats["consecutive_failures"]) + 1
+            stats["last_status"] = "failing"
+            stats["last_error"] = str(error)
+            stats["last_error_type"] = error_type
+            if error_type == "auth":
+                stats["auth_failed"] = True
 
     def status(self, adapter_id: str) -> str:
-        stats = self._stats.get(adapter_id)
-        if not stats:
-            return "unknown"
-        if stats["consecutive_failures"] >= self._failure_threshold:
-            return "failing"
-        if stats["last_status"] == "healthy":
-            return "healthy"
-        return "degraded"
+        with self._lock:
+            stats = self._stats.get(adapter_id)
+            if not stats:
+                return "unknown"
+            if stats.get("auth_failed"):
+                return "failing"
+            if stats["consecutive_failures"] >= self._failure_threshold:
+                return "failing"
+            if stats["last_status"] == "healthy":
+                return "healthy"
+            return "degraded"
 
 
 class AcquisitionOutcome:
@@ -240,9 +280,11 @@ class AcquisitionService:
             # Acquisition failures are recorded as adapter health state only;
             # they never create a version-history entry, so a failed fetch can
             # not be mistaken for a content version or overwrite the previous
-            # version (B8.9).
+            # version (B8.9). B8.10 classifies the failure for the health state.
             self.health.record_failure(
-                self._adapter_for_dataset(request.dataset_id), str(exc)
+                self._adapter_for_dataset(request.dataset_id),
+                str(exc),
+                error_type=self._health_error_type(exc),
             )
             raise
         self.health.record_success(result.adapter_id)
@@ -287,6 +329,19 @@ class AcquisitionService:
     def refresh(self, request: FetchRequest) -> AcquisitionOutcome:
         """Manual refresh: bypass caches and re-acquire the dataset."""
         return self.acquire(request, refresh=True)
+
+    @staticmethod
+    def _health_error_type(exc: Exception) -> str | None:
+        from langgraph_langchain.data.adapters.base import (
+            AdapterAuthError,
+            AdapterRateLimitError,
+        )
+
+        if isinstance(exc, AdapterAuthError):
+            return "auth"
+        if isinstance(exc, AdapterRateLimitError):
+            return "rate_limit"
+        return None
 
     def _adapter_for_dataset(self, dataset_id: str) -> str:
         for entry in self.registry.catalog():

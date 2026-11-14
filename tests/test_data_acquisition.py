@@ -161,12 +161,18 @@ def test_rate_limit_enforced(tmp_path):
     adapter._transport = lambda url, params: _fred_rows("1")
     adapter._credentials = lambda: {"api_key": "test-key"}
     request = _fred_request()
+    second_request = FetchRequest(
+        dataset_id="fred_gdp",
+        start="2026-01-01",
+        end="2026-03-31",
+        parameters={"variant": "upstream-2"},
+    )
     start = time.monotonic()
     adapter.fetch(request)
-    adapter.fetch(request)
+    adapter.fetch(second_request)
     elapsed = time.monotonic() - start
-    # Two upstream requests must be separated by at least the declared limit
-    # (the second call blocks for the remainder of the interval).
+    # Two upstream requests (distinct cache keys) must be separated by at
+    # least the declared limit; cache hits do not consume the interval.
     assert elapsed >= 0.15
 
 
