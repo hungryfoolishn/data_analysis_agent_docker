@@ -161,11 +161,13 @@ def test_rate_limit_enforced(tmp_path):
     adapter._transport = lambda url, params: _fred_rows("1")
     adapter._credentials = lambda: {"api_key": "test-key"}
     request = _fred_request()
-    adapter.fetch(request)
     start = time.monotonic()
     adapter.fetch(request)
+    adapter.fetch(request)
     elapsed = time.monotonic() - start
-    assert elapsed >= 0.1  # second call waits for the declared rate limit
+    # Two upstream requests must be separated by at least the declared limit
+    # (the second call blocks for the remainder of the interval).
+    assert elapsed >= 0.15
 
 
 def test_gap_detection_monthly_missing_month(tmp_path):
@@ -243,12 +245,14 @@ def test_nbs_adapter_rejects_error_returncode():
         adapter.fetch(FetchRequest(dataset_id="nbs_gdp"))
 
 
-def test_registry_contains_five_adapters_and_ten_datasets():
+def test_registry_contains_five_adapters_and_sixteen_datasets():
+    # B8.5 delivered 10 datasets; the macro-catalog commit extended FRED/BLS
+    # to 16 datasets while keeping the five-adapter boundary.
     from langgraph_langchain.data.adapters.public import default_adapter_registry
 
     registry = default_adapter_registry()
     assert len(registry.adapters()) == 5
-    assert len(registry.catalog()) == 10
+    assert len(registry.catalog()) == 16
 
 
 # ---------------------------------------------------------------------------

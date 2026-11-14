@@ -9,7 +9,7 @@ import re
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 from langgraph_langchain.data.assets import DataAsset, hash_dataframe, hash_file
 from langgraph_langchain.evidence.models import CanonicalEvidence
@@ -377,7 +377,12 @@ class AnalysisRuntime:
                 metadata.get("dataset_id") == dataset_id
                 and existing.content_hash == result.content_hash
             ):
-                return existing
+                if self._snapshot_restorable(metadata):
+                    return existing
+                # B8.8: the dedup candidate lost its snapshot (e.g. workspace
+                # cleanup); never return an unrestorable asset. Fall through
+                # and register a fresh snapshot-backed asset.
+                break
 
         added = False
         linked = False
@@ -441,6 +446,22 @@ class AnalysisRuntime:
                 self.snapshot_store.delete(snapshot_reference)
             raise
         return asset
+
+    def _snapshot_restorable(self, metadata: Mapping[str, Any]) -> bool:
+        """True when a stored asset still has an existing snapshot file (B8.8)."""
+        reference = metadata.get("snapshot_reference")
+        if not isinstance(reference, Mapping):
+            return False
+        location = reference.get("snapshot_location")
+        if not isinstance(location, str) or not location:
+            return False
+        path = self.snapshot_store.root / location
+        try:
+            resolved = path.resolve()
+            resolved.relative_to(self.snapshot_store.root)
+        except (ValueError, OSError):
+            return False
+        return resolved.is_file()
 
     def build_runtime_outcome(
         self,

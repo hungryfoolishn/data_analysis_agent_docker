@@ -110,7 +110,8 @@ def test_bls_adapter_fetches_two_datasets():
     assert second.quality_report.is_usable
 
 
-def test_bea_adapter_fetches_and_normalizes():
+def test_bea_adapter_fetches_and_normalizes(monkeypatch):
+    monkeypatch.setenv("BEA_API_KEY", "test-bea-key")
     adapter = BEAAdapter()
     def transport(url, params):
         return {

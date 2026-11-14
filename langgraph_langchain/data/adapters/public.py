@@ -130,7 +130,6 @@ class FREDAdapter(HttpJsonAdapter):
         )
 
     def _credentials(self) -> Mapping[str, Any]:
-        from langgraph_langchain.config import DEEPSEEK_API_KEY  # placeholder if dedicated key absent
         import os
 
         return {"api_key": os.environ.get("FRED_API_KEY", "")}
@@ -160,7 +159,14 @@ class FREDAdapter(HttpJsonAdapter):
         frame = pd.DataFrame(rows, columns=["date", "value", "series_id"])
         frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
         frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
-        return frame.dropna(subset=["date"]).reset_index(drop=True)
+        # Deterministic normalization (B8.8): drop rows without a valid date,
+        # collapse duplicate observations (latest wins), and order stably.
+        return (
+            frame.dropna(subset=["date"])
+            .drop_duplicates(subset=["date", "series_id"], keep="last")
+            .sort_values(["date", "series_id"], kind="stable")
+            .reset_index(drop=True)
+        )
 
 
 class BLSAdapter(HttpJsonAdapter):
@@ -230,16 +236,28 @@ class BLSAdapter(HttpJsonAdapter):
         rows: list[dict[str, Any]] = []
         for item in series:
             for observation in item.get("data", []):
+                year = observation.get("year")
+                period = observation.get("period")
                 rows.append(
                     {
-                        "period": observation.get("period"),
+                        # Keep the year inside the period key ("2024-M01");
+                        # bare period labels are ambiguous across years.
+                        "period": f"{year}-{period}" if year and period else period,
                         "value": observation.get("value"),
                         "series_id": item.get("seriesID"),
                     }
                 )
         frame = pd.DataFrame(rows, columns=["period", "value", "series_id"])
         frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
-        return frame.dropna(subset=["period"]).reset_index(drop=True)
+        # B8.8: BLS payloads repeat bare period labels ("M01") across years;
+        # the observation year must stay part of the period key, otherwise
+        # different years collapse onto the same row.
+        return (
+            frame.dropna(subset=["period"])
+            .drop_duplicates(subset=["period", "series_id"], keep="last")
+            .sort_values(["period", "series_id"], kind="stable")
+            .reset_index(drop=True)
+        )
 
 
 class BEAAdapter(HttpJsonAdapter):
@@ -278,7 +296,7 @@ class BEAAdapter(HttpJsonAdapter):
     def _fetch_raw(self, request: FetchRequest, spec: DatasetSpec) -> Any:
         import os
 
-        user_id = os.environ.get("BEA_API_KEY", "")
+        user_id = _require({"user_id": os.environ.get("BEA_API_KEY", "")}, "user_id")
         table_name = self._table_name(spec.dataset_id)
         line_description = self._line_description(spec.dataset_id)
         params = {
@@ -321,7 +339,13 @@ class BEAAdapter(HttpJsonAdapter):
             frame["value"].astype(str).str.replace(",", "", regex=False),
             errors="coerce",
         )
-        return frame.dropna(subset=["period"]).reset_index(drop=True)
+        # Deterministic normalization (B8.8); keep revisions as distinct rows.
+        return (
+            frame.dropna(subset=["period"])
+            .drop_duplicates(keep="last")
+            .sort_values(["period", "line_description"], kind="stable")
+            .reset_index(drop=True)
+        )
 
 
 class SECAdapter(HttpJsonAdapter):
@@ -391,7 +415,19 @@ class SECAdapter(HttpJsonAdapter):
         )
         frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
         frame["end"] = pd.to_datetime(frame["end"], errors="coerce")
-        return frame.dropna(subset=["end"]).reset_index(drop=True)
+        # B8.8: exact duplicate facts collapse; distinct accessions (revisions)
+        # stay separate rows. Ordering is deterministic for stable hashing.
+        return (
+            frame.dropna(subset=["end"])
+            .drop_duplicates(
+                subset=["start", "end", "value", "form", "accession_number"],
+                keep="last",
+            )
+            .sort_values(
+                ["end", "start", "form", "accession_number"], kind="stable"
+            )
+            .reset_index(drop=True)
+        )
 
 
 def default_adapter_registry():
@@ -497,4 +533,10 @@ class NBSAdapter(HttpJsonAdapter):
                         }
                     )
         frame = pd.DataFrame(rows, columns=["period", "value", "indicator"])
-        return frame.drop_duplicates(subset=["period"]).sort_values("period").reset_index(drop=True)
+        # B8.8: sort first, then keep the last value per period so duplicate
+        # resolution does not depend on upstream payload ordering.
+        return (
+            frame.sort_values(["period"], kind="stable")
+            .drop_duplicates(subset=["period"], keep="last")
+            .reset_index(drop=True)
+        )
