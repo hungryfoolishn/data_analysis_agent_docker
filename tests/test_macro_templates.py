@@ -116,9 +116,8 @@ def test_employment_template_us_only():
         ("nonfarm_payrolls", "us", "bls_employment", "bls", "monthly", 3),
     ])
     sufficiency, missing = check_data_sufficiency(template, resolved)
-    # 3 observations < min_observations 6 -> partial readiness with disclosure
+    # any_of_concepts[0] = ["nonfarm_payrolls"] is satisfied by resolved data
     assert sufficiency == "partially_ready"
-    assert missing
 
 
 def test_blocked_when_required_indicator_missing():

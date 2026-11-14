@@ -59,7 +59,7 @@ MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
     "inflation": MacroAnalysisTemplate(
         template_id="inflation",
         intent="Analyze CPI/PPI inflation (YoY, MoM, level changes).",
-        required_concepts=["cpi"],
+        required_concepts=[],
         optional_concepts=["ppi"],
         countries=("us", "cn"),
         default_transforms=["yoy", "mom"],
@@ -78,8 +78,9 @@ MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
     "employment": MacroAnalysisTemplate(
         template_id="employment",
         intent="Analyze employment market (levels, changes, trends).",
-        required_concepts=["nonfarm_payrolls"],
-        optional_concepts=["unemployment_rate", "unemployment_level_bls"],
+        required_concepts=[],
+        optional_concepts=["nonfarm_payrolls", "unemployment_rate", "unemployment_level_bls"],
+        any_of_concepts=[["nonfarm_payrolls", "unemployment_rate", "unemployment_level_bls"]],
         countries=("us",),
         default_transforms=["mom", "rolling_average"],
         analysis_steps=["data_quality", "period_comparison"],
@@ -97,7 +98,7 @@ MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
     "monetary_policy": MacroAnalysisTemplate(
         template_id="monetary_policy",
         intent="Analyze policy rates and the monetary environment.",
-        required_concepts=["policy_rate"],
+        required_concepts=[],
         optional_concepts=["cpi"],
         countries=("us", "cn"),
         default_transforms=["period_comparison"],
@@ -116,8 +117,9 @@ MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
     "trade": MacroAnalysisTemplate(
         template_id="trade",
         intent="Analyze trade flows (exports, imports, balance).",
-        required_concepts=["exports"],
-        optional_concepts=["imports"],
+        required_concepts=[],
+        optional_concepts=["exports", "imports"],
+        any_of_concepts=[["exports"], ["imports"], ["exports", "imports"]],
         countries=("us",),
         default_transforms=["yoy", "rolling_average"],
         analysis_steps=["data_quality", "trend", "period_comparison"],
@@ -177,8 +179,19 @@ def check_data_sufficiency(
     template: MacroAnalysisTemplate,
     resolved: dict[str, ResolvedIndicatorAsset],
 ) -> tuple[str, list[str]]:
-    """Frozen data-sufficiency policy (B9 §5.8)."""
-    missing = [concept for concept in template.required_concepts if concept not in resolved]
+    """Frozen data-sufficiency policy (B9 §5.8) with any_of_concepts support (B9.8.4)."""
+    # Extract concepts from resolved items (key type is indicator_id, B9.8.3).
+    resolved_concepts = {item.indicator.concept for item in resolved.values()}
+    # any_of_concepts: alternative indicator groups (OR logic).
+    if template.any_of_concepts:
+        any_satisfied = any(
+            all(concept in resolved_concepts for concept in group)
+            for group in template.any_of_concepts
+        )
+        if not any_satisfied:
+            all_needed = sorted({c for group in template.any_of_concepts for c in group})
+            return "blocked", [f"requires at least one of: {all_needed}"]
+    missing = [concept for concept in template.required_concepts if concept not in resolved_concepts]
     if missing:
         return "blocked", [f"missing required indicators: {missing}"]
     thin = [

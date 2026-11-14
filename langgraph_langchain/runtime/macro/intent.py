@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from langgraph_langchain.data.acquisition import AcquisitionService
 from langgraph_langchain.data.adapters.base import FetchRequest
+from langgraph_langchain.runtime.general_planner import GeneralAnalysisPlan
 from langgraph_langchain.runtime.macro.models import MacroIndicatorCatalog
 from langgraph_langchain.runtime.macro.templates import (
     MacroTemplateError,
@@ -146,8 +147,15 @@ class MacroRuntimeIntegration:
                         f"SOURCE_NOT_REGISTERED:{indicator.source_id}:{indicator.dataset_id}"
                     )
                     continue
+                from datetime import datetime, timedelta, timezone
+
+                now = datetime.now(timezone.utc)
+                end_date = now.strftime("%Y-%m-%d")
+                start_date = (now - timedelta(days=intent.years * 365)).strftime("%Y-%m-%d")
                 requirements.requests.append(FetchRequest(
                     dataset_id=indicator.dataset_id,
+                    start=start_date,
+                    end=end_date,
                     parameters=dict(indicator.series_parameters),
                 ))
                 requirements.indicators.append(indicator)

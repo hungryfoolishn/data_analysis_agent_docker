@@ -247,6 +247,9 @@ class MacroAnalysisTemplate(BaseModel):
     )
     report_sections: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    # B9.8.4: alternative required concept groups (OR logic).  If non-empty,
+    # at least one group must have ALL its concepts resolved.
+    any_of_concepts: list[list[str]] = Field(default_factory=list)
     data_sufficiency_policy: Literal["ready", "partially_ready", "blocked"] = (
         "partially_ready"
     )

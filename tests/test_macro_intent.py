@@ -14,6 +14,7 @@ from langgraph_langchain.data.adapters.registry import AdapterRegistry
 from langgraph_langchain.runtime.context import AnalysisRuntime
 from langgraph_langchain.runtime.executor import TaskExecutor
 from langgraph_langchain.execution.structured_executor import StructuredTaskExecutor
+from langgraph_langchain.runtime.general_planner import GeneralAnalysisPlan
 from langgraph_langchain.runtime.macro.intent import MacroIntentResolver, MacroRuntimeIntegration
 from langgraph_langchain.runtime.macro.models import MacroIndicatorCatalog
 from langgraph_langchain.runtime.analysis_workflow import general_plan_to_runtime_plan

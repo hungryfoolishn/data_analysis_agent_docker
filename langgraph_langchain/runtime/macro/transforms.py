@@ -71,13 +71,21 @@ def _prepared(frame: pd.DataFrame, time_column: str, value_column: str, frequenc
     return ordered
 
 
-def _pct_change(ordered: pd.DataFrame, lag: int, transform: str) -> pd.DataFrame:
+def _pct_change(ordered: pd.DataFrame, lag: int, transform: str, frequency: str) -> pd.DataFrame:
+    """Period-aware percentage change: uses PeriodIndex arithmetic, not row shift."""
     values = ordered.set_index("period")["value"]
-    shifted = values.shift(lag)
-    result = ((values / shifted) - 1.0) * 100.0
-    result = result.dropna().reset_index()
-    result.columns = ["period", "value"]
-    return result
+    alias = _PANDAS_FREQ[frequency]
+    periods = pd.PeriodIndex(values.index, freq=alias)
+    series = pd.Series(values.values, index=periods)
+    lagged = pd.Series(
+        [series.get(p - lag, None) for p in periods],
+        index=periods,
+    )
+    result = ((series - lagged) / lagged) * 100.0
+    result = result.dropna()
+    # Convert PeriodIndex back to period strings for output
+    out = pd.DataFrame({"period": [str(p) for p in result.index], "value": result.values})
+    return out
 
 
 def yoy(frame: pd.DataFrame, *, time_column: str = "period", value_column: str = "value",
@@ -93,7 +101,7 @@ def yoy(frame: pd.DataFrame, *, time_column: str = "period", value_column: str =
         raise MacroTransformError(
             f"yoy requires more than {lag} observations, got {len(ordered)}"
         )
-    return _pct_change(ordered, lag, "yoy")
+    return _pct_change(ordered, lag, "yoy", frequency)
 
 
 def mom(frame: pd.DataFrame, *, time_column: str = "period", value_column: str = "value",
@@ -103,7 +111,7 @@ def mom(frame: pd.DataFrame, *, time_column: str = "period", value_column: str =
     ordered = _prepared(frame, time_column, value_column, frequency)
     if len(ordered) < 2:
         raise MacroTransformError("mom requires at least two observations")
-    return _pct_change(ordered, 1, "mom")
+    return _pct_change(ordered, 1, "mom", frequency)
 
 
 def qoq(frame: pd.DataFrame, *, time_column: str = "period", value_column: str = "value",
@@ -113,7 +121,7 @@ def qoq(frame: pd.DataFrame, *, time_column: str = "period", value_column: str =
     ordered = _prepared(frame, time_column, value_column, frequency)
     if len(ordered) < 2:
         raise MacroTransformError("qoq requires at least two observations")
-    return _pct_change(ordered, 1, "qoq")
+    return _pct_change(ordered, 1, "qoq", frequency)
 
 
 def annualized(frame: pd.DataFrame, *, time_column: str = "period", value_column: str = "value",
