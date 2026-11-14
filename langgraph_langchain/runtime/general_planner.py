@@ -23,6 +23,10 @@ PLAN_OPERATIONS = {
     "correlation": {"min_inputs": 1, "max_inputs": 1, "output": "dataframe"},
     "data_quality": {"min_inputs": 1, "max_inputs": 1, "output": "dataframe"},
     "summarize": {"min_inputs": 1, "max_inputs": 1, "output": "metric"},
+    # B9.2: macro domain transform (Macro Domain Pack) — parameters carry
+    # transform kind, columns, frequency and semantics; execution dispatches
+    # to analysis_operations._macro_transform.
+    "macro_transform": {"min_inputs": 1, "max_inputs": 1, "output": "dataframe"},
 }
 
 OperationName = Literal[
@@ -36,6 +40,7 @@ OperationName = Literal[
     "correlation",
     "data_quality",
     "summarize",
+    "macro_transform",
 ]
 ExpectedOutput = Literal["dataframe", "metric", "chart"]
 
@@ -131,6 +136,26 @@ def _valid_parameters(operation: str, parameters: Mapping[str, Any]) -> list[str
     elif operation == "data_quality":
         if not isinstance(parameters.get("time_column"), (str, type(None))):
             errors.append("data_quality time_column must be text or null")
+    elif operation == "macro_transform":
+        transform = parameters.get("transform")
+        allowed = {
+            "yoy", "mom", "qoq", "annualized", "cumulative", "index_change",
+            "rolling_average", "period_comparison", "cumulative_to_single_period",
+        }
+        if transform not in allowed:
+            errors.append("macro_transform requires a whitelisted transform")
+        column = parameters.get("column")
+        if not isinstance(column, str) or not column:
+            errors.append("macro_transform requires column")
+        time_column = parameters.get("time_column")
+        if not isinstance(time_column, str) or not time_column:
+            errors.append("macro_transform requires time_column")
+        frequency = parameters.get("frequency")
+        if not isinstance(frequency, str) or not frequency:
+            errors.append("macro_transform requires frequency")
+        window = parameters.get("window")
+        if window is not None and not (isinstance(window, int) and window >= 2):
+            errors.append("macro_transform window must be integer >= 2")
     return errors
 
 
@@ -409,6 +434,9 @@ def validate_general_plan(
 
 
 def _parameter_columns(operation: str, parameters: Mapping[str, Any]) -> list[str]:
+    if operation == "macro_transform":
+        column = parameters.get("column")
+        return [column] if isinstance(column, str) and column else []
     if operation == "select_columns":
         return [item for item in parameters.get("columns", []) if isinstance(item, str)]
     if operation == "filter":

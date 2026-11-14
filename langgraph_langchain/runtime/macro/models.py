@@ -152,6 +152,7 @@ class MacroTimeSemantics(BaseModel):
     seasonal_adjustment: AdjustmentKind
     price_basis: PriceBasisKind
     cumulative: bool = False
+    level_kind: LevelKind = "level"
     base_period: Optional[str] = None
 
     def comparable_with(self, other: "MacroTimeSemantics") -> list[str]:

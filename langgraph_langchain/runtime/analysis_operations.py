@@ -9,6 +9,9 @@ import json
 import numpy as np
 import pandas as pd
 
+from langgraph_langchain.runtime.macro.models import MacroTimeSemantics
+from langgraph_langchain.runtime.macro.transforms import MacroTransformError, apply_macro_transform
+
 from .general_planner import PLAN_OPERATIONS
 from .planner_models import GENERATOR_VERSION, PROFILE_VERSION
 
@@ -193,6 +196,46 @@ def _data_quality(frame: pd.DataFrame, parameters: Mapping[str, Any]) -> pd.Data
     return pd.DataFrame(records)
 
 
+def _macro_transform_executor(
+    frame: "pd.DataFrame", parameters: Mapping[str, Any]
+) -> "pd.DataFrame":
+    """Runtime operation wrapper for the macro transform engine (B9.2).
+
+    The pure transform functions stay free of Runtime state; this wrapper only
+    adapts parameters and converts transform errors into the operation error
+    contract.
+    """
+    parameters = dict(parameters)
+    transform = parameters.pop("transform", None)
+    if not isinstance(transform, str):
+        raise AnalysisOperationError("macro_transform requires transform")
+    time_column = parameters.pop("time_column", "period")
+    value_column = parameters.pop("column", "value")
+    frequency = parameters.pop("frequency", "monthly")
+    semantics_payload = parameters.pop("semantics", None)
+    semantics = None
+    if isinstance(semantics_payload, dict):
+        try:
+            semantics = MacroTimeSemantics.model_validate(semantics_payload)
+        except Exception as exc:
+            raise AnalysisOperationError(f"invalid macro semantics: {exc}") from exc
+    try:
+        result, _warnings = apply_macro_transform(
+            frame,
+            transform=transform,
+            time_column=time_column,
+            value_column=value_column,
+            frequency=frequency,
+            semantics=semantics,
+            **parameters,
+        )
+    except MacroTransformError as exc:
+        raise AnalysisOperationError(str(exc)) from exc
+    result = result.copy()
+    if "role" in result.columns:
+        result = result.rename(columns={"role": "transform_role"})
+    return result
+
 _EXECUTORS = {
     "inspect": _inspect,
     "summarize": _summarize,
@@ -204,6 +247,7 @@ _EXECUTORS = {
     "detect_anomalies": _detect_anomalies,
     "correlation": _correlation,
     "data_quality": _data_quality,
+    "macro_transform": _macro_transform_executor,
 }
 
 
