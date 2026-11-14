@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -46,6 +47,11 @@ class AdapterQualityError(AdapterError):
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+_ISO_PERIOD_PATTERN = re.compile(
+    r"\d{4}|\d{4}-\d{2}|\d{4}-\d{2}-\d{2}"
+)
 
 
 def stable_json(value: Any) -> str:
@@ -403,11 +409,25 @@ class HttpJsonAdapter(DataSourceAdapter):
         )
         if time_column is None or time_column not in frame.columns or frame.empty:
             return None
+        # B8.11: only derive observation_period from unambiguous ISO-like
+        # period labels (YYYY, YYYY-MM, YYYY-MM-DD). Anything else (e.g. BLS
+        # "2024-M01", which dateutil misreads as a minute-of-day) stays unknown
+        # instead of being silently mapped to a wrong calendar day.
+        raw_values = frame[time_column].dropna().unique()
+        if len(raw_values) == 0:
+            return None
+        # String labels must be unambiguous ISO-like periods; already-typed
+        # values (Timestamp/datetime) are trusted as-is.
+        string_values = [str(value) for value in raw_values if isinstance(value, str)]
+        if any(
+            not _ISO_PERIOD_PATTERN.fullmatch(value) for value in string_values
+        ):
+            return None
         try:
-            observed = pd.to_datetime(frame[time_column].dropna().unique())
+            observed = pd.to_datetime(raw_values, errors="coerce")
         except (TypeError, ValueError, OverflowError):
             return None
-        if len(observed) == 0:
+        if len(observed) == 0 or bool(observed.isna().any()):
             return None
         return (str(observed.min().date()), str(observed.max().date()))
 
