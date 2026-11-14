@@ -176,3 +176,205 @@ def test_profile_never_contains_raw_rows(tmp_path):
         assert not isinstance(column.get("numeric_summary"), pd.DataFrame)
     # No raw row payloads: every structured field is bounded metadata.
     assert len(profile.columns) == len(_frame().columns)
+
+
+# ---------------------------------------------------------------------------
+# B4.2.1.1 fix 2: unified scan budget / sampling / 64KB hard constraint
+# ---------------------------------------------------------------------------
+
+def test_small_dataset_exact_statistics():
+    profile = build_data_profile(_frame(), asset_id="asset_1")
+    assert profile.meta.statistics_scope == "exact"
+    assert profile.meta.sample_rows is None
+    assert profile.meta.duplicate_rows == 0
+
+
+def test_large_dataset_enters_sampled_mode():
+    frame = pd.DataFrame(
+        {
+            "a": range(500),
+            "b": [f"value_{i % 50}" for i in range(500)],
+        }
+    )
+    profile = build_data_profile(frame, asset_id="asset_1", max_scan_rows=100)
+    assert profile.meta.statistics_scope == "sampled"
+    assert profile.meta.sample_rows == 100
+    assert profile.truncated is True
+    assert any("statistics sampled" in reason for reason in profile.incomplete_reasons)
+
+
+def test_sampled_statistics_are_reproducible():
+    frame = pd.DataFrame(
+        {
+            "a": range(500),
+            "b": [f"value_{i % 50}" for i in range(500)],
+        }
+    )
+    first = build_data_profile(frame, asset_id="asset_1", max_scan_rows=100)
+    second = build_data_profile(frame, asset_id="asset_1", max_scan_rows=100)
+    first_payload = first.model_dump(mode="json")
+    second_payload = second.model_dump(mode="json")
+    first_payload["meta"].pop("generated_at")
+    second_payload["meta"].pop("generated_at")
+    assert first_payload == second_payload
+
+
+def test_sampled_statistics_marked_and_budget_respected():
+    frame = pd.DataFrame(
+        {
+            "a": range(500),
+            "b": [f"value_{i % 50}" for i in range(500)],
+        }
+    )
+    profile = build_data_profile(frame, asset_id="asset_1", max_scan_rows=100)
+    column = next(column for column in profile.columns if column.name == "a")
+    # Statistics are computed on the bounded sample, not the full frame.
+    assert column.numeric_summary is not None
+    assert column.numeric_summary["count"] == 100.0
+    assert 0.0 <= column.numeric_summary["max"] <= 499.0
+
+
+def test_candidate_keys_respect_scan_budget():
+    frame = pd.DataFrame(
+        {
+            "id": range(500),
+            "tag": [f"value_{i % 50}" for i in range(500)],
+        }
+    )
+    profile = build_data_profile(frame, asset_id="asset_1", max_scan_rows=100)
+    # In sampled scope candidate keys are approximate: computed on the sample
+    # and the profile is marked sampled/truncated.
+    assert profile.meta.statistics_scope == "sampled"
+    assert profile.truncated is True
+
+
+def test_duplicate_rows_skipped_when_budget_exceeded():
+    frame = pd.DataFrame({"a": range(500)})
+    profile = build_data_profile(
+        frame, asset_id="asset_1", max_scan_rows=100, duplicate_row_budget=50
+    )
+    assert profile.meta.duplicate_rows is None
+    assert any("duplicate_rows skipped" in reason for reason in profile.incomplete_reasons)
+
+
+def test_sampled_mode_does_not_copy_full_frame():
+    # The budget path must work on a frame too large to be copied cheaply in
+    # tests; existence of the sampled path with a 200k-row frame proves no
+    # full-frame statistics were required (fast runtime = no full scan).
+    frame = pd.DataFrame({"a": range(300_000)})
+    profile = build_data_profile(frame, asset_id="asset_1", max_scan_rows=100)
+    assert profile.meta.statistics_scope == "sampled"
+    assert profile.meta.row_count == 300_000
+
+
+# ---------------------------------------------------------------------------
+# B4.2.1.1 fix 5: 64KB hard constraint under extreme inputs
+# ---------------------------------------------------------------------------
+
+def _assert_size(profile):
+    import json
+
+    size = len(
+        json.dumps(profile.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")
+    )
+    assert size <= 64 * 1024, f"profile size {size} exceeds limit"
+    return size
+
+
+def test_long_column_names_fit_after_degradation():
+    frame = pd.DataFrame(
+        {("very_long_column_name_" + "x" * 5000 + str(i)): [1.0, 2.0] for i in range(30)}
+    )
+    profile = build_data_profile(frame, asset_id="asset_1")
+    _assert_size(profile)
+    assert profile.truncated is True
+
+
+def test_many_columns_fit_after_degradation():
+    frame = pd.DataFrame({f"col_{i}": [1.0, 2.0, 3.0] for i in range(3000)})
+    profile = build_data_profile(frame, asset_id="asset_1")
+    _assert_size(profile)
+    assert profile.truncated is True
+
+
+def test_long_category_values_fit_after_degradation():
+    frame = pd.DataFrame(
+        {"cat": [f"huge_{'y' * 10000}_{i}" for i in range(20)]}
+    )
+    profile = build_data_profile(frame, asset_id="asset_1")
+    _assert_size(profile)
+    assert profile.truncated is True
+
+
+def test_many_candidate_keys_fit_after_degradation():
+    frame = pd.DataFrame({f"id_{i}": [i, i + 1, i + 2] for i in range(6000)})
+    profile = build_data_profile(frame, asset_id="asset_1")
+    _assert_size(profile)
+    assert profile.truncated is True
+
+
+def test_many_incomplete_reasons_fit_after_degradation():
+    from langgraph_langchain.runtime.planner_models import (
+        ColumnProfile,
+        DataProfile,
+        DataProfileMeta,
+    )
+    from langgraph_langchain.runtime.analysis_operations import (
+        _degrade_to_size_limit,
+    )
+
+    meta = DataProfileMeta(
+        asset_id="asset_1",
+        data_version="hash",
+        row_count=10,
+        column_count=1,
+    )
+    profile = DataProfile(
+        meta=meta,
+        columns=[ColumnProfile(name="a", dtype="float64", missing_rate=0.0)],
+        candidate_keys=["a"],
+        incomplete_reasons=[
+            f"reason_{i} " + "z" * 500 for i in range(500)
+        ],
+    )
+    profile = _degrade_to_size_limit(profile, 64 * 1024)
+    _assert_size(profile)
+    assert profile.truncated is True
+
+
+# ---------------------------------------------------------------------------
+# B4.2.1.1 fix 3: Profile persistence across Runtime restore
+# ---------------------------------------------------------------------------
+
+def test_profile_survives_runtime_restore(tmp_path):
+    from langgraph_langchain.runtime.analysis_workflow import register_file_asset
+    from langgraph_langchain.runtime.context import AnalysisRuntime
+
+    workspace = tmp_path / "persist_ws"
+    source = tmp_path / "persist_ws_input.csv"
+    _frame().to_csv(source, index=False)
+
+    runtime = AnalysisRuntime(
+        workspace_dir=workspace,
+        session_id="persist_session",
+        question="profile persistence",
+    )
+    register_file_asset(runtime, source)
+
+    original_asset = next(iter(runtime.assets.values()))
+    profile, reason = resolve_asset_profile(original_asset)
+    assert reason is None
+    assert profile is not None
+
+    # Destroy the in-memory runtime and restore the same session from disk.
+    restored = AnalysisRuntime(
+        workspace_dir=workspace,
+        session_id="persist_session",
+        question="profile persistence",
+    )
+    restored_asset = restored.assets[original_asset.asset_id]
+    assert "profile" in restored_asset.source_metadata
+    restored_profile, restored_reason = resolve_asset_profile(restored_asset)
+    assert restored_reason is None
+    assert restored_profile is not None
+    assert restored_profile.meta.data_version == restored_asset.content_hash

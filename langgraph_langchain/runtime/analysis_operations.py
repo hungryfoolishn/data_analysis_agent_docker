@@ -225,6 +225,7 @@ def build_data_profile(
     frame: "pd.DataFrame",
     *,
     asset_id: str,
+    max_scan_rows: int = 100_000,
     max_numeric_columns: int = 20,
     top_k: int = 10,
     max_profile_bytes: int = 64 * 1024,
@@ -232,9 +233,12 @@ def build_data_profile(
 ) -> "DataProfile":
     """Build a bounded, deterministic DataProfile for planning (B4.2.1 §4).
 
-    Reuses the deterministic statistics behind the allowlisted operations;
-    never copies the full frame and never stores raw rows.  Cost limits are
-    explicit; exceeding any limit degrades the profile instead of failing.
+    B4.2.1.1 fix 2 - unified scan budget: every statistic (missing rate,
+    numeric summary, category top-K, unique counts, candidate keys) is
+    computed on a bounded scan.  Small datasets get exact statistics; frames
+    exceeding ``max_scan_rows`` use a reproducible bounded sample
+    (``random_state=0``) and the profile is explicitly marked ``sampled``.
+    No full-frame copy is ever made and raw rows are never stored.
     """
     from langgraph_langchain.runtime.planner_models import (
         GENERATOR_VERSION,
@@ -245,32 +249,44 @@ def build_data_profile(
     )
 
     row_count = int(len(frame))
-    truncated = False
-    reasons: list[str] = []
-    column_profiles: list[ColumnProfile] = []
+    scan_rows = row_count
+    statistics_scope = "exact"
+    work = frame  # statistics read columns in place; never copies the frame
+    incomplete_reasons: list[str] = []
+
+    if row_count > max_scan_rows:
+        work = frame.sample(n=max_scan_rows, random_state=0)  # reproducible
+        scan_rows = int(len(work))
+        statistics_scope = "sampled"
+        incomplete_reasons.append(
+            f"statistics sampled: row_count {row_count} exceeds scan budget {max_scan_rows}"
+        )
+
+    truncated = statistics_scope == "sampled"
+
+    duplicate_rows: int | None = None
+    if statistics_scope == "exact" and row_count <= duplicate_row_budget:
+        duplicate_rows = int(work.duplicated().sum())
+    else:
+        incomplete_reasons.append(
+            "duplicate_rows skipped: exceeds duplicate_row_budget or sampled scope"
+        )
+
     numeric_candidates = [
         name for name in frame.columns if pd.api.types.is_numeric_dtype(frame[name])
     ]
     if len(numeric_candidates) > max_numeric_columns:
         truncated = True
-        reasons.append(
+        incomplete_reasons.append(
             f"numeric columns truncated to {max_numeric_columns} of {len(numeric_candidates)}"
         )
         numeric_candidates = numeric_candidates[:max_numeric_columns]
 
-    duplicate_rows: int | None = None
-    if row_count <= duplicate_row_budget:
-        duplicate_rows = int(frame.duplicated().sum())
-    else:
-        truncated = True
-        reasons.append(
-            f"duplicate_rows skipped: row_count {row_count} exceeds budget {duplicate_row_budget}"
-        )
-
+    column_profiles: list[ColumnProfile] = []
     for name in frame.columns:
-        series = frame[name]
+        series = work[name]
         null_count = int(series.isna().sum())
-        missing_rate = null_count / row_count if row_count else 0.0
+        missing_rate = null_count / scan_rows if scan_rows else 0.0
         profile = ColumnProfile(
             name=str(name),
             dtype=str(series.dtype),
@@ -299,10 +315,7 @@ def build_data_profile(
         elif is_time:
             valid = series.dropna()
             if len(valid):
-                profile.time_range = [
-                    str(valid.min()),
-                    str(valid.max()),
-                ]
+                profile.time_range = [str(valid.min()), str(valid.max())]
         else:
             unique_count = int(series.nunique(dropna=True))
             profile.unique_count = unique_count
@@ -316,9 +329,9 @@ def build_data_profile(
     candidate_keys = [
         str(name)
         for name in frame.columns
-        if row_count > 0
-        and int(frame[name].isna().sum()) == 0
-        and int(frame[name].nunique(dropna=True)) == row_count
+        if scan_rows > 0
+        and int(work[name].isna().sum()) == 0
+        and int(work[name].nunique(dropna=True)) == scan_rows
     ]
 
     profile = DataProfile(
@@ -331,43 +344,91 @@ def build_data_profile(
             row_count=row_count,
             column_count=int(len(frame.columns)),
             duplicate_rows=duplicate_rows,
+            statistics_scope=statistics_scope,
+            sample_rows=scan_rows if statistics_scope == "sampled" else None,
         ),
         columns=column_profiles,
         candidate_keys=candidate_keys,
         truncated=truncated,
-        incomplete_reasons=list(reasons),
+        incomplete_reasons=list(incomplete_reasons),
     )
-    payload = profile.model_dump(mode="json")
-    while len(json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")) > max_profile_bytes:
-        # Progressive degradation: drop category tops first, then numeric
-        # summaries, then per-column details — the meta block always survives.
-        dropped = False
-        for column in payload["columns"]:
-            if column.get("top_categories"):
-                column["top_categories"] = None
-                dropped = True
-                break
-        if not dropped:
-            for column in payload["columns"]:
-                if column.get("numeric_summary"):
-                    column["numeric_summary"] = None
-                    dropped = True
-                    break
-        if not dropped:
-            payload["columns"] = payload["columns"][:1]
-            profile.truncated = True
-            profile.incomplete_reasons.append(
-                "profile truncated to size limit; column details dropped"
-            )
-            return profile
-        profile = DataProfile.model_validate({"meta": payload["meta"], **{
-            key: value for key, value in payload.items() if key != "meta"
-        }})
-        profile.truncated = True
-        if "size limit degradation" not in profile.incomplete_reasons:
-            profile.incomplete_reasons.append("profile degraded to size limit")
-    return profile
+    return _degrade_to_size_limit(profile, max_profile_bytes)
 
+
+def _serialized_profile_size(profile: "DataProfile") -> int:
+    import json as _json
+
+    return len(
+        _json.dumps(profile.model_dump(mode="json"), ensure_ascii=False, default=str).encode(
+            "utf-8"
+        )
+    )
+
+
+def _degrade_to_size_limit(profile: "DataProfile", max_profile_bytes: int) -> "DataProfile":
+    """Progressively degrade a profile until it fits ``max_profile_bytes``.
+
+    B4.2.1.1 fix 5: the final serialized byte size is a hard constraint.  Each
+    degradation pass is deterministic and recorded in ``incomplete_reasons``;
+    the last resort drops column entries entirely - the meta block always
+    survives.
+    """
+    from langgraph_langchain.runtime.planner_models import ColumnProfile
+
+    reasons: list[str] = []
+
+    def _without_field(field: str, current: "DataProfile") -> "DataProfile":
+        columns = []
+        for column in current.columns:
+            data = column.model_dump()
+            data[field] = None
+            columns.append(ColumnProfile.model_validate(data))
+        return current.model_copy(update={"columns": columns})
+
+    passes = [
+        ("top_categories dropped to fit size limit", lambda p: _without_field("top_categories", p)),
+        ("numeric_summary dropped to fit size limit", lambda p: _without_field("numeric_summary", p)),
+        ("time_range dropped to fit size limit", lambda p: _without_field("time_range", p)),
+        ("candidate_keys dropped to fit size limit", lambda p: p.model_copy(update={"candidate_keys": []})),
+        ("unique_count dropped to fit size limit", lambda p: _without_field("unique_count", p)),
+        ("column details reduced to names/types/missing rates to fit size limit",
+         lambda p: p.model_copy(update={"columns": [
+             ColumnProfile(name=column.name, dtype=column.dtype, missing_rate=column.missing_rate)
+             for column in p.columns
+         ]})),
+    ]
+
+    for reason, transform in passes:
+        if _serialized_profile_size(profile) <= max_profile_bytes:
+            break
+        profile = transform(profile)
+        reasons.append(reason)
+        profile = profile.model_copy(update={"truncated": True, "incomplete_reasons": reasons})
+
+    # Last resort: drop column entries in halves until the profile fits
+    # (bounded loop; the meta block alone is small enough to always fit).
+    while _serialized_profile_size(profile) > max_profile_bytes and profile.columns:
+        keep = len(profile.columns) // 2
+        profile = profile.model_copy(
+            update={"columns": profile.columns[:keep], "truncated": True}
+        )
+        reasons.append(
+            f"column entries dropped to fit size limit ({len(profile.columns)} remaining)"
+        )
+        profile = profile.model_copy(update={"incomplete_reasons": reasons})
+
+    if _serialized_profile_size(profile) > max_profile_bytes:
+        profile = profile.model_copy(update={"columns": [], "truncated": True})
+        reasons.append("all column details dropped to fit size limit")
+
+    # Final clamp: reasons themselves may be unbounded (B4.2.1.1 extreme case).
+    while _serialized_profile_size(profile) > max_profile_bytes and reasons:
+        reasons = reasons[: len(reasons) // 2]
+        reasons.append("incomplete_reasons truncated to fit size limit")
+        profile = profile.model_copy(update={"incomplete_reasons": reasons})
+    if _serialized_profile_size(profile) > max_profile_bytes:
+        profile = profile.model_copy(update={"incomplete_reasons": ["profile truncated to size limit"]})
+    return profile
 
 def _profile_generated_at() -> str:
     from datetime import datetime, timezone

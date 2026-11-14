@@ -62,26 +62,6 @@ def _planner_asset_columns(planner_input: PlannerInput) -> dict[str, list[str]]:
     }
 
 
-def _validated_outcome(
-    plan: GeneralAnalysisPlan,
-    planner_input: PlannerInput,
-    *,
-    status: str,
-    reason_code: Optional[str],
-) -> PlanningOutcome:
-    """Re-validate a produced plan in full before accepting it (§9 rule 3)."""
-    errors = validate_general_plan(
-        plan,
-        asset_columns=_planner_asset_columns(planner_input),
-    )
-    if errors:
-        return PlanningOutcome(
-            status="planning_failed",
-            reason_code="llm_plan_invalid" if status == "planned" else "planning_exception",
-            detail="; ".join(errors),
-        )
-    return PlanningOutcome(status=status, plan=plan, reason_code=reason_code)
-
 
 def run_planning(
     planner_input: PlannerInput,
@@ -91,6 +71,28 @@ def run_planning(
     max_repair_retries: int = MAX_LLM_REPAIR_RETRIES,
 ) -> PlanningOutcome:
     """Run the frozen planner state machine for one analysis request."""
+    try:
+        return _run_planning_inner(
+            planner_input,
+            deterministic_planner=deterministic_planner,
+            llm_planner_fn=llm_planner_fn,
+            max_repair_retries=max_repair_retries,
+        )
+    except Exception as exc:  # noqa: BLE001 - planning boundary (B4.2.1.1 fix 4)
+        return PlanningOutcome(
+            status="planning_failed",
+            reason_code="planning_exception",
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def _run_planning_inner(
+    planner_input: PlannerInput,
+    *,
+    deterministic_planner: DeterministicAnalysisPlanner,
+    llm_planner_fn: Optional[Callable[..., str]],
+    max_repair_retries: int,
+) -> PlanningOutcome:
     asset_columns = _planner_asset_columns(planner_input)
     input_asset_ids = [context.asset_id for context in planner_input.assets]
 
@@ -117,9 +119,15 @@ def run_planning(
             last_errors = errors
             reason_code = "llm_plan_invalid"
         # LLM produced nothing usable within the retry budget — deterministic
-        # fallback, fully re-validated; never a silent Legacy switch.
+        # fallback, fully re-validated; never a silent Legacy switch.  The
+        # fallback carries the *original* failure reason: llm_invalid_output
+        # and llm_unavailable are distinct diagnoses (B4.2.1.1 fix 1).
         fallback = _run_deterministic(
-            planner_input, deterministic_planner, asset_columns, input_asset_ids
+            planner_input,
+            deterministic_planner,
+            asset_columns,
+            input_asset_ids,
+            fallback_reason=reason_code,
         )
         if fallback is not None:
             if fallback.status == "planned":
@@ -132,8 +140,18 @@ def run_planning(
             detail=detail,
         )
 
-    return _run_deterministic(
-        planner_input, deterministic_planner, asset_columns, input_asset_ids
+    fallback = _run_deterministic(
+        planner_input,
+        deterministic_planner,
+        asset_columns,
+        input_asset_ids,
+    )
+    if fallback is not None:
+        return fallback
+    return PlanningOutcome(
+        status="planning_failed",
+        reason_code="planning_exception",
+        detail="deterministic planner returned no outcome",
     )
 
 def _run_deterministic(
@@ -141,11 +159,15 @@ def _run_deterministic(
     deterministic_planner: DeterministicAnalysisPlanner,
     asset_columns: dict[str, list[str]],
     input_asset_ids: list[str],
+    *,
+    fallback_reason: str = "llm_unavailable",
 ) -> Optional[PlanningOutcome]:
     """Run the deterministic planner and re-validate its plan in full.
 
-    Returns ``None`` when an unexpected (non-planning) exception escapes, so
-    ``run_planning`` can translate it into ``planning_failed``.
+    Every failure mode is converted into an explicit ``PlanningOutcome``
+    (B4.2.1.1 fix 4): unclassified exceptions become ``planning_failed`` /
+    ``planning_exception`` with diagnostics instead of escaping the planning
+    boundary.
     """
     try:
         result = deterministic_planner.plan(
@@ -165,6 +187,12 @@ def _run_deterministic(
             reason_code="no_matching_operation",
             detail=str(exc),
         )
+    except Exception as exc:  # noqa: BLE001 - planning boundary (B4.2.1.1 fix 4)
+        return PlanningOutcome(
+            status="planning_failed",
+            reason_code="planning_exception",
+            detail=f"{type(exc).__name__}: {exc}",
+        )
     errors = validate_general_plan(result.plan, asset_columns=asset_columns)
     if errors:
         return PlanningOutcome(
@@ -176,5 +204,5 @@ def _run_deterministic(
         status="fallback_planned",
         plan=result.plan,
         clarification_questions=list(result.clarification_questions),
-        reason_code="llm_unavailable",
+        reason_code=fallback_reason,
     )

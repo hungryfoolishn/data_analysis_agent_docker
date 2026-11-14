@@ -8,7 +8,7 @@ registered Asset (frozen contract §6.4 of the B4.2.0 design).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +44,11 @@ class DataProfileMeta(BaseModel):
     row_count: int
     column_count: int
     duplicate_rows: Optional[int] = None
+    # B4.2.1.1 fix 2: unified scan-budget bookkeeping.  ``statistics_scope``
+    # is "exact" for full-frame statistics and "sampled" for reproducible
+    # bounded-sampling estimates; ``sample_rows`` records the scan size.
+    statistics_scope: Optional[Literal["exact", "sampled"]] = None
+    sample_rows: Optional[int] = None
 
 
 class DataProfile(BaseModel):

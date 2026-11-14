@@ -423,7 +423,8 @@ def test_outcome_planned_with_fallback_after_invalid_llm_output():
     )
     assert outcome.status == "fallback_planned"
     assert len(calls) == 3  # initial + 2 repair retries
-    assert outcome.reason_code == "llm_unavailable"
+    # B4.2.1.1 fix 1: invalid-output and unavailable are distinct diagnoses.
+    assert outcome.reason_code == "llm_invalid_output"
 
 
 def test_outcome_needs_clarification_when_intent_unmatched():
@@ -465,4 +466,23 @@ def test_outcome_planning_failed_on_validation_errors():
         llm_planner_fn=None,
     )
     assert outcome.status == "planning_failed"
+    assert outcome.plan is None
+
+
+def test_outcome_planning_exception_on_unexpected_error(tmp_path):
+    """B4.2.1.1 fix 4: unexpected RuntimeError must not escape the boundary."""
+
+    class _BrokenPlanner(DeterministicAnalysisPlanner):
+        def plan(self, **kwargs):
+            raise RuntimeError("unexpected planner explosion")
+
+    outcome = run_planning(
+        _planner_input(),
+        deterministic_planner=_BrokenPlanner(),
+        llm_planner_fn=None,
+    )
+    assert outcome.status == "planning_failed"
+    assert outcome.reason_code == "planning_exception"
+    assert outcome.detail is not None
+    assert "unexpected planner explosion" in outcome.detail
     assert outcome.plan is None

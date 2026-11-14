@@ -60,6 +60,11 @@ def register_file_asset(
     from langgraph_langchain.runtime.analysis_operations import attach_profile
 
     attach_profile(asset, dataframe)
+    # B4.2.1.1 fix 3: register_dataframe persisted the asset before the profile
+    # was attached; persist again so Asset + Profile are guaranteed to be in
+    # the Runtime snapshot when register_file_asset returns.  The original
+    # registration transaction semantics are unchanged.
+    runtime._persist()
     return asset, source
 
 
