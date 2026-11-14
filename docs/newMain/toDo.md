@@ -593,7 +593,11 @@ Phase 5 的成功标准不是 Agent 数量，而是复杂研究报告质量显�
 
 阶段通过后，只允许 P0/P1 回归问题重新打开该阶段。 新能力进入下一阶段，不因“还可以更完善”而反复返工。
 
-## 十一、当前最具体的下一步
+## 十一、当前最具体的下一步（历史章节 — 已过时，仅保留原始记录）
+
+> 状态说明（2026-11-15）：本节写于 B0 阶段（基线 `f695bf0`）。B0–B8 及
+> B8.11.1 均已完成，本节内容仅作为历史规划记录保留，**不再代表当前下一步**。
+> 当前权威路线见文末「十三、当前权威路线（B8.11.1 之后）」。
 
 结合目前已提交的代码，我建议立即执行：
 
@@ -630,3 +634,30 @@ B8 数据获取平台已完成 B8.8–B8.11 连续验收并冻结：
 - 真实 API Smoke 因凭据缺失跳过，不作为通过依据（运行命令与环境变量见 B8.11 验收文档）。
 
 按总路线：B8 标记为完成并冻结，通用采集层不再扩展；下一步进入 Phase 3（B9 宏观经济 Domain Pack）完整实施，B10 财务 Pack 保持独立边界，B11 多 Agent 研究编排暂不启动。
+
+---
+
+## 十三、当前权威路线（B8.11.1 之后，2026-11-15）
+
+本节是当前唯一的路线权威来源；前文各阶段章节为历史记录。
+
+1. **B8 已正式冻结（含 B8.11.1）**
+   - B8.11.1 修复了采集历史与 DataAsset 注册一致性（可恢复 Saga、
+     transaction journal、幂等恢复），明确 Asset ID 与采集事件查询语义，
+     并新增真实 `run_analysis_operation` 入口集成测试。
+   - 修复记录：`docs/architecture/reviews/b8.11.1-acquisition-transaction-consistency.md`
+   - 采集层冻结后仅允许 P0/P1 一致性/安全修复与既有 Adapter 兼容性修复；
+     不在采集层增加宏观/财务领域语义。
+2. **B6 遗留事项未完成，不得因 B8 冻结而误标完成**：
+   - B6 10 datasets / 30 questions Golden 基线的完整 Harness 全链路化；
+   - Runtime V2 默认路由门禁；
+   - 通用 Planner 能力扩展；
+   - SQLite schema-aware SQL Planner。
+   这些仍是 Phase 1C 收尾事项，与 B9 并行推进时不得跳过。
+3. **B9 Macro Economic Domain Pack 是下一阶段领域开发方向**：以冻结的 B8
+   接口（AdapterRegistry / DatasetCatalog / FetchRequest /
+   AcquisitionService.acquire/refresh / DataAsset / AcquisitionHistory /
+   AssetResolver / SnapshotStore）为唯一数据入口；宏观指标语义、统计口径、
+   频率转换全部在 B9 实现。
+4. **B10 Financial Domain Pack** 依赖 B8 冻结接口与 B9 之外的独立财务边界；
+   **B11 多 Agent 研究编排** 依赖 B9/B10 数据与工具能力，暂不启动。
