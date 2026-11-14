@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -25,6 +26,18 @@ class AdapterRequestError(AdapterError, ValueError):
 
 class AdapterTemporaryError(AdapterError):
     """Raised for retryable network/service failures."""
+
+
+class AdapterAuthError(AdapterError):
+    """Raised when the source rejects credentials; never retried."""
+
+
+class AdapterRateLimitError(AdapterTemporaryError):
+    """Raised on upstream rate limiting (HTTP 429) with optional Retry-After."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class AdapterQualityError(AdapterError):
@@ -290,6 +303,11 @@ class HttpJsonAdapter(DataSourceAdapter):
         self.retry_backoff_seconds = retry_backoff_seconds
         # B8.2: enforce the declared rate limit (previously declaration-only).
         self._last_request_monotonic: float | None = None
+        # B8.10: rate limiting applies to upstream requests only; cache hits do
+        # not consume the interval. Concurrent callers are serialized.
+        self._rate_lock = threading.Lock()
+        # Bounded wait for upstream Retry-After headers (no unbounded waiting).
+        self.retry_after_cap_seconds = 5.0
 
     def describe(self) -> AdapterDescriptor:
         return self.descriptor
@@ -304,12 +322,14 @@ class HttpJsonAdapter(DataSourceAdapter):
                 f"Unknown dataset for adapter {self.descriptor.adapter_id}: {request.dataset_id}"
             )
         self._validate_request(request, spec)
-        self._enforce_rate_limit()
         key = request.cache_key(self.descriptor.adapter_id)
         if not refresh:
             cached = self.cache.get(key)
             if cached is not None:
                 return cached
+        # B8.10: the rate limit guards upstream requests; cache hits return
+        # above without consuming the interval.
+        self._enforce_rate_limit()
         raw = self._fetch_with_retry(request, spec)
         frame = self.normalize(raw, request, spec)
         quality = self.validate(frame, spec)
@@ -399,14 +419,15 @@ class HttpJsonAdapter(DataSourceAdapter):
         return None
 
     def _enforce_rate_limit(self) -> None:
-        """Enforce the declared rate limit before any outbound request (B8.2)."""
+        """Enforce the declared rate limit before any outbound request."""
         limit = self.descriptor.rate_limit_seconds
-        now = time.monotonic()
-        if limit > 0 and self._last_request_monotonic is not None:
-            wait = limit - (now - self._last_request_monotonic)
-            if wait > 0:
-                time.sleep(wait)
-        self._last_request_monotonic = time.monotonic()
+        with self._rate_lock:
+            now = time.monotonic()
+            if limit > 0 and self._last_request_monotonic is not None:
+                wait = limit - (now - self._last_request_monotonic)
+                if wait > 0:
+                    time.sleep(wait)
+            self._last_request_monotonic = time.monotonic()
 
     def _validate_request(self, request: FetchRequest, spec: DatasetSpec) -> None:
         if not isinstance(request.parameters, dict):
@@ -421,14 +442,24 @@ class HttpJsonAdapter(DataSourceAdapter):
                 raise AdapterRequestError("start must be before end")
 
     def _fetch_with_retry(self, request: FetchRequest, spec: DatasetSpec) -> Any:
+        """Fetch with bounded, error-class-aware retry (B8.10).
+
+        Request/quality/auth errors fail fast; transient errors retry with
+        bounded backoff; HTTP 429 honors a bounded ``Retry-After``.
+        """
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
                 return self._fetch_raw(request, spec)
-            except AdapterRequestError:
+            except (AdapterRequestError, AdapterQualityError, AdapterAuthError):
                 raise
-            except AdapterQualityError:
-                raise
+            except AdapterRateLimitError as exc:
+                last_error = exc
+                if attempt < self.max_retries:
+                    delay = self.retry_backoff_seconds * (2**attempt)
+                    if exc.retry_after is not None:
+                        delay = max(delay, min(float(exc.retry_after), self.retry_after_cap_seconds))
+                    time.sleep(delay)
             except Exception as exc:
                 last_error = exc
                 if attempt < self.max_retries:
@@ -438,8 +469,39 @@ class HttpJsonAdapter(DataSourceAdapter):
         ) from last_error
 
     def _http_get(self, url: str, params: Mapping[str, Any]) -> Any:
+        """Real HTTP transport with explicit error classification (B8.10).
+
+        Error messages contain the request path without the query string so
+        credentials passed as query parameters are never logged.
+        """
         import requests
 
         response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
+        status = response.status_code
+        safe_url = url.split("?", 1)[0]
+        if status in (401, 403):
+            raise AdapterAuthError(
+                f"Upstream rejected credentials for {safe_url} (HTTP {status})"
+            )
+        if status == 429:
+            retry_after = None
+            headers = getattr(response, "headers", None)
+            raw = headers.get("Retry-After") if headers else None
+            if raw:
+                try:
+                    retry_after = float(raw)
+                except (TypeError, ValueError):
+                    retry_after = None
+            raise AdapterRateLimitError(
+                f"Upstream rate limited for {safe_url} (HTTP 429)",
+                retry_after=retry_after,
+            )
+        if status >= 500:
+            raise AdapterTemporaryError(
+                f"Upstream service error for {safe_url} (HTTP {status})"
+            )
+        if status >= 400:
+            raise AdapterRequestError(
+                f"Upstream rejected request for {safe_url} (HTTP {status})"
+            )
         return response.json()
