@@ -110,6 +110,10 @@ def test_macro_run_full_v2_execution(tmp_path):
     runtime.configure_executor(
         TaskExecutor(structured=StructuredTaskExecutor(tool_resolver=lambda n: tool))
     )
+    # Set current step for evidence task_id mapping
+    for step in runtime.run.steps:
+        runtime.current_runtime_step_id = step.step_id
+        break
     result = runtime.execute_next_task()
     assert result is not None and result.status == "succeeded"
 

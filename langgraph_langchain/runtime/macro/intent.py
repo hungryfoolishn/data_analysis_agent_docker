@@ -251,7 +251,7 @@ class MacroRuntimeIntegration:
             registry.register(key, outcome.asset.asset_id,
                               observation_count=len(resolved.dataframe),
                               data_version=outcome.asset.content_hash or "")
-            observations[indicator.concept] = ResolvedIndicatorAsset(
+            observations[indicator.indicator_id] = ResolvedIndicatorAsset(
                 indicator=indicator, asset_id=outcome.asset.asset_id,
                 observation_count=len(resolved.dataframe),
             )

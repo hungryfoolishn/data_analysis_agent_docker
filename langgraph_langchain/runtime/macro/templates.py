@@ -180,7 +180,7 @@ def check_data_sufficiency(
     resolved: dict[str, ResolvedIndicatorAsset],
 ) -> tuple[str, list[str]]:
     """Frozen data-sufficiency policy (B9 §5.8) with any_of_concepts support (B9.8.4)."""
-    # Extract concepts from resolved items (key type is indicator_id, B9.8.3).
+    # Extract concepts from resolved indicator objects (B9.8.3).
     resolved_concepts = {item.indicator.concept for item in resolved.values()}
     # any_of_concepts: alternative indicator groups (OR logic).
     if template.any_of_concepts:
@@ -191,7 +191,10 @@ def check_data_sufficiency(
         if not any_satisfied:
             all_needed = sorted({c for group in template.any_of_concepts for c in group})
             return "blocked", [f"requires at least one of: {all_needed}"]
-    missing = [concept for concept in template.required_concepts if concept not in resolved_concepts]
+    missing = [
+        concept for concept in template.required_concepts
+        if concept not in resolved_concepts
+    ]
     if missing:
         return "blocked", [f"missing required indicators: {missing}"]
     thin = [
@@ -230,13 +233,14 @@ def build_template_plan(
             f"Template '{template.template_id}' blocked: {'; '.join(missing)}"
         )
 
-    used = {
-        concept: resolved[concept]
-        for concept in sorted(resolved)
-        if concept in template.required_concepts
-        or concept in template.optional_concepts
-        or not (template.required_concepts or template.optional_concepts)
-    }
+    # B9.8.4: filter by concept extracted from indicator objects, not dict keys.
+    # The resolved dict may be keyed by indicator_id (B9.8.3).
+    resolved_keys = set(resolved.keys())
+    used = {}
+    for key, item in resolved.items():
+        concept = item.indicator.concept
+        if concept in template.required_concepts or concept in template.optional_concepts:
+            used[key] = item
     if not used:
         raise MacroTemplateError("No resolved indicator assets match the template")
 
@@ -246,7 +250,7 @@ def build_template_plan(
         if template.required_concepts
         else sorted(used)[0]
     )
-    primary = used[primary_concept]
+    primary = used.get(primary_concept) or next(iter(used.values()))
 
     # 1. data quality on the primary asset
     steps.append(
