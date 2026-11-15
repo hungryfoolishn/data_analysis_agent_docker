@@ -10,13 +10,17 @@ bypasses plan validators, Scheduler, Executor, Evidence or Report.
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from langgraph_langchain.data.acquisition import AcquisitionService
+import pandas as pd
+
 from langgraph_langchain.data.adapters.base import FetchRequest
 from langgraph_langchain.runtime.general_planner import GeneralAnalysisPlan
 from langgraph_langchain.runtime.macro.models import MacroIndicatorCatalog
+from langgraph_langchain.runtime.macro.registry import IndicatorAssetKey, IndicatorAssetRegistry
 from langgraph_langchain.runtime.macro.templates import (
     MacroTemplateError,
     ResolvedIndicatorAsset,
@@ -161,6 +165,54 @@ class MacroRuntimeIntegration:
                 requirements.indicators.append(indicator)
         return requirements
 
+    def build_aligned_asset(
+        self,
+        registry: IndicatorAssetRegistry,
+        *,
+        frequency: Optional[str] = None,
+    ) -> Optional[str]:
+        """Build an aligned multi-indicator asset when >= 2 indicators resolved.
+
+        Aligns observations on common periods and registers the combined frame
+        as a new DataAsset via register_dataframe.  Returns aligned asset_id
+        or None when alignment is not applicable.
+        """
+        entries = registry.list_assets()
+        if len(entries) < 2:
+            return None
+        frames: dict[str, pd.DataFrame] = {}
+        for entry in entries:
+            resolved = self.runtime.asset_resolver.resolve(entry.asset_id)
+            column_name = entry.key.concept
+            series = resolved.dataframe.set_index("period")["value"] if "period" in resolved.dataframe.columns else resolved.dataframe.iloc[:, 1]
+            frames[column_name] = series
+        if len(frames) < 2:
+            return None
+        aligned = pd.DataFrame(frames).dropna(how="all")
+        aligned_path = self.runtime.workspace_dir / f"aligned_{uuid.uuid4().hex[:8]}.parquet"
+        aligned.to_parquet(aligned_path, index=True)
+        from langgraph_langchain.data.assets import DataAsset, SchemaSnapshot
+
+        asset = DataAsset(
+            name=f"macro_aligned_{uuid.uuid4().hex[:8]}",
+            source_type="macro_aligned",
+            content_hash=None,  # computed by DataAsset model
+            schema_snapshot=SchemaSnapshot.from_dataframe(aligned),
+            source_metadata={
+                "acquisition": "macro_context_builder",
+                "alignment_method": "inner_join_on_period",
+                "input_asset_ids": [entry.asset_id for entry in entries],
+                "indicator_ids": [entry.key.indicator_id for entry in entries],
+                "input_data_versions": [entry.data_version for entry in entries],
+                "statistics_scope": "aligned",
+                "coverage_start": str(aligned.index.min()) if len(aligned) else None,
+                "coverage_end": str(aligned.index.max()) if len(aligned) else None,
+            },
+        )
+        self.runtime.assets[asset.asset_id] = asset
+        self.runtime._persist()
+        return asset.asset_id
+
     def _select_template(self, intent: MacroIntent) -> str:
         if len(intent.concepts) >= 2:
             return "multi_indicator"
@@ -190,10 +242,15 @@ class MacroRuntimeIntegration:
 
         template_id = self._select_template(intent)
         template = get_template(template_id)
+        registry = IndicatorAssetRegistry()
         observations: dict[str, ResolvedIndicatorAsset] = {}
         for request, indicator in zip(requirements.requests, requirements.indicators):
             outcome = self.acquisition.acquire(request, refresh=refresh)
             resolved = self.runtime.asset_resolver.resolve(outcome.asset.asset_id)
+            key = IndicatorAssetKey.from_indicator(indicator)
+            registry.register(key, outcome.asset.asset_id,
+                              observation_count=len(resolved.dataframe),
+                              data_version=outcome.asset.content_hash or "")
             observations[indicator.concept] = ResolvedIndicatorAsset(
                 indicator=indicator, asset_id=outcome.asset.asset_id,
                 observation_count=len(resolved.dataframe),
