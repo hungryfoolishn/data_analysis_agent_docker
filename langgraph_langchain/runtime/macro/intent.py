@@ -194,7 +194,7 @@ class MacroRuntimeIntegration:
             return None
         aligned_path = self.runtime.workspace_dir / f"aligned_{uuid.uuid4().hex[:8]}.parquet"
         aligned_frame.reset_index().to_parquet(aligned_path, index=False)
-        from langgraph_langchain.data.assets import DataAsset, SchemaSnapshot
+        from langgraph_langchain.data.assets import SchemaSnapshot
 
         legs = comparison.legs
         input_versions = []
@@ -210,11 +210,14 @@ class MacroRuntimeIntegration:
             for item in comparison_item.disclosures
             if comparison_item.comparable
         ]
-        asset = DataAsset(
-            name=f"macro_aligned_{uuid.uuid4().hex[:8]}",
-            source_type="macro_aligned",
-            content_hash=None,  # computed by DataAsset model
-            schema_snapshot=SchemaSnapshot.from_dataframe(aligned_frame.reset_index()),
+        # B9.8.2 D2 fix: register through the sanctioned snapshot-backed API
+        # (register_dataframe) so AssetResolver can materialize the frame for
+        # downstream plan steps; the old direct-assets-dict registration left
+        # the aligned asset unrestorable.
+        asset = self.runtime.register_dataframe(
+            dataframe=aligned_frame.reset_index(),
+            source_path=aligned_path,
+            source_type="parquet",
             source_metadata={
                 "acquisition": "macro_context_builder",
                 "alignment_method": "yoy_rate_common_period",
@@ -229,8 +232,6 @@ class MacroRuntimeIntegration:
                 "disclosures": disclosures,
             },
         )
-        self.runtime.assets[asset.asset_id] = asset
-        self.runtime._persist()
         return asset.asset_id
 
     def _select_template(self, intent: MacroIntent) -> str:

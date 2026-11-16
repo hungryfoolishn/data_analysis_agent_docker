@@ -2177,10 +2177,16 @@ class AnalysisRuntime:
                 # execution has no succeeded record in the restored run.
                 if binding.execution_id in succeeded_execution_ids:
                     self.output_bindings.register(binding)
-            self.artifacts = {
+            restored_artifacts = {
                 item["artifact_id"]: RuntimeArtifact.model_validate(item)
                 for item in raw.get("artifacts", [])
             }
+            # Update in place (same reason as assets above): the EvidenceRegistry
+            # captures this dict at construction; replacing it wholesale would
+            # leave the registry with a stale view where post-restore artifact
+            # registrations are invisible to evidence reference validation.
+            self.artifacts.clear()
+            self.artifacts.update(restored_artifacts)
             self.findings = [dict(item) for item in raw.get("findings", [])]
             self.metric_definitions = [
                 dict(item) for item in raw.get("metric_definitions", [])
@@ -2243,7 +2249,9 @@ class AnalysisRuntime:
         self.task.input_asset_ids = []
         self.assets.clear()
         self.executions = []
-        self.artifacts = {}
+        # In place (see state-restore comment): EvidenceRegistry holds this
+        # dict reference from construction.
+        self.artifacts.clear()
         self.output_bindings.clear()
         self.findings = []
         self.metric_definitions = []

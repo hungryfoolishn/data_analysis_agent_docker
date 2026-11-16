@@ -78,6 +78,15 @@ def _prepared(frame: pd.DataFrame, time_column: str, value_column: str, frequenc
     ordered = ordered.sort_values("period").reset_index(drop=True)
     if ordered["value"].isna().all():
         raise MacroTransformError("Value column has no numeric observations")
+    # Duplicate periods corrupt lag arithmetic (Series.get returns sub-Series
+    # on a duplicated index); every transform requires unique period keys and
+    # fails fast instead (B9.8.2 §4.5 duplicate-period rule).
+    duplicated = int(ordered.duplicated(subset=["period"]).sum())
+    if duplicated:
+        raise MacroTransformError(
+            f"Input contains {duplicated} duplicate {frequency} period(s); "
+            "deduplicate or aggregate before transforming"
+        )
     return ordered
 
 
