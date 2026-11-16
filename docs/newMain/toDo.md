@@ -681,3 +681,19 @@ B9.8.2 完成 Macro Pack 身份解析、跨国家比较与 Evidence 生产链路
 - P0/P1 清零；P2 遗留见验收报告（canonical evidence 不持久化、既有 dashboard/reliability 失败等，不阻塞冻结）。
 
 **B10.2 已解锁，可以开始实施。**
+
+---
+
+## 十五、B9.8.3 CPI 同比口径修复与 B9 冻结复核（2026-11-16）
+
+B9.8.2 验收后代码复审发现 P1：G15 中美 CPI 同比比较的统计口径不一致（NBS"上年同期=100"同比指数被当同比百分比透传）。B9.8.3 已修复并重新执行全部冻结门禁：
+
+- 统计口径建模：`StatisticKind`（level/index_level/yoy_index/yoy_rate/mom_rate/qoq_rate/unknown）+ `MacroIndicator.statistic_kind` 显式字段（catalog 13 个指标全部声明）+ 旧数据白名单推导（不猜测，unknown 一律阻断）。
+- 统一转换出口 `normalize_to_yoy_rate()`：yoy_index 减 100、yoy_rate 透传不重转换、index/level 走 PeriodIndex lag yoy、不支持口径显式拒绝；NaN 保持缺失、inf 拒绝。
+- 比较引擎唯一出口接入；对齐资产 metadata 记录 `output_statistic_kind/output_unit/input_statistic_kinds/conversion_methods/transform_version`。
+- G15 对齐帧为精确值断言（CN fixture 99.8→−0.2 等，US≈+2.4266%），两侧同为 yoy_rate/percent；G16 real/nominal 阻断行为回归不变。
+- 验收文档：`docs/architecture/reviews/b9.8.3-cpi-semantics-fix-acceptance.md`（F1–F15 逐项复核）；`b9.8.2-final-integration-acceptance.md` 已同步修订。
+- 全量回归：1538 passed / 12 failed / 11 skipped，失败 nodeid 与基线 `22a93d0` 完全一致（0 新增）；B6 10/30 独立门禁通过。
+- 本轮提交：`f980b1e` → `c85363f` → `d946283` → `810cb4e` → 验收文档提交。
+
+**B9 维持正式冻结（P0/P1 清零，门禁全过）。B10.2 已解锁，待启动（本轮未实施）。**
