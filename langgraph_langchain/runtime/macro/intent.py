@@ -398,6 +398,11 @@ class MacroRuntimeIntegration:
                     "comparison_frequency": item.comparison_frequency,
                     "aligned_periods": item.aligned_periods,
                     "rate_columns": item.rate_columns,
+                    "output_statistic_kind": item.output_statistic_kind,
+                    "output_unit": item.output_unit,
+                    "input_statistic_kinds": dict(item.input_statistic_kinds),
+                    "conversion_methods": dict(item.conversion_methods),
+                    "transform_version": item.transform_version,
                     "incompatibilities": item.incompatibilities,
                     "disclosures": item.disclosures,
                 }

@@ -117,6 +117,33 @@ def test_us_cn_cpi_comparison_final_results(tmp_path):
     assert us_values == pytest.approx([us_expected] * len(us_values), abs=5e-3)
     # both sides now share ONE percent-scale quantity (no ~100 index values)
     assert all(abs(value) < 10.0 for value in cn_values + us_values)
+    # §5.1-5/6: both legs normalized to the SAME statistic kind and unit
+    assert per_concept["output_statistic_kind"] == "yoy_rate"
+    assert per_concept["output_unit"] == "percent"
+    # §5.1-4: US index level → period-lag yoy; CN YoY index → value - 100
+    assert per_concept["input_statistic_kinds"] == {
+        "us_cpi_monthly": "index_level",
+        "cn_cpi_yoy_annual": "yoy_index",
+    }
+    assert per_concept["conversion_methods"]["cn_cpi_yoy_annual"] == "yoy_index_minus_100"
+    assert (
+        per_concept["conversion_methods"]["us_cpi_monthly"]
+        == "index_level_yoy_period_lag_transform"
+    )
+    assert per_concept["transform_version"]
+    # §5.1-10: aligned asset metadata carries inputs + conversion lineage
+    metadata = run.runtime.assets[aligned_id].source_metadata
+    assert metadata["input_statistic_kinds"] == per_concept["input_statistic_kinds"]
+    assert metadata["conversion_methods"] == per_concept["conversion_methods"]
+    assert metadata["output_statistic_kind"] == "yoy_rate"
+    assert metadata["output_unit"] == "percent"
+    assert metadata["transform_version"] == per_concept["transform_version"]
+    assert set(metadata["input_asset_ids"]) == set(country_assets.values())
+    # §5.1-14: conversion + frequency-normalization rules are disclosed
+    disclosures = " ".join(per_concept["disclosures"])
+    assert "value - 100.0" in disclosures
+    assert "aggregated to annual" in disclosures
+    assert "statistic normalization" in disclosures
 
     # Evidence traces both country source assets and the aligned asset.
     inputs = {

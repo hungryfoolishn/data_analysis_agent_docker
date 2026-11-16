@@ -179,7 +179,31 @@ def test_cpi_base_period_difference_does_not_block_rate_comparison():
     resolution = CrossCountryComparator(resolved, resolver).resolve(ComparisonSpec(
         countries=("us", "cn"), concepts=("cpi",),
     ))
-    assert resolution.comparisons[0].comparable
+    comparison = resolution.comparisons[0]
+    assert comparison.comparable
+    # comparable ONLY as rates: aligned values are percent-scale, never
+    # ~100 index levels (B9.8.3 §5.3)
+    frame = CrossCountryComparator(resolved, resolver).build_aligned_frame(resolution)
+    assert all(abs(value) < 10.0 for column in frame.columns for value in frame[column].dropna())
+
+
+def test_unknown_statistic_kind_blocks_leg_explicitly():
+    """A leg whose statistic kind cannot be resolved must block the concept
+    with an explicit reason — never a silent guess (B9.8.3 §5.3)."""
+    us, cn = _cpi_legs()
+    cn_unknown = cn.model_copy(update={"statistic_kind": "unknown"})
+    resolved, resolver = _resolved_map([
+        (us, _fred_monthly_frame([2022, 2023, 2024])),
+        (cn_unknown, _nbs_annual_frame([2023, 2024], [102.0, 100.5])),
+    ])
+    resolution = CrossCountryComparator(resolved, resolver).resolve(ComparisonSpec(
+        countries=("us", "cn"), concepts=("cpi",),
+    ))
+    comparison = resolution.comparisons[0]
+    assert not comparison.comparable
+    assert any("refusing to guess" in reason or "cannot be normalized" in reason
+               for reason in comparison.incompatibilities)
+    assert resolution.comparable_concepts == []
 
 
 # ---------------------------------------------------------------------------
