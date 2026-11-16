@@ -116,7 +116,7 @@ def test_employment_template_us_only():
         ("nonfarm_payrolls", "us", "bls_employment", "bls", "monthly", 3),
     ])
     sufficiency, missing = check_data_sufficiency(template, resolved)
-    # any_of_concepts[0] = ["nonfarm_payrolls"] is satisfied by resolved data
+    # any_of_concepts[0] = ["nonfarm_payrolls"] satisfied by resolved data
     assert sufficiency == "partially_ready"
 
 
@@ -125,6 +125,7 @@ def test_blocked_when_required_indicator_missing():
     resolved = _resolved_map([
         ("cpi", "us", "fred_cpi", "fred", "monthly", 13),
     ])
+    # monetary_policy has required_concepts=["policy_rate"] which is missing
     sufficiency, missing = check_data_sufficiency(template, resolved)
     assert sufficiency == "blocked"
     assert any("policy_rate" in item for item in missing)

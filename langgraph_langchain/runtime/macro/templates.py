@@ -59,7 +59,7 @@ MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
     "inflation": MacroAnalysisTemplate(
         template_id="inflation",
         intent="Analyze CPI/PPI inflation (YoY, MoM, level changes).",
-        required_concepts=[],
+        required_concepts=["cpi"],
         optional_concepts=["ppi"],
         countries=("us", "cn"),
         default_transforms=["yoy", "mom"],
@@ -80,7 +80,7 @@ MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
         intent="Analyze employment market (levels, changes, trends).",
         required_concepts=[],
         optional_concepts=["nonfarm_payrolls", "unemployment_rate", "unemployment_level_bls"],
-        any_of_concepts=[["nonfarm_payrolls", "unemployment_rate", "unemployment_level_bls"]],
+        any_of_concepts=[["nonfarm_payrolls"], ["unemployment_rate"], ["unemployment_level_bls"]],
         countries=("us",),
         default_transforms=["mom", "rolling_average"],
         analysis_steps=["data_quality", "period_comparison"],
@@ -98,7 +98,7 @@ MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
     "monetary_policy": MacroAnalysisTemplate(
         template_id="monetary_policy",
         intent="Analyze policy rates and the monetary environment.",
-        required_concepts=[],
+        required_concepts=["policy_rate"],
         optional_concepts=["cpi"],
         countries=("us", "cn"),
         default_transforms=["period_comparison"],
