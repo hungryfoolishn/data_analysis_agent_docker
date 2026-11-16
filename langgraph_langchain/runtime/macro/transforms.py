@@ -58,6 +58,20 @@ def _period_series(frame: pd.DataFrame, time_column: str, frequency: str) -> pd.
             raise MacroTransformError(
                 f"Cannot use '{time_column}' as {frequency} periods: {exc}"
             ) from exc
+    if frequency == "monthly":
+        # BLS-style "YYYY-MNN" keys (B8.8 keeps the year inside the period
+        # label); dateutil misparses them as clock components, so map them
+        # explicitly before the generic datetime path.
+        as_str = column.astype(str)
+        if as_str.str.fullmatch(r"\d{4}-M\d{2}").all():
+            try:
+                return pd.PeriodIndex(
+                    [pd.Period(f"{v[:4]}-{v[-2:]}", freq="M") for v in as_str]
+                )
+            except (TypeError, ValueError) as exc:
+                raise MacroTransformError(
+                    f"Cannot parse BLS periods in '{time_column}': {exc}"
+                ) from exc
     try:
         periods = pd.PeriodIndex(pd.to_datetime(column), freq=alias)
     except (TypeError, ValueError, OverflowError) as exc:

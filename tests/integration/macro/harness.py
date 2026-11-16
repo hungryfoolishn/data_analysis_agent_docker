@@ -82,14 +82,56 @@ def default_fred_transport(url: str, params: dict) -> dict:
 
 
 def default_nbs_transport(url: str, params: dict) -> dict:
-    """Deterministic multi-year NBS annual payload."""
+    """Deterministic multi-year NBS annual payload, honoring the requested
+    sj range (the real easyquery API filters server-side via dfwds).
+
+    CPI (zb code A01030H) returns published YoY-rate magnitudes (~100); GDP
+    (A010101) returns level magnitudes.
+    """
+    import json as _json
+
+    zb_code = "A010101"
+    raw_dfwds = params.get("dfwds")
+    sj_start, sj_end = 2015, 2026
+    if isinstance(raw_dfwds, str):
+        if "A01030H" in raw_dfwds:
+            zb_code = "A01030H"
+        try:
+            for entry in _json.loads(raw_dfwds):
+                if entry.get("wdcode") == "sj":
+                    start, end = str(entry.get("valuecode", "")).split("-")
+                    sj_start, sj_end = int(start), int(end)
+        except (ValueError, AttributeError):
+            pass
+    values = (
+        [100.2, 100.3, 99.8, 100.5, 100.1]
+        if zb_code == "A01030H"
+        else [1349084 + idx * 25000 for idx in range(5)]
+    )
     return {
         "returncode": 200,
         "ret": [{"datanodes": [
-            {"data": {"code": "TEST", "sj": str(year), "data": 1349084 + idx * 25000}}
-            for idx, year in enumerate(range(2021, 2026))
+            {"data": {"code": zb_code, "sj": str(year), "data": value}}
+            for year, value in zip(range(2021, 2026), values)
+            if sj_start <= year <= sj_end
         ]}],
     }
+
+
+def default_bls_transport(url: str, params: dict) -> dict:
+    """Deterministic multi-year BLS monthly payload (CES format)."""
+    series_id = url.rsplit("/", 1)[-1] or "CES0000000001"
+    data = []
+    value = 150000.0
+    for year in (2022, 2023, 2024, 2025):
+        for month in range(1, 13):
+            value *= 1.0015
+            data.append({
+                "year": str(year),
+                "period": f"M{month:02d}",
+                "value": f"{value:.1f}",
+            })
+    return {"Results": {"series": [{"seriesID": series_id, "data": data}]}}
 
 
 class MacroProductionSession:
@@ -162,6 +204,14 @@ def build_macro_production_run(
     registry = AdapterRegistry()
     registry.register(fred)
     registry.register(nbs)
+    try:
+        from langgraph_langchain.data.adapters.public import BLSAdapter
+
+        bls = BLSAdapter(cache=None)
+        bls._transport = default_bls_transport
+        registry.register(bls)
+    except ImportError:
+        pass  # BLS scenarios degrade to clarification when absent
     acquisition = AcquisitionService(
         runtime=runtime, registry=registry, history_dir=workspace / ".data_acq"
     )

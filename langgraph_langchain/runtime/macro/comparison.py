@@ -158,6 +158,17 @@ def _parse_periods(values: Sequence[str], frequency: str) -> pd.PeriodIndex:
     alias = _PANDAS_ALIAS.get(frequency)
     if alias is None:
         raise ComparisonError(f"Unsupported comparison frequency: {frequency!r}")
+    # BLS-style "YYYY-MNN" keys misparse through dateutil; map them first.
+    if frequency == "monthly" and values and all(
+        len(str(v)) == 7 and str(v)[4:6] == "-M" and str(v)[6:].isdigit()
+        for v in values
+    ):
+        try:
+            return pd.PeriodIndex(
+                [pd.Period(f"{str(v)[:4]}-{str(v)[6:]}", freq="M") for v in values]
+            )
+        except (TypeError, ValueError) as exc:
+            raise ComparisonError(f"Cannot parse BLS periods: {exc}") from exc
     try:
         return pd.PeriodIndex(pd.to_datetime(list(values)), freq=alias)
     except (TypeError, ValueError, OverflowError):

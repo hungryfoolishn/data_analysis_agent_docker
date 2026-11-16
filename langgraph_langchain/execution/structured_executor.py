@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Callable, Mapping, Optional
 
@@ -140,6 +141,22 @@ class StructuredTaskExecutor:
                 error = {
                     "type": "ToolExecutionError",
                     "message": normalized_output,
+                }
+            elif normalized_output.startswith('{"error"'):
+                # The structured-tool error contract (tools.registry.tool_error):
+                # a top-level {"error": ...} JSON payload is a tool FAILURE and
+                # must never be adjudicated as a bare success (B9.8.2 stage 4
+                # E2E finding); downstream binding references would otherwise
+                # resolve against a step that produced nothing.
+                try:
+                    payload = json.loads(output_text)
+                    message = str(payload.get("error") or normalized_output)
+                except ValueError:
+                    message = normalized_output
+                status = "failed"
+                error = {
+                    "type": "ToolExecutionError",
+                    "message": message,
                 }
             elif normalized_output.startswith("REPORT REJECTED"):
                 status = "needs_revision"

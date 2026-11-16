@@ -41,6 +41,12 @@ def _step_id(tag: str) -> str:
     return f"step_{uuid.uuid5(uuid.NAMESPACE_URL, f'macro:{tag}').hex}"
 
 
+def _time_column_for(indicator: MacroIndicator) -> str:
+    """Physical time column of a registered adapter asset (B9.8.2 E2E fix):
+    FRED normalizes to ``date``; NBS/BLS/BEA normalize to ``period``."""
+    return "date" if indicator.source_id == "fred" else "period"
+
+
 MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
     "gdp_growth": MacroAnalysisTemplate(
         template_id="gdp_growth",
@@ -435,7 +441,7 @@ def build_template_plan(
             step_id=_step_id(f"dq:{primary_concept}"),
             operation="data_quality",
             input_refs=[primary.asset_id],
-            parameters={"time_column": "period"},
+            parameters={"time_column": _time_column_for(primary.indicator)},
             expected_output="dataframe",
             depends_on=[],
         )
@@ -443,7 +449,7 @@ def build_template_plan(
 
     # 2. per-indicator macro transforms (deterministic step ids)
     transform_steps: list[GeneralPlanStep] = []
-    for concept, item in sorted(used.items()):
+    for indicator_id, item in sorted(used.items()):
         indicator = item.indicator
         transform = next(
             (
@@ -455,16 +461,16 @@ def build_template_plan(
         )
         if transform is None:
             continue
-        output_name = f"{concept}_{transform}"
+        output_name = f"{indicator_id}_{transform}"
         steps.append(
             GeneralPlanStep(
-                step_id=_step_id(f"xf:{concept}:{transform}"),
+                step_id=_step_id(f"xf:{indicator_id}:{transform}"),
                 operation="macro_transform",
                 input_refs=[item.asset_id],
                 parameters={
                     "transform": transform,
                     "column": "value",
-                    "time_column": "period",
+                    "time_column": _time_column_for(indicator),
                     "frequency": indicator.frequency,
                 },
                 expected_output="dataframe",
@@ -473,7 +479,7 @@ def build_template_plan(
             )
         )
         transform_steps.append(
-            (concept, steps[-1], indicator.frequency, transform)
+            (indicator_id, steps[-1], indicator.frequency, transform)
         )
 
     # 3. analysis steps
@@ -491,7 +497,7 @@ def build_template_plan(
             )
         )
     elif transform_steps:
-        concept, transform_step, _, transform = transform_steps[0]
+        indicator_id, transform_step, _, transform = transform_steps[0]
         analysis_operation = (
             template.analysis_steps[0]
             if template.analysis_steps and template.analysis_steps[0] in {"data_quality", "trend"}
@@ -499,11 +505,12 @@ def build_template_plan(
         )
         steps.append(
             GeneralPlanStep(
-                step_id=_step_id(f"analysis:{concept}"),
+                step_id=_step_id(f"analysis:{indicator_id}"),
                 operation=analysis_operation,
                 input_refs=[f"{transform_step.step_id}.{transform_step.output_name}"],
                 parameters={
                     "column": "value",
+                    "value_column": "value",
                     "time_column": "period",
                 },
                 expected_output="dataframe",
@@ -576,9 +583,7 @@ def build_comparison_plan(
     input_assets: set[str] = set()
 
     def _time_column(indicator: Optional[MacroIndicator]) -> str:
-        if indicator is not None and indicator.source_id in {"fred"}:
-            return "date"
-        return "period"
+        return _time_column_for(indicator) if indicator is not None else "period"
 
     # 1. per-leg data quality — every country's raw asset is independently
     # traceable in the plan and downstream evidence.
