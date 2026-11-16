@@ -9,6 +9,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from dataclasses import dataclass
+from typing import Optional
 
 TransformKind = Literal[
     "yoy",
@@ -26,6 +27,22 @@ FrequencyKind = Literal["monthly", "quarterly", "annual", "weekly", "daily"]
 AdjustmentKind = Literal["sa", "nsa", "unknown"]
 PriceBasisKind = Literal["current", "real", "index", "unknown"]
 LevelKind = Literal["level", "growth_rate", "index"]
+
+# B9.8.3: statistical meaning of the VALUE, independent of the physical unit
+# (percent / index points / currency).  "growth_rate" only says the series is
+# a rate family; it does NOT say whether the values are percentages or a
+# base-100 index (the NBS "same period last year = 100" trap).  Declared on
+# the indicator; legacy entries without it are derived by the documented
+# whitelist in statistics.resolve_statistic_kind — never guessed.
+StatisticKind = Literal[
+    "level",
+    "index_level",
+    "yoy_index",
+    "yoy_rate",
+    "mom_rate",
+    "qoq_rate",
+    "unknown",
+]
 
 
 def _utc_now_iso() -> str:
@@ -61,6 +78,9 @@ class MacroIndicator(BaseModel):
     price_basis: PriceBasisKind = "unknown"
     cumulative: bool = False
     level_kind: LevelKind = "level"
+    # B9.8.3: explicit statistical kind; None = legacy entry, derived by the
+    # statistics-module whitelist (unknown is rejected downstream, not guessed).
+    statistic_kind: Optional[StatisticKind] = None
     base_period: Optional[str] = None
     release_lag_days: Optional[int] = None
     revision_policy: Literal["revised", "final_only", "unknown"] = "unknown"

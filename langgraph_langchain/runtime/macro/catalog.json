@@ -17,8 +17,18 @@
       "base_period": "2017",
       "release_lag_days": 30,
       "revision_policy": "revised",
-      "comparability": {"note": "SAAR quarterly real GDP"},
-      "supported_transforms": ["yoy", "qoq", "annualized", "index_change", "rolling_average", "period_comparison"]
+      "comparability": {
+        "note": "SAAR quarterly real GDP"
+      },
+      "supported_transforms": [
+        "yoy",
+        "qoq",
+        "annualized",
+        "index_change",
+        "rolling_average",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "us_gdp_current_annual": {
       "indicator_id": "us_gdp_current_annual",
@@ -35,8 +45,14 @@
       "level_kind": "level",
       "release_lag_days": 45,
       "revision_policy": "revised",
-      "comparability": {"note": "annual current-dollar GDP; not comparable to chained real series without deflation"},
-      "supported_transforms": ["index_change", "period_comparison"]
+      "comparability": {
+        "note": "annual current-dollar GDP; not comparable to chained real series without deflation"
+      },
+      "supported_transforms": [
+        "index_change",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "us_personal_income_annual": {
       "indicator_id": "us_personal_income_annual",
@@ -53,7 +69,11 @@
       "level_kind": "level",
       "revision_policy": "revised",
       "comparability": {},
-      "supported_transforms": ["index_change", "period_comparison"]
+      "supported_transforms": [
+        "index_change",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "us_cpi_monthly": {
       "indicator_id": "us_cpi_monthly",
@@ -70,8 +90,17 @@
       "level_kind": "index",
       "base_period": "1982-1984",
       "revision_policy": "final_only",
-      "comparability": {"note": "US CPI-U; base period differs from CN CPI"},
-      "supported_transforms": ["yoy", "mom", "index_change", "rolling_average", "period_comparison"]
+      "comparability": {
+        "note": "US CPI-U; base period differs from CN CPI"
+      },
+      "supported_transforms": [
+        "yoy",
+        "mom",
+        "index_change",
+        "rolling_average",
+        "period_comparison"
+      ],
+      "statistic_kind": "index_level"
     },
     "us_ppi_monthly": {
       "indicator_id": "us_ppi_monthly",
@@ -88,8 +117,16 @@
       "level_kind": "index",
       "base_period": "1982",
       "revision_policy": "revised",
-      "comparability": {"note": "all commodities PPI"},
-      "supported_transforms": ["yoy", "mom", "index_change", "rolling_average"]
+      "comparability": {
+        "note": "all commodities PPI"
+      },
+      "supported_transforms": [
+        "yoy",
+        "mom",
+        "index_change",
+        "rolling_average"
+      ],
+      "statistic_kind": "index_level"
     },
     "us_unemployment_monthly": {
       "indicator_id": "us_unemployment_monthly",
@@ -105,8 +142,15 @@
       "cumulative": false,
       "level_kind": "level",
       "revision_policy": "revised",
-      "comparability": {"note": "civilian labor force unemployment rate"},
-      "supported_transforms": ["mom", "rolling_average", "period_comparison"]
+      "comparability": {
+        "note": "civilian labor force unemployment rate"
+      },
+      "supported_transforms": [
+        "mom",
+        "rolling_average",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "us_nonfarm_payrolls_monthly": {
       "indicator_id": "us_nonfarm_payrolls_monthly",
@@ -122,8 +166,16 @@
       "cumulative": false,
       "level_kind": "level",
       "revision_policy": "revised",
-      "comparability": {"note": "total nonfarm payrolls (CES)"},
-      "supported_transforms": ["mom", "index_change", "rolling_average", "period_comparison"]
+      "comparability": {
+        "note": "total nonfarm payrolls (CES)"
+      },
+      "supported_transforms": [
+        "mom",
+        "index_change",
+        "rolling_average",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "us_bls_unemployment_monthly": {
       "indicator_id": "us_bls_unemployment_monthly",
@@ -139,8 +191,15 @@
       "cumulative": false,
       "level_kind": "level",
       "revision_policy": "revised",
-      "comparability": {"note": "CPS-based unemployment (LNS14000000)"},
-      "supported_transforms": ["mom", "rolling_average", "period_comparison"]
+      "comparability": {
+        "note": "CPS-based unemployment (LNS14000000)"
+      },
+      "supported_transforms": [
+        "mom",
+        "rolling_average",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "us_fedfunds_monthly": {
       "indicator_id": "us_fedfunds_monthly",
@@ -156,8 +215,14 @@
       "cumulative": false,
       "level_kind": "level",
       "revision_policy": "revised",
-      "comparability": {"note": "effective federal funds rate"},
-      "supported_transforms": ["period_comparison", "rolling_average"]
+      "comparability": {
+        "note": "effective federal funds rate"
+      },
+      "supported_transforms": [
+        "period_comparison",
+        "rolling_average"
+      ],
+      "statistic_kind": "level"
     },
     "us_exports_monthly": {
       "indicator_id": "us_exports_monthly",
@@ -173,8 +238,16 @@
       "cumulative": false,
       "level_kind": "level",
       "revision_policy": "revised",
-      "comparability": {"note": "goods and services exports"},
-      "supported_transforms": ["yoy", "mom", "rolling_average", "period_comparison"]
+      "comparability": {
+        "note": "goods and services exports"
+      },
+      "supported_transforms": [
+        "yoy",
+        "mom",
+        "rolling_average",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "us_imports_monthly": {
       "indicator_id": "us_imports_monthly",
@@ -190,8 +263,16 @@
       "cumulative": false,
       "level_kind": "level",
       "revision_policy": "revised",
-      "comparability": {"note": "goods and services imports"},
-      "supported_transforms": ["yoy", "mom", "rolling_average", "period_comparison"]
+      "comparability": {
+        "note": "goods and services imports"
+      },
+      "supported_transforms": [
+        "yoy",
+        "mom",
+        "rolling_average",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "cn_gdp_annual": {
       "indicator_id": "cn_gdp_annual",
@@ -208,8 +289,14 @@
       "level_kind": "level",
       "release_lag_days": 60,
       "revision_policy": "revised",
-      "comparability": {"note": "annual GDP at current prices; CN quarterly cumulative series not yet registered"},
-      "supported_transforms": ["index_change", "period_comparison"]
+      "comparability": {
+        "note": "annual GDP at current prices; CN quarterly cumulative series not yet registered"
+      },
+      "supported_transforms": [
+        "index_change",
+        "period_comparison"
+      ],
+      "statistic_kind": "level"
     },
     "cn_cpi_yoy_annual": {
       "indicator_id": "cn_cpi_yoy_annual",
@@ -227,8 +314,14 @@
       "base_period": "same_period_last_year",
       "release_lag_days": 10,
       "revision_policy": "final_only",
-      "comparability": {"note": "published YoY rate; do NOT compute YoY again (B9 §5.5)"},
-      "supported_transforms": ["rolling_average", "period_comparison"]
+      "comparability": {
+        "note": "published YoY rate; do NOT compute YoY again (B9 §5.5)"
+      },
+      "supported_transforms": [
+        "rolling_average",
+        "period_comparison"
+      ],
+      "statistic_kind": "yoy_index"
     }
   }
 }
