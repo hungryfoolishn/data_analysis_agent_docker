@@ -102,8 +102,21 @@ def test_us_cn_cpi_comparison_final_results(tmp_path):
     # Values are yoy-rate magnitudes (both positive drift fixtures).
     for column in ("cpi_us", "cpi_cn"):
         assert frame[column].notna().all()
+    # B9.8.3: BOTH sides are yoy_rate in percent — exact fixture values.
+    # CN fixture YoY index [100.2, 100.3, 99.8, 100.5, 100.1] (2021-2025)
+    # converts by value - 100 → 2023: -0.2, 2024: 0.5, 2025: 0.1.
+    # US monthly index drifts ×1.002/month → every monthly yoy is exactly
+    # (1.002^12 − 1)×100 ≈ 2.4268%.
+    us_expected = (1.002 ** 12 - 1) * 100.0
+    expected_cn = [-0.2, 0.5, 0.1]  # by fixture year order 2023/2024/2025
     cn_values = frame["cpi_cn"].tolist()
-    assert all(95.0 < value < 105.0 for value in cn_values)  # published-rate range
+    assert sorted(cn_values) == pytest.approx(sorted(expected_cn))
+    us_values = frame["cpi_us"].tolist()
+    # fixture monthlies are 3-decimal rounded → tiny ratio jitter around the
+    # constant (1.002^12 − 1)×100
+    assert us_values == pytest.approx([us_expected] * len(us_values), abs=5e-3)
+    # both sides now share ONE percent-scale quantity (no ~100 index values)
+    assert all(abs(value) < 10.0 for value in cn_values + us_values)
 
     # Evidence traces both country source assets and the aligned asset.
     inputs = {

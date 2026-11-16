@@ -145,16 +145,26 @@ def test_g15_cpi_comparison_comparable_on_common_years():
     assert comparison.comparable
     assert {leg.country for leg in comparison.legs} == {"us", "cn"}
     assert comparison.comparison_frequency == "annual"
-    # US CPI index legs compare as yoy rates; CN published yoy passes through
-    assert any("not re-differentiated" in d for d in comparison.disclosures)
+    # B9.8.3: CN YoY index (base=100) is converted by value - 100; US index
+    # level gets the PeriodIndex-aware yoy transform — one quantity on both
+    # sides.
+    assert any("value - 100.0" in d for d in comparison.disclosures)
     assert any("aggregated to annual" in d for d in comparison.disclosures)
+    # per-leg statistic-kind lineage recorded
+    assert comparison.input_statistic_kinds["cn_cpi_yoy_annual"] == "yoy_index"
+    assert comparison.input_statistic_kinds["us_cpi_monthly"] == "index_level"
+    assert comparison.conversion_methods["cn_cpi_yoy_annual"] == "yoy_index_minus_100"
+    assert comparison.output_statistic_kind == "yoy_rate"
+    assert comparison.output_unit == "percent"
     assert comparison.aligned_periods == ["2024", "2025"]
     assert set(comparison.rate_columns) == {"cpi_cn", "cpi_us"}
     frame = comparator.build_aligned_frame(resolution)
     assert list(frame.columns) == sorted({"cpi_cn", "cpi_us"})
     assert list(frame.index) == ["2024", "2025"]
-    # US 2025 annual yoy ≈ mean of monthly yoy values (positive drift); CN 99.8
-    assert frame.loc["2025", "cpi_cn"] == pytest.approx(99.8)
+    # US 2025 annual yoy ≈ mean of monthly yoy values (positive drift); CN
+    # 2025 index 99.8 → -0.2 percent (B9.8.3 fix)
+    assert frame.loc["2025", "cpi_cn"] == pytest.approx(-0.2)
+    assert frame.loc["2024", "cpi_cn"] == pytest.approx(0.3)
     assert frame.loc["2025", "cpi_us"] > 0
 
 

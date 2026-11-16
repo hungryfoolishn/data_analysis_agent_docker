@@ -210,6 +210,17 @@ class MacroRuntimeIntegration:
             for item in comparison_item.disclosures
             if comparison_item.comparable
         ]
+        # B9.8.3: statistic-kind lineage — every aligned value is one quantity.
+        input_statistic_kinds: dict[str, str] = {}
+        conversion_methods: dict[str, str] = {}
+        transform_version = ""
+        for comparison_item in comparison.comparisons:
+            if not comparison_item.comparable:
+                continue
+            input_statistic_kinds.update(comparison_item.input_statistic_kinds)
+            conversion_methods.update(comparison_item.conversion_methods)
+            transform_version = comparison_item.transform_version
+
         # B9.8.2 D2 fix: register through the sanctioned snapshot-backed API
         # (register_dataframe) so AssetResolver can materialize the frame for
         # downstream plan steps; the old direct-assets-dict registration left
@@ -228,6 +239,11 @@ class MacroRuntimeIntegration:
                 "comparison_method": comparison.spec.comparison_method,
                 "alignment_policy": comparison.spec.alignment_policy,
                 "comparable_concepts": comparison.comparable_concepts,
+                "output_statistic_kind": "yoy_rate",
+                "output_unit": "percent",
+                "input_statistic_kinds": input_statistic_kinds,
+                "conversion_methods": conversion_methods,
+                "transform_version": transform_version,
                 "statistics_scope": "aligned_comparison",
                 "disclosures": disclosures,
             },

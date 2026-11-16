@@ -39,9 +39,14 @@ from langgraph_langchain.runtime.macro.registry import (
     IndicatorAssetKey,
     resolve_indicator_asset_key,
 )
+from langgraph_langchain.runtime.macro.statistics import (
+    NormalizedRateResult,
+    StatisticSemanticsError,
+    normalize_to_yoy_rate,
+    resolve_statistic_kind,
+)
 from langgraph_langchain.runtime.macro.transforms import (
     MacroTransformError,
-    apply_macro_transform,
 )
 
 __all__ = [
@@ -108,8 +113,17 @@ class CountryAssetLeg:
         )
 
     @property
+    def statistic_kind(self) -> str:
+        """Explicit statistical kind (B9.8.3) — what the VALUE means."""
+        return resolve_statistic_kind(self.indicator)
+
+    @property
     def rate_nature(self) -> str:
-        if self.indicator.level_kind == "growth_rate":
+        """Rate nature after normalization to yoy_rate: index/rate-family
+        kinds produce base-independent rates; a level quantity produces a
+        growth rate carrying its price basis (real/nominal)."""
+        kind = self.statistic_kind
+        if kind in {"yoy_index", "yoy_rate", "index_level"}:
             return "rate"
         return _RATE_NATURE.get(self.indicator.price_basis, "rate")
 
@@ -128,6 +142,13 @@ class ConceptComparison:
     rate_columns: list[str] = field(default_factory=list)
     # rate_column -> {period_str: value}, inner-joined on common periods
     aligned_values: dict[str, dict[str, float]] = field(default_factory=dict)
+    # B9.8.3 statistic-kind lineage: everything in the aligned frame is one
+    # quantity (yoy_rate / percent), traceable per input leg.
+    output_statistic_kind: str = "yoy_rate"
+    output_unit: str = "percent"
+    input_statistic_kinds: dict[str, str] = field(default_factory=dict)
+    conversion_methods: dict[str, str] = field(default_factory=dict)
+    transform_version: str = ""
 
 
 @dataclass
@@ -216,36 +237,25 @@ def _leg_period_frame(
 
 def _leg_rate_series(
     frame: pd.DataFrame, leg: CountryAssetLeg
-) -> tuple[pd.DataFrame, list[str]]:
-    """Unify one leg into a YoY-rate series.
+) -> tuple[pd.DataFrame, list[str], NormalizedRateResult]:
+    """Unify one leg into a YoY-rate series in percent (B9.8.3 §4.3).
 
-    Published growth-rate legs pass through untouched (B9 §5.5); level/index
-    legs get a frequency-aware yoy transform (annual yoy = previous-year
-    change).  Returns (rate_frame, disclosures).
+    Every leg goes through the single statistic-kind normalization exit —
+    NBS "same period last year = 100" YoY indices are converted by
+    value − 100, published YoY rates pass through untouched (never
+    re-differentiated, never shifted), index/level series get the
+    PeriodIndex-aware yoy transform.  Returns (rate_frame, disclosures,
+    normalization lineage).
     """
     prepared, parse_disclosures = _leg_period_frame(frame, leg)
     disclosures: list[str] = list(parse_disclosures)
-    if leg.indicator.level_kind == "growth_rate":
-        # Published YoY rate: use as-is, never re-diff.
-        disclosures.append(
-            f"{leg.country} {leg.concept}: published YoY rate used as-is "
-            "(not re-differentiated)"
-        )
-        return prepared, disclosures
-    result, warnings = apply_macro_transform(
-        prepared,
-        transform="yoy",
-        frequency=leg.indicator.frequency,
-        semantics=leg.semantics,
-    )
-    for warning in warnings:
+    try:
+        normalized = normalize_to_yoy_rate(prepared, leg.indicator)
+    except StatisticSemanticsError as exc:
+        raise ComparisonError(str(exc)) from exc
+    for warning in normalized.warnings:
         disclosures.append(f"{leg.country} {leg.concept}: {warning}")
-    disclosures.append(
-        f"{leg.country} {leg.concept}: yoy computed from "
-        f"{leg.indicator.level_kind} series ({leg.indicator.price_basis} basis, "
-        f"{leg.indicator.frequency})"
-    )
-    return result, disclosures
+    return normalized.dataframe, disclosures, normalized
 
 
 def _normalize_frequency(
@@ -354,11 +364,12 @@ class CrossCountryComparator:
                 key=lambda f: _FREQUENCY_ORDER.get(f, -1),
             )
             rate_frames: list[tuple[CountryAssetLeg, pd.DataFrame]] = []
+            normalizations: list[NormalizedRateResult] = []
             all_disclosures: list[str] = []
             blocked = False
             for leg in comparison.legs:
                 try:
-                    rates, disclosures = _leg_rate_series(
+                    rates, disclosures, normalized = _leg_rate_series(
                         self._resolve_dataframe(leg.asset_id), leg
                     )
                 except (ComparisonError, MacroTransformError) as exc:
@@ -369,6 +380,7 @@ class CrossCountryComparator:
                     continue
                 all_disclosures.extend(disclosures)
                 rate_frames.append((leg, rates))
+                normalizations.append(normalized)
             if blocked or len(rate_frames) < 2:
                 continue
             rate_frames, normalize_disclosures = _normalize_frequency(
@@ -414,6 +426,30 @@ class CrossCountryComparator:
                         str(period)
                     ] = value
             comparison.comparison_frequency = target
+            # B9.8.3: statistic-kind lineage — the aligned frame holds ONE
+            # quantity (yoy_rate / percent) with per-leg conversion trace.
+            comparison.output_statistic_kind = "yoy_rate"
+            comparison.output_unit = "percent"
+            comparison.input_statistic_kinds = {
+                leg.indicator.indicator_id: leg.statistic_kind
+                for leg in comparison.legs
+            }
+            comparison.conversion_methods = {
+                normalized.indicator_id: normalized.conversion_method
+                for normalized in normalizations
+            }
+            comparison.transform_version = (
+                normalizations[0].transform_version if normalizations else ""
+            )
+            all_disclosures.append(
+                "statistic normalization: aligned values are yoy_rate in "
+                "percent for every country ("
+                + ", ".join(
+                    f"{indicator_id}:{method}"
+                    for indicator_id, method in comparison.conversion_methods.items()
+                )
+                + ")"
+            )
             comparison.disclosures = all_disclosures
             comparison.disclosures.append(
                 "alignment: inner join on real period keys; common periods "
