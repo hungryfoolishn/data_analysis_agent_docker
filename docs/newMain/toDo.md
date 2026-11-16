@@ -661,3 +661,23 @@ B8 数据获取平台已完成 B8.8–B8.11 连续验收并冻结：
    频率转换全部在 B9 实现。
 4. **B10 Financial Domain Pack** 依赖 B8 冻结接口与 B9 之外的独立财务边界；
    **B11 多 Agent 研究编排** 依赖 B9/B10 数据与工具能力，暂不启动。
+
+---
+
+## 十四、B9.8.2 最终集成验收与 B9 正式冻结（2026-11-16）
+
+B9.8.2 完成 Macro Pack 身份解析、跨国家比较与 Evidence 生产链路闭环，B9 正式冻结：
+
+- 验收报告：`docs/architecture/reviews/b9.8.2-final-integration-acceptance.md`
+- 基线审计：`docs/architecture/reviews/b9.8.2-baseline-audit.md`
+- 本轮提交：`e6474c2`（审计）→ `17ab551`（IndicatorAssetKey 全链路统一）→ `994c605`（跨国家比较管线）→ `10d749c`（Evidence 生产链路 + 通用 Runtime 缺陷修复）→ `ab74816`（生产 Runtime E2E 覆盖 + 执行器缺陷修复）
+
+验收要点：
+
+- IndicatorAssetKey 经唯一解析入口 `resolve_indicator_asset_key()` 贯穿 Intent / Template / Plan Builder / Data Sufficiency / 比较管线；US/CN 同 concept 不覆盖。
+- G15（中美CPI对比）经生产 Runtime 完成对齐比较；G16（中美GDP对比）按实际/名义口径规则阻断直接比较并披露，两国数据独立分析、证据与报告可分国追溯；`build_aligned_asset()` 进入生产链路（快照化注册）。
+- Macro Evidence 走真实 `run_analysis_operation` + canonical execution + Binding adjudication + EvidenceRegistry + Verified Report；重试/伪造 task_id/缺 binding/缺 evidence 拒绝行为均有测试。
+- 全量回归：1519 passed / 12 failed / 11 skipped，失败集与基线 `22a93d0` 完全一致（0 新增）；B6 Golden（10 datasets / 30 questions）独立通过。
+- P0/P1 清零；P2 遗留见验收报告（canonical evidence 不持久化、既有 dashboard/reliability 失败等，不阻塞冻结）。
+
+**B10.2 已解锁，可以开始实施。**
