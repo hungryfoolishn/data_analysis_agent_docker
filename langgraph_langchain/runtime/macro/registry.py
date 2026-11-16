@@ -20,6 +20,14 @@ class IndicatorAssetKey:
 
     Fields mirror MacroIndicator identity dimensions.  concept alone is
     explicitly NOT sufficient as a key (B9.8.1 frozen rule).
+
+    Identity layers (B9.8.2 §3.1):
+    - asset identity: all six fields below;
+    - query conditions (period range, ...): NOT part of the key;
+    - data attributes (unit, seasonal_adjustment, price_basis, base_period):
+      carried by MacroIndicator / MacroTimeSemantics, compared via
+      ``comparable_with`` before any cross-series comparison;
+    - asset version: ``data_version`` on RegisteredIndicatorAsset.
     """
 
     indicator_id: str
@@ -49,6 +57,18 @@ class IndicatorAssetKey:
             "source_id": self.source_id,
             "dataset_id": self.dataset_id,
         }
+
+
+def resolve_indicator_asset_key(indicator: MacroIndicator) -> IndicatorAssetKey:
+    """Single public entry for indicator asset identity resolution (B9.8.2 §3.2).
+
+    Every module that needs an IndicatorAssetKey (catalog consumers, intent,
+    template requirement resolver, plan builder, data sufficiency, context
+    builder) must go through this function; ad-hoc key construction from raw
+    strings elsewhere is forbidden.  ``indicator`` must come from the
+    MacroIndicatorCatalog so indicator_id uniqueness/stability is guaranteed.
+    """
+    return IndicatorAssetKey.from_indicator(indicator)
 
 
 @dataclass(frozen=True)

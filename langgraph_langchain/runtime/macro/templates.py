@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from langgraph_langchain.runtime.general_planner import (
     GeneralAnalysisPlan,
@@ -25,6 +25,10 @@ from langgraph_langchain.runtime.macro.models import (
     MacroAnalysisTemplate,
     MacroEvidenceRequirement,
     MacroIndicator,
+)
+from langgraph_langchain.runtime.macro.registry import (
+    IndicatorAssetKey,
+    resolve_indicator_asset_key,
 )
 
 
@@ -175,38 +179,180 @@ class ResolvedIndicatorAsset:
     observation_count: int
 
 
+@dataclass(frozen=True)
+class TemplateRequirementResolution:
+    """Unified template-requirement resolution (B9.8.2 §3.4).
+
+    ONE resolution result shared by Data Sufficiency and Plan Builder — the
+    two consumers must never re-query the registry independently and diverge.
+    All identity handling goes through IndicatorAssetKey (via
+    ``resolve_indicator_asset_key``); the ``entries`` dict is indexed by
+    ``indicator_id`` which is unique and stable inside the catalog, while
+    ``concept_index``/``concept_countries`` provide the multi-result,
+    ambiguity-explicit concept convenience view (B9.8.2 §3.3).
+
+    Requirement semantics (B9.8.2 §3.5):
+    - ``required_concepts``: ALL must resolve;
+    - ``optional_concepts``: included when available, never blocking;
+    - ``any_of_concepts``: AND between groups, OR inside a group;
+    - ``requested_countries``: bookkeeping per (concept, country); a concept
+      is marked ``country_incomplete`` when the request spans multiple
+      countries but some requested country has no data for it (the
+      cross-country comparison pipeline consumes this in B9.8.2 stage 2).
+    """
+
+    template_id: str
+    required_concepts: tuple[str, ...]
+    optional_concepts: tuple[str, ...]
+    entries: dict[str, ResolvedIndicatorAsset]
+    keys: dict[str, IndicatorAssetKey]
+    concept_index: dict[str, tuple[str, ...]]
+    concept_countries: dict[str, dict[str, tuple[str, ...]]]
+    requested_countries: tuple[str, ...]
+    missing_required: tuple[str, ...]
+    unsatisfied_any_of: tuple[tuple[str, ...], ...]
+    country_incomplete: tuple[str, ...]
+    thin_observations: tuple[str, ...]
+    sufficiency: str
+    missing: tuple[str, ...]
+
+    def primary_indicator_id(self) -> str:
+        """Deterministic primary asset: first required concept's sorted
+        indicator, else first optional concept's, else sorted first (fixes
+        the concept-keyed dict lookup that silently fell back to insertion
+        order — B9.8.2 D7)."""
+        candidates: list[str] = []
+        for concept in list(self.required_concepts) + list(self.optional_concepts):
+            candidates.extend(self.concept_index.get(concept, ()))
+        for indicator_id in sorted(set(candidates)):
+            if indicator_id in self.entries:
+                return indicator_id
+        return sorted(self.entries)[0]
+
+
+def resolve_template_requirements(
+    template: MacroAnalysisTemplate,
+    resolved: dict[str, ResolvedIndicatorAsset],
+    *,
+    requested_countries: Sequence[str] = (),
+) -> TemplateRequirementResolution:
+    """Resolve template requirements against resolved indicator assets.
+
+    The single source of truth consumed by ``check_data_sufficiency`` and
+    ``build_template_plan`` (B9.8.2 §3.4).
+    """
+    keys: dict[str, IndicatorAssetKey] = {
+        indicator_id: resolve_indicator_asset_key(item.indicator)
+        for indicator_id, item in resolved.items()
+    }
+    concept_index: dict[str, list[str]] = {}
+    concept_countries: dict[str, dict[str, list[str]]] = {}
+    for indicator_id, item in sorted(resolved.items()):
+        concept = item.indicator.concept
+        concept_index.setdefault(concept, []).append(indicator_id)
+        country_map = concept_countries.setdefault(concept, {})
+        country_map.setdefault(item.indicator.country, []).append(indicator_id)
+
+    frozen_index = {
+        concept: tuple(sorted(ids)) for concept, ids in concept_index.items()
+    }
+    frozen_countries = {
+        concept: {
+            country: tuple(sorted(ids)) for country, ids in country_map.items()
+        }
+        for concept, country_map in concept_countries.items()
+    }
+
+    missing_required = tuple(
+        concept
+        for concept in template.required_concepts
+        if concept not in frozen_index
+    )
+    # any_of semantics (B9.8.4): at least ONE group must be fully satisfied
+    # (OR between groups, AND inside a group).  Individual unmet groups are
+    # recorded for diagnostics but only block when NO group is satisfied.
+    unsatisfied_any_of: list[tuple[str, ...]] = []
+    if template.any_of_concepts:
+        for group in template.any_of_concepts:
+            if not all(concept in frozen_index for concept in group):
+                unsatisfied_any_of.append(tuple(group))
+        if len(unsatisfied_any_of) == len(template.any_of_concepts):
+            # No group satisfied → requirement violated.
+            pass
+        else:
+            unsatisfied_any_of = []
+
+    # Multi-country requests: a concept whose data misses some requested
+    # country is recorded as country_incomplete (comparison decides blocking).
+    countries = tuple(dict.fromkeys(requested_countries))
+    country_incomplete: list[str] = []
+    if len(countries) >= 2:
+        for concept, country_map in frozen_countries.items():
+            absent = [c for c in countries if c not in country_map]
+            if absent:
+                country_incomplete.append(f"{concept}:{'+'.join(absent)}")
+
+    thin: list[str] = []
+    min_obs = template.evidence_requirements.min_observations
+    for indicator_id, item in sorted(resolved.items()):
+        if item.observation_count < min_obs:
+            thin.append(indicator_id)
+
+    missing: list[str] = []
+    if missing_required:
+        missing.append(f"missing required indicators: {list(missing_required)}")
+    if unsatisfied_any_of:
+        all_needed = sorted({c for group in unsatisfied_any_of for c in group})
+        missing.append(f"requires at least one of: {all_needed}")
+    if thin:
+        missing.append(
+            f"observation count below {min_obs}: {sorted(thin)}"
+        )
+    if country_incomplete:
+        missing.append(
+            f"no data for requested countries: {sorted(country_incomplete)}"
+        )
+
+    if missing_required or unsatisfied_any_of:
+        sufficiency = "blocked"
+    elif thin or country_incomplete:
+        sufficiency = "partially_ready"
+    else:
+        sufficiency = "ready"
+
+    return TemplateRequirementResolution(
+        template_id=template.template_id,
+        required_concepts=tuple(template.required_concepts),
+        optional_concepts=tuple(template.optional_concepts),
+        entries=dict(resolved),
+        keys=keys,
+        concept_index=frozen_index,
+        concept_countries=frozen_countries,
+        requested_countries=countries,
+        missing_required=missing_required,
+        unsatisfied_any_of=tuple(unsatisfied_any_of),
+        country_incomplete=tuple(country_incomplete),
+        thin_observations=tuple(sorted(thin)),
+        sufficiency=sufficiency,
+        missing=tuple(missing),
+    )
+
+
 def check_data_sufficiency(
     template: MacroAnalysisTemplate,
     resolved: dict[str, ResolvedIndicatorAsset],
+    *,
+    requested_countries: Sequence[str] = (),
 ) -> tuple[str, list[str]]:
-    """Frozen data-sufficiency policy (B9 §5.8) with any_of_concepts support (B9.8.4)."""
-    # Extract concepts from resolved indicator objects (B9.8.3).
-    resolved_concepts = {item.indicator.concept for item in resolved.values()}
-    # any_of_concepts: alternative indicator groups (OR logic).
-    if template.any_of_concepts:
-        any_satisfied = any(
-            all(concept in resolved_concepts for concept in group)
-            for group in template.any_of_concepts
-        )
-        if not any_satisfied:
-            all_needed = sorted({c for group in template.any_of_concepts for c in group})
-            return "blocked", [f"requires at least one of: {all_needed}"]
-    missing = [
-        concept for concept in template.required_concepts
-        if concept not in resolved_concepts
-    ]
-    if missing:
-        return "blocked", [f"missing required indicators: {missing}"]
-    thin = [
-        concept
-        for concept, item in resolved.items()
-        if item.observation_count < template.evidence_requirements.min_observations
-    ]
-    if thin:
-        return "partially_ready", [
-            f"observation count below {template.evidence_requirements.min_observations}: {thin}"
-        ]
-    return "ready", []
+    """Frozen data-sufficiency policy (B9 §5.8, B9.8.4 any_of, B9.8.2 §3.4).
+
+    Delegates to the shared ``resolve_template_requirements`` so sufficiency
+    and plan building can never diverge.
+    """
+    resolution = resolve_template_requirements(
+        template, resolved, requested_countries=requested_countries
+    )
+    return resolution.sufficiency, list(resolution.missing)
 
 
 def build_template_plan(
@@ -215,8 +361,13 @@ def build_template_plan(
     *,
     question: str,
     aligned_asset_id: Optional[str] = None,
+    requested_countries: Sequence[str] = (),
 ) -> GeneralAnalysisPlan:
     """Build a GeneralAnalysisPlan v2 from a template and resolved assets.
+
+    Consumes the SAME ``resolve_template_requirements`` result as
+    ``check_data_sufficiency`` (B9.8.2 §3.4); primary-asset selection is
+    deterministic via ``primary_indicator_id()`` (D7 fix).
 
     Steps (all whitelisted operations):
       1. ``data_quality`` on the primary indicator asset;
@@ -227,30 +378,30 @@ def build_template_plan(
          the primary transform output (single indicator);
       4. ``summarize`` on the aligned/primary asset.
     """
-    sufficiency, missing = check_data_sufficiency(template, resolved)
-    if sufficiency == "blocked":
+    resolution = resolve_template_requirements(
+        template, resolved, requested_countries=requested_countries
+    )
+    if resolution.sufficiency == "blocked":
         raise MacroTemplateError(
-            f"Template '{template.template_id}' blocked: {'; '.join(missing)}"
+            f"Template '{template.template_id}' blocked: "
+            f"{'; '.join(resolution.missing)}"
         )
 
     # B9.8.4: filter by concept extracted from indicator objects, not dict keys.
-    # The resolved dict may be keyed by indicator_id (B9.8.3).
-    resolved_keys = set(resolved.keys())
-    used = {}
-    for key, item in resolved.items():
-        concept = item.indicator.concept
-        if concept in template.required_concepts or concept in template.optional_concepts:
-            used[key] = item
+    # The resolved dict is keyed by indicator_id (B9.8.3).
+    used = {
+        indicator_id: resolution.entries[indicator_id]
+        for indicator_id in sorted(resolution.entries)
+        if resolution.entries[indicator_id].indicator.concept
+        in set(template.required_concepts) | set(template.optional_concepts)
+    }
     if not used:
         raise MacroTemplateError("No resolved indicator assets match the template")
 
     steps: list[GeneralPlanStep] = []
-    primary_concept = (
-        template.required_concepts[0]
-        if template.required_concepts
-        else sorted(used)[0]
-    )
-    primary = used.get(primary_concept) or next(iter(used.values()))
+    primary_id = resolution.primary_indicator_id()
+    primary_concept = resolution.entries[primary_id].indicator.concept
+    primary = used[primary_id]
 
     # 1. data quality on the primary asset
     steps.append(

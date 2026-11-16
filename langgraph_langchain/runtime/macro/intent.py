@@ -20,7 +20,11 @@ import pandas as pd
 from langgraph_langchain.data.adapters.base import FetchRequest
 from langgraph_langchain.runtime.general_planner import GeneralAnalysisPlan
 from langgraph_langchain.runtime.macro.models import MacroIndicatorCatalog
-from langgraph_langchain.runtime.macro.registry import IndicatorAssetKey, IndicatorAssetRegistry
+from langgraph_langchain.runtime.macro.registry import (
+    IndicatorAssetKey,
+    IndicatorAssetRegistry,
+    resolve_indicator_asset_key,
+)
 from langgraph_langchain.runtime.macro.templates import (
     MacroTemplateError,
     ResolvedIndicatorAsset,
@@ -247,7 +251,8 @@ class MacroRuntimeIntegration:
         for request, indicator in zip(requirements.requests, requirements.indicators):
             outcome = self.acquisition.acquire(request, refresh=refresh)
             resolved = self.runtime.asset_resolver.resolve(outcome.asset.asset_id)
-            key = IndicatorAssetKey.from_indicator(indicator)
+            # B9.8.2 §3.2: identity resolution through the single public entry.
+            key = resolve_indicator_asset_key(indicator)
             registry.register(key, outcome.asset.asset_id,
                               observation_count=len(resolved.dataframe),
                               data_version=outcome.asset.content_hash or "")
@@ -256,13 +261,19 @@ class MacroRuntimeIntegration:
                 observation_count=len(resolved.dataframe),
             )
 
-        sufficiency, missing = check_data_sufficiency(template, observations)
+        sufficiency, missing = check_data_sufficiency(
+            template, observations,
+            requested_countries=tuple(intent.countries),
+        )
         if sufficiency == "blocked":
             return {"status": "needs_clarification", "intent": intent, "plan": None,
                     "missing": missing, "sufficiency": "blocked"}
 
         try:
-            plan = build_template_plan(template, observations, question=question)
+            plan = build_template_plan(
+                template, observations, question=question,
+                requested_countries=tuple(intent.countries),
+            )
         except MacroTemplateError as exc:
             return {"status": "planning_failed", "intent": intent, "plan": None,
                     "missing": [str(exc)], "sufficiency": sufficiency}
