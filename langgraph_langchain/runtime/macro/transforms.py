@@ -48,8 +48,18 @@ def _period_series(frame: pd.DataFrame, time_column: str, frequency: str) -> pd.
     alias = _PANDAS_FREQ.get(frequency)
     if alias is None:
         raise MacroTransformError(f"Unsupported frequency: {frequency!r}")
+    column = frame[time_column]
+    if pd.api.types.is_period_dtype(column):
+        # Period-typed input (e.g. from the comparison pipeline) — pandas 4
+        # rejects to_datetime on PeriodDtype; use the periods directly.
+        try:
+            return pd.PeriodIndex(column, freq=alias)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise MacroTransformError(
+                f"Cannot use '{time_column}' as {frequency} periods: {exc}"
+            ) from exc
     try:
-        periods = pd.PeriodIndex(pd.to_datetime(frame[time_column]), freq=alias)
+        periods = pd.PeriodIndex(pd.to_datetime(column), freq=alias)
     except (TypeError, ValueError, OverflowError) as exc:
         raise MacroTransformError(
             f"Cannot parse time column '{time_column}' as {frequency} periods: {exc}"
@@ -90,11 +100,15 @@ def _pct_change(ordered: pd.DataFrame, lag: int, transform: str, frequency: str)
 
 def yoy(frame: pd.DataFrame, *, time_column: str = "period", value_column: str = "value",
         frequency: str = "monthly", **_: Any) -> pd.DataFrame:
-    """Year-over-year percentage change: (v_t / v_{t-lag} - 1) * 100."""
+    """Year-over-year percentage change: (v_t / v_{t-lag} - 1) * 100.
+
+    Annual series use lag=1 (previous calendar year) — required for
+    cross-country GDP growth comparison (B9.8.2 §4.5).
+    """
     lag = _LAG_BY_FREQUENCY.get(frequency)
-    if frequency == "annual" or not lag or lag <= 1:
+    if not lag:
         raise MacroTransformError(
-            f"yoy requires monthly/quarterly/weekly/daily frequency, got {frequency!r}"
+            f"yoy requires a known frequency, got {frequency!r}"
         )
     ordered = _prepared(frame, time_column, value_column, frequency)
     if len(ordered) <= lag:

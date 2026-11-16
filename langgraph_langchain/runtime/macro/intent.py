@@ -19,6 +19,11 @@ import pandas as pd
 
 from langgraph_langchain.data.adapters.base import FetchRequest
 from langgraph_langchain.runtime.general_planner import GeneralAnalysisPlan
+from langgraph_langchain.runtime.macro.comparison import (
+    ComparisonResolution,
+    ComparisonSpec,
+    CrossCountryComparator,
+)
 from langgraph_langchain.runtime.macro.models import MacroIndicatorCatalog
 from langgraph_langchain.runtime.macro.registry import (
     IndicatorAssetKey,
@@ -28,6 +33,7 @@ from langgraph_langchain.runtime.macro.registry import (
 from langgraph_langchain.runtime.macro.templates import (
     MacroTemplateError,
     ResolvedIndicatorAsset,
+    build_comparison_plan,
     build_template_plan,
     check_data_sufficiency,
     get_template,
@@ -171,46 +177,56 @@ class MacroRuntimeIntegration:
 
     def build_aligned_asset(
         self,
-        registry: IndicatorAssetRegistry,
+        comparison: ComparisonResolution,
         *,
-        frequency: Optional[str] = None,
+        aligned_frame: pd.DataFrame,
+        registry: Optional[IndicatorAssetRegistry] = None,
     ) -> Optional[str]:
-        """Build an aligned multi-indicator asset when >= 2 indicators resolved.
+        """Register the aligned cross-country comparison frame (B9.8.2 §4.4).
 
-        Aligns observations on common periods and registers the combined frame
-        as a new DataAsset via register_dataframe.  Returns aligned asset_id
-        or None when alignment is not applicable.
+        Called from ``run()`` on the real production path when a comparison
+        intent produced at least one comparable concept.  The aligned frame
+        is deterministic data preparation (per-country YoY rates aligned on
+        real common periods), never analysis execution.  Returns the aligned
+        asset_id, or None when the frame is empty.
         """
-        entries = registry.list_assets()
-        if len(entries) < 2:
+        if aligned_frame is None or aligned_frame.empty:
             return None
-        frames: dict[str, pd.DataFrame] = {}
-        for entry in entries:
-            resolved = self.runtime.asset_resolver.resolve(entry.asset_id)
-            column_name = entry.key.concept
-            series = resolved.dataframe.set_index("period")["value"] if "period" in resolved.dataframe.columns else resolved.dataframe.iloc[:, 1]
-            frames[column_name] = series
-        if len(frames) < 2:
-            return None
-        aligned = pd.DataFrame(frames).dropna(how="all")
         aligned_path = self.runtime.workspace_dir / f"aligned_{uuid.uuid4().hex[:8]}.parquet"
-        aligned.to_parquet(aligned_path, index=True)
+        aligned_frame.reset_index().to_parquet(aligned_path, index=False)
         from langgraph_langchain.data.assets import DataAsset, SchemaSnapshot
 
+        legs = comparison.legs
+        input_versions = []
+        if registry is not None:
+            for leg in legs:
+                try:
+                    input_versions.append(registry.resolve(leg.key).data_version)
+                except KeyError:
+                    input_versions.append("")
+        disclosures = [
+            item
+            for comparison_item in comparison.comparisons
+            for item in comparison_item.disclosures
+            if comparison_item.comparable
+        ]
         asset = DataAsset(
             name=f"macro_aligned_{uuid.uuid4().hex[:8]}",
             source_type="macro_aligned",
             content_hash=None,  # computed by DataAsset model
-            schema_snapshot=SchemaSnapshot.from_dataframe(aligned),
+            schema_snapshot=SchemaSnapshot.from_dataframe(aligned_frame.reset_index()),
             source_metadata={
                 "acquisition": "macro_context_builder",
-                "alignment_method": "inner_join_on_period",
-                "input_asset_ids": [entry.asset_id for entry in entries],
-                "indicator_ids": [entry.key.indicator_id for entry in entries],
-                "input_data_versions": [entry.data_version for entry in entries],
-                "statistics_scope": "aligned",
-                "coverage_start": str(aligned.index.min()) if len(aligned) else None,
-                "coverage_end": str(aligned.index.max()) if len(aligned) else None,
+                "alignment_method": "yoy_rate_common_period",
+                "input_asset_ids": [leg.asset_id for leg in legs],
+                "indicator_ids": [leg.indicator.indicator_id for leg in legs],
+                "input_data_versions": input_versions,
+                "comparison_type": comparison.spec.comparison_type,
+                "comparison_method": comparison.spec.comparison_method,
+                "alignment_policy": comparison.spec.alignment_policy,
+                "comparable_concepts": comparison.comparable_concepts,
+                "statistics_scope": "aligned_comparison",
+                "disclosures": disclosures,
             },
         )
         self.runtime.assets[asset.asset_id] = asset
@@ -218,7 +234,32 @@ class MacroRuntimeIntegration:
         return asset.asset_id
 
     def _select_template(self, intent: MacroIntent) -> str:
+        # B9.8.2 §4.1: a cross-country comparison is decided by the explicit
+        # comparison goal AND >= 2 requested countries — never by concept
+        # count alone ("中美GDP对比" is 1 concept + 2 countries).  Merely
+        # mentioning two countries without comparison words keeps the joint
+        # multi-indicator path.
+        is_comparison = (
+            intent.analysis_goal == "comparison" and len(intent.countries) >= 2
+        )
+        if is_comparison:
+            return "cross_country_comparison"
         if len(intent.concepts) >= 2:
+            # A concept set fully covered by a specific template (its required
+            # concepts match) wins over the generic multi-indicator template
+            # — e.g. CPI+PPI → inflation, CPI+policy_rate → monetary_policy.
+            requested = set(intent.concepts)
+            for template_id in (
+                "gdp_growth", "inflation", "employment",
+                "monetary_policy", "trade",
+            ):
+                template = get_template(template_id)
+                covered = set(template.required_concepts) | set(template.optional_concepts)
+                if (
+                    requested <= covered
+                    and requested & set(template.required_concepts)
+                ):
+                    return template_id
             return "multi_indicator"
         mapping = {
             "gdp": "gdp_growth", "cpi": "inflation", "ppi": "inflation",
@@ -269,14 +310,80 @@ class MacroRuntimeIntegration:
             return {"status": "needs_clarification", "intent": intent, "plan": None,
                     "missing": missing, "sufficiency": "blocked"}
 
-        try:
-            plan = build_template_plan(
-                template, observations, question=question,
-                requested_countries=tuple(intent.countries),
+        # B9.8.2 §4.4: cross-country comparison runs on the production path —
+        # per-(concept, country) legs, semantic comparability, frequency
+        # normalization, real-period alignment, registered aligned asset.
+        comparison: Optional[ComparisonResolution] = None
+        aligned_asset_id: Optional[str] = None
+        if intent.analysis_goal == "comparison" and len(intent.countries) >= 2:
+            spec = ComparisonSpec(
+                countries=tuple(intent.countries),
+                concepts=tuple(intent.concepts),
             )
+            comparator = CrossCountryComparator(
+                observations,
+                resolve_dataframe=lambda asset_id: (
+                    self.runtime.asset_resolver.resolve(asset_id).dataframe
+                ),
+            )
+            comparison = comparator.resolve(spec)
+            missing.extend(comparison.missing)
+            if comparison.comparable_concepts:
+                aligned_frame = comparator.build_aligned_frame(comparison)
+                aligned_asset_id = self.build_aligned_asset(
+                    comparison,
+                    aligned_frame=aligned_frame,
+                    registry=registry,
+                )
+
+        try:
+            if comparison is not None:
+                plan = build_comparison_plan(
+                    template, observations, question=question,
+                    comparison=comparison, aligned_asset_id=aligned_asset_id,
+                    requested_countries=tuple(intent.countries),
+                )
+            else:
+                plan = build_template_plan(
+                    template, observations, question=question,
+                    requested_countries=tuple(intent.countries),
+                )
         except MacroTemplateError as exc:
             return {"status": "planning_failed", "intent": intent, "plan": None,
                     "missing": [str(exc)], "sufficiency": sufficiency}
 
-        return {"status": "planned", "intent": intent, "plan": plan,
-                "missing": missing, "sufficiency": sufficiency}
+        return {
+            "status": "planned", "intent": intent, "plan": plan,
+            "missing": missing, "sufficiency": sufficiency,
+            "template_id": template.template_id,
+            "comparison": self._comparison_summary(comparison, aligned_asset_id),
+        }
+
+    @staticmethod
+    def _comparison_summary(
+        comparison: Optional[ComparisonResolution],
+        aligned_asset_id: Optional[str],
+    ) -> Optional[dict[str, Any]]:
+        if comparison is None:
+            return None
+        return {
+            "comparison_type": comparison.spec.comparison_type,
+            "countries": list(comparison.spec.countries),
+            "concepts": list(comparison.spec.concepts),
+            "comparable_concepts": comparison.comparable_concepts,
+            "missing": list(comparison.missing),
+            "aligned_asset_id": aligned_asset_id,
+            "per_concept": [
+                {
+                    "concept": item.concept,
+                    "countries": [leg.country for leg in item.legs],
+                    "comparable": item.comparable,
+                    "comparison_frequency": item.comparison_frequency,
+                    "aligned_periods": item.aligned_periods,
+                    "rate_columns": item.rate_columns,
+                    "incompatibilities": item.incompatibilities,
+                    "disclosures": item.disclosures,
+                }
+                for item in comparison.comparisons
+            ],
+        }

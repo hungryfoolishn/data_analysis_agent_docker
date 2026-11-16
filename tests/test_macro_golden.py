@@ -32,9 +32,9 @@ GOLDEN_QUESTIONS = [
     {"qid": "G11", "q": "美国就业市场分析", "concepts": ["nonfarm_payrolls"], "countries": ["us"], "years": 2, "template": "employment"},
     {"qid": "G12", "q": "分析美联储政策利率变化", "concepts": ["policy_rate"], "countries": ["us"], "years": 3, "template": "monetary_policy"},
     {"qid": "G13", "q": "美国实际利率估算", "concepts": ["policy_rate"], "countries": ["us"], "years": 3, "template": "monetary_policy"},
-    {"qid": "G14", "q": "中美政策利率对比", "concepts": ["policy_rate"], "countries": ["us", "cn"], "years": 3, "template": "monetary_policy"},
-    {"qid": "G15", "q": "对比中美CPI同比变化", "concepts": ["cpi"], "countries": ["us", "cn"], "years": 5, "template": "multi_indicator"},
-    {"qid": "G16", "q": "中美GDP增长对比", "concepts": ["gdp"], "countries": ["us", "cn"], "years": 5, "template": "multi_indicator"},
+    {"qid": "G14", "q": "中美政策利率对比", "concepts": ["policy_rate"], "countries": ["us", "cn"], "years": 3, "template": "cross_country_comparison"},
+    {"qid": "G15", "q": "对比中美CPI同比变化", "concepts": ["cpi"], "countries": ["us", "cn"], "years": 5, "template": "cross_country_comparison"},
+    {"qid": "G16", "q": "中美GDP增长对比", "concepts": ["gdp"], "countries": ["us", "cn"], "years": 5, "template": "cross_country_comparison"},
     {"qid": "G17", "q": "美国出口贸易近三年趋势", "concepts": ["exports"], "countries": ["us"], "years": 3, "template": "trade"},
     {"qid": "G18", "q": "美国进口贸易分析", "concepts": ["imports"], "countries": ["us"], "years": 3, "template": "trade"},
     {"qid": "G19", "q": "分析美国通胀与利率联动", "concepts": ["cpi", "policy_rate"], "countries": ["us"], "years": 5, "template": "monetary_policy"},
@@ -98,7 +98,11 @@ class TestMacroGoldenSuite:
         if outcome["status"] == "needs_clarification":
             pytest.skip(f"{gq['qid']}: insufficient data for template selection")
         assert outcome["plan"] is not None
-        # Template selection is implicit in the plan's operation mix.
+        # B9.8.2 D8 fix: the selected template is now asserted explicitly.
+        assert outcome["template_id"] == gq["template"], (
+            f"{gq['qid']}: expected template '{gq['template']}', "
+            f"got '{outcome.get('template_id')}'"
+        )
 
     def test_plan_generation(self, gq, tmp_path):
         _, integration, _ = _make_integration(tmp_path, name=f"gold_{gq['qid']}_p")
@@ -129,11 +133,14 @@ class TestMacroGoldenSummary:
                 by_category.setdefault("多指标", []).append(item)
             elif item["template"] == "trade":
                 by_category.setdefault("贸易", []).append(item)
+            elif item["template"] == "cross_country_comparison":
+                by_category.setdefault("跨国家比较", []).append(item)
         assert len(by_category.get("GDP", [])) >= 3
         assert len(by_category.get("CPI/PPI", [])) >= 2
         assert len(by_category.get("就业", [])) >= 2
         assert len(by_category.get("利率", [])) >= 2
-        assert len(by_category.get("多指标", [])) >= 2
+        assert len(by_category.get("跨国家比较", [])) >= 3
+        assert len(by_category.get("多指标", [])) >= 1
 
     def test_golden_not_replacing_b6(self):
         """B9 Golden is domain-specific; B6 10/30 general baseline is separate."""

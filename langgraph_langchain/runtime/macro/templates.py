@@ -25,6 +25,7 @@ from langgraph_langchain.runtime.macro.models import (
     MacroAnalysisTemplate,
     MacroEvidenceRequirement,
     MacroIndicator,
+    ResolvedIndicatorAsset,
 )
 from langgraph_langchain.runtime.macro.registry import (
     IndicatorAssetKey,
@@ -157,6 +158,36 @@ MACRO_TEMPLATES: dict[str, MacroAnalysisTemplate] = {
         ],
         data_sufficiency_policy="partially_ready",
     ),
+    "cross_country_comparison": MacroAnalysisTemplate(
+        template_id="cross_country_comparison",
+        intent=(
+            "Compare the same macro concept across countries on aligned common "
+            "periods with an explicitly disclosed method (B9.8.2 §4)."
+        ),
+        required_concepts=[],
+        optional_concepts=[
+            "gdp", "cpi", "ppi", "personal_income", "unemployment_rate",
+            "unemployment_level_bls", "nonfarm_payrolls", "policy_rate",
+            "exports", "imports",
+        ],
+        countries=("us", "cn"),
+        default_transforms=["yoy", "index_change"],
+        analysis_steps=["data_quality", "correlation", "period_comparison"],
+        evidence_requirements=MacroEvidenceRequirement(
+            min_observations=2,
+            required_disclosures=("unit", "frequency", "base_period", "seasonal_adjustment"),
+        ),
+        report_sections=[
+            "comparison_method", "per_country", "aligned_comparison", "limitations",
+        ],
+        limitations=[
+            "index levels of different countries are not comparable (different base periods); compare yoy rates instead",
+            "real vs nominal growth rates are not directly comparable without deflation",
+            "sub-annual rates are aggregated to the coarsest common frequency by calendar-period mean before alignment (disclosed)",
+            "correlation is not causality",
+        ],
+        data_sufficiency_policy="partially_ready",
+    ),
 }
 
 
@@ -170,13 +201,8 @@ def list_templates() -> list[str]:
     return sorted(MACRO_TEMPLATES)
 
 
-@dataclass
-class ResolvedIndicatorAsset:
-    """One resolved indicator asset inside a template run."""
-
-    indicator: MacroIndicator
-    asset_id: str
-    observation_count: int
+# ResolvedIndicatorAsset is imported from models (shared with the
+# cross-country comparison pipeline); re-exported here for compatibility.
 
 
 @dataclass(frozen=True)
@@ -512,3 +538,171 @@ def build_template_plan(
         )),
         steps=steps,
     )
+
+
+def build_comparison_plan(
+    template: MacroAnalysisTemplate,
+    resolved: dict[str, ResolvedIndicatorAsset],
+    *,
+    question: str,
+    comparison,  # ComparisonResolution (typed lazily to avoid import cycle)
+    aligned_asset_id: Optional[str] = None,
+    requested_countries: Sequence[str] = (),
+) -> GeneralAnalysisPlan:
+    """Build the cross-country comparison plan (B9.8.2 §4.4).
+
+    Steps (all whitelisted operations):
+      1. ``data_quality`` per country leg asset (per-country traceability);
+      2. for every comparable concept: ``correlation`` of the aligned
+         per-country rate columns on the registered aligned asset;
+      3. for concepts blocked by semantic incompatibility (e.g. real vs
+         nominal GDP): per-country ``macro_transform`` yoy rate steps (only
+         for level/index legs — published rates are never re-diffed) plus a
+         per-country ``trend``; NO cross-country step (task §4.5: block and
+         disclose instead of comparing incomparable rates);
+      4. ``summarize`` on the aligned asset (or on the primary leg when
+         nothing is comparable).
+    """
+    resolution = resolve_template_requirements(
+        template, resolved, requested_countries=requested_countries
+    )
+    if resolution.sufficiency == "blocked":
+        raise MacroTemplateError(
+            f"Template '{template.template_id}' blocked: "
+            f"{'; '.join(resolution.missing)}"
+        )
+
+    steps: list[GeneralPlanStep] = []
+    input_assets: set[str] = set()
+
+    def _time_column(indicator: Optional[MacroIndicator]) -> str:
+        if indicator is not None and indicator.source_id in {"fred"}:
+            return "date"
+        return "period"
+
+    # 1. per-leg data quality — every country's raw asset is independently
+    # traceable in the plan and downstream evidence.
+    leg_order: list[tuple[str, str, str]] = []  # (concept, country, asset_id)
+    for item in comparison.comparisons:
+        for leg in item.legs:
+            leg_order.append((leg.concept, leg.country, leg.asset_id))
+    for concept, country, asset_id in leg_order:
+        steps.append(
+            GeneralPlanStep(
+                step_id=_step_id(f"dq:{concept}:{country}"),
+                operation="data_quality",
+                input_refs=[asset_id],
+                parameters={},
+                expected_output="dataframe",
+                depends_on=[],
+            )
+        )
+        input_assets.add(asset_id)
+
+    # 2. correlation on the aligned asset per comparable concept
+    comparable = [item for item in comparison.comparisons if item.comparable]
+    if comparable and aligned_asset_id:
+        input_assets.add(aligned_asset_id)
+        for item in comparable:
+            steps.append(
+                GeneralPlanStep(
+                    step_id=_step_id(f"corr:{item.concept}"),
+                    operation="correlation",
+                    input_refs=[aligned_asset_id],
+                    parameters={"columns": item.rate_columns},
+                    expected_output="dataframe",
+                    depends_on=[],
+                )
+            )
+
+    # 3. blocked concepts: per-country rate production + trend, no cross step
+    for item in comparison.comparisons:
+        if item.comparable:
+            continue
+        for leg in item.legs:
+            indicator = leg.indicator
+            leg_time_column = _time_column(indicator)
+            if indicator.level_kind == "growth_rate":
+                steps.append(
+                    GeneralPlanStep(
+                        step_id=_step_id(f"trend:{leg.concept}:{leg.country}"),
+                        operation="trend",
+                        input_refs=[leg.asset_id],
+                        parameters={
+                            "column": "value",
+                            "value_column": "value",
+                            "time_column": leg_time_column,
+                        },
+                        expected_output="dataframe",
+                        depends_on=[],
+                    )
+                )
+                continue
+            transform = (
+                "yoy"
+                if "yoy" in indicator.supported_transforms
+                else indicator.supported_transforms[0]
+            )
+            output_name = f"{leg.concept}_{leg.country}_{transform}"
+            steps.append(
+                GeneralPlanStep(
+                    step_id=_step_id(f"xf:{leg.concept}:{leg.country}:{transform}"),
+                    operation="macro_transform",
+                    input_refs=[leg.asset_id],
+                    parameters={
+                        "transform": transform,
+                        "column": "value",
+                        "time_column": leg_time_column,
+                        "frequency": indicator.frequency,
+                        "semantics": leg.semantics.model_dump(mode="json"),
+                    },
+                    expected_output="dataframe",
+                    output_name=output_name,
+                    depends_on=[],
+                )
+            )
+            steps.append(
+                GeneralPlanStep(
+                    step_id=_step_id(f"trend:{leg.concept}:{leg.country}"),
+                    operation="trend",
+                    input_refs=[f"{steps[-1].step_id}.{output_name}"],
+                    parameters={
+                        "column": "value",
+                        "value_column": "value",
+                        "time_column": "period",
+                    },
+                    expected_output="dataframe",
+                    depends_on=[steps[-1].step_id],
+                )
+            )
+
+    # 4. summarize
+    if comparable and aligned_asset_id:
+        summary_input = aligned_asset_id
+    elif any(step.operation == "macro_transform" for step in steps):
+        last_transform = [s for s in steps if s.operation == "macro_transform"][-1]
+        summary_input = f"{last_transform.step_id}.{last_transform.output_name}"
+    else:
+        summary_input = leg_order[0][2] if leg_order else ""
+    summary_depends = [
+        step.step_id
+        for step in steps
+        if step.operation in {"macro_transform", "correlation"}
+    ]
+    steps.append(
+        GeneralPlanStep(
+            step_id=_step_id("summary"),
+            operation="summarize",
+            input_refs=[summary_input],
+            parameters={},
+            expected_output="metric",
+            depends_on=list(dict.fromkeys(summary_depends)),
+        )
+    )
+
+    plan = GeneralAnalysisPlan(
+        user_goal=question,
+        input_asset_ids=sorted(input_assets),
+        steps=steps,
+    )
+    return plan

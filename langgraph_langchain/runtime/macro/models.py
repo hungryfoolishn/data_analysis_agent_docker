@@ -8,6 +8,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from dataclasses import dataclass
+
 TransformKind = Literal[
     "yoy",
     "mom",
@@ -28,6 +30,20 @@ LevelKind = Literal["level", "growth_rate", "index"]
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass
+class ResolvedIndicatorAsset:
+    """One resolved indicator asset inside a template/comparison run.
+
+    Shared by the template requirement resolver and the cross-country
+    comparison pipeline (B9.8.2): both consume the same resolution objects
+    keyed by indicator_id.
+    """
+
+    indicator: "MacroIndicator"
+    asset_id: str
+    observation_count: int
 
 
 class MacroIndicator(BaseModel):

@@ -61,7 +61,8 @@ def _resolved_map(specs):
 
 def test_all_six_templates_registered():
     assert set(list_templates()) == {
-        "gdp_growth", "inflation", "employment", "monetary_policy", "trade", "multi_indicator"
+        "gdp_growth", "inflation", "employment", "monetary_policy", "trade",
+        "multi_indicator", "cross_country_comparison",
     }
 
 
