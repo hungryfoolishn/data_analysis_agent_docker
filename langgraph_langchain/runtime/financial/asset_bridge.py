@@ -80,8 +80,12 @@ def load_financial_context_from_snapshot(
     source_doc = str(filtered.iloc[0]["source_document_id"]) if "source_document_id" in filtered.columns else None
 
     items: list[FinancialLineItem] = []
+    seen_concepts: set[str] = set()
     for _, row in filtered.iterrows():
         concept = str(row["canonical_concept"])
+        if concept in seen_concepts:
+            continue
+        seen_concepts.add(concept)
         value = _decimal(row["value"])
         kind = "per_share" if concept in _PER_SHARE_CONCEPTS else "absolute_amount"
         unit = FinancialUnit(
