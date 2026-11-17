@@ -734,3 +734,21 @@ B10.2 原验收在独立复核中发现四个 P1，原 `FROZEN` 状态失效。�
 - 修复后 Financial 专项回归：**339 passed / 0 failed**；三个核心测试文件：**68 passed / 0 failed**。
 
 当前状态：`B10.2 = FROZEN AFTER POST-AUDIT REPAIR`，`B10.3 = UNLOCKED`。
+
+---
+
+## 十八、B10.3–B10.7 Financial Domain Pack 实施与最终验收（2026-11-17）
+
+B10.3–B10.7 已按独立阶段实施、测试、验收、提交并推送。确定性实现链路完成，但最终 B10 不冻结：
+
+- B10.3 期间语义：`langgraph_langchain/runtime/financial/periods.py`；`tests/test_financial_periods.py` 10 passed；Financial 回归 349 passed。
+- B10.4 指标目录：`langgraph_langchain/runtime/financial/catalog.py`；`tests/test_financial_metric_catalog.py` 10 passed。
+- B10.5 SEC/China 接入：`sec.py` / `china.py` 经 B8 `AdapterRegistry` / `AcquisitionService` / Snapshot / DataAsset；`tests/test_financial_acquisition.py` 8 passed。真实外部服务验证仍未执行。
+- B10.6 Domain Runtime / Evidence bridge：intent / context / templates / Runtime V2 / existing `EvidenceRegistry`；`tests/test_financial_domain_workflow.py` 6 passed。
+- B10.7 Golden / E2E：`tests/fixtures/financial/b10_golden.json` + `tests/test_financial_golden.py`；5 passed，覆盖 US/CN、USD/CNY、gross margin 和 Runtime/Evidence 链路。
+- B10.7 提交前 Financial/Agent 回归：**378 passed / 0 failed**。
+- 最终全量回归：**1669 passed / 11 failed / 9 skipped**；11 个失败为既有 Runtime/Dashboard 基线失败，0 新增。
+- 阶段提交：`642eb7e` → `a21098e` → `965b181` → `4e87bd6` → `6c5067d` → `758a953` → `e47bb0e`；均已推送。
+- 最终验收：`docs/architecture/reviews/b10-final-acceptance.md`。
+
+当前状态：`B10 = NOT FROZEN`。未冻结原因是真实 SEC/China 外部服务验证未执行，且 Golden 覆盖尚未达到完整生产级广度；不将确定性 Fixture 通过率夸大为完整冻结。
