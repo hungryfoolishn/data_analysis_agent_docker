@@ -1,0 +1,48 @@
+{
+  "schema_version": "b10.7",
+  "normalization_version": "b10.2.3",
+  "period_semantics_version": "b10.3",
+  "catalog_version": "b10.4",
+  "cases": [
+    {
+      "case_id": "us_income_2024_gross_margin",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "gross_margin",
+      "expected_statistic_kind": "percent_ratio",
+      "expected_value": "25.00",
+      "line_items": {
+        "revenue": "1000.00",
+        "gross_profit": "250.00"
+      }
+    },
+    {
+      "case_id": "cn_income_2024_gross_margin",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "gross_margin",
+      "expected_statistic_kind": "percent_ratio",
+      "expected_value": "40.00",
+      "line_items": {
+        "revenue": "500.00",
+        "gross_profit": "200.00"
+      }
+    }
+  ]
+}
