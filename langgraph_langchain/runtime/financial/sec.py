@@ -207,13 +207,20 @@ class SecCompanyFactsAdapter(HttpJsonAdapter):
         issues = list(quality.issues)
         if frame.empty:
             return quality
+        # Instant SEC facts correctly have no period_start.  The generic B8
+        # required-column validator cannot express this conditional nullability.
+        if (
+            (frame["period_type"] == "instant").all()
+            and "Column contains only nulls: period_start" in issues
+        ):
+            issues.remove("Column contains only nulls: period_start")
         for column in ("accession_number", "filing_date", "source_document_id"):
             if frame[column].isna().any() or (frame[column].astype(str).str.strip() == "").any():
                 issues.append(f"missing filing traceability field: {column}")
         if set(frame["market"].dropna()) - {"us"}:
             issues.append("SEC adapter supports market='us' only")
         return QualityReport(
-            status="failed" if issues else quality.status,
+            status="failed" if issues else ("warning" if quality.warnings else "passed"),
             issues=tuple(issues),
             warnings=quality.warnings,
         )

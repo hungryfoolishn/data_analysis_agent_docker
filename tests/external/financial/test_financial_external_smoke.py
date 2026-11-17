@@ -85,6 +85,62 @@ def test_sec_company_concept_live_smoke(tmp_path):
         for fact in assets.facts
     )
 
+    from langgraph_langchain.data.adapters.base import FetchRequest
+    from langgraph_langchain.data.adapters.registry import AdapterRegistry
+    from langgraph_langchain.data.acquisition import AcquisitionService
+    from langgraph_langchain.runtime.context import AnalysisRuntime
+    from langgraph_langchain.runtime.financial.sec import SecCompanyFactsAdapter
+
+    responses = {
+        _SEC_URL: payload,
+        _SEC_ASSETS_URL: assets_payload,
+    }
+    adapter = SecCompanyFactsAdapter(transport=lambda url, params: responses[url])
+    registry = AdapterRegistry()
+    registry.register(adapter)
+    runtime = AnalysisRuntime(
+        workspace_dir=tmp_path / "workspace",
+        session_id="sec-live-acquisition",
+        question="live SEC company concept smoke",
+    )
+    service = AcquisitionService(
+        runtime=runtime,
+        registry=registry,
+        history_dir=tmp_path / "history",
+    )
+    revenue_outcome = service.acquire(
+        FetchRequest(
+            dataset_id="sec_company_facts",
+            parameters={
+                "cik": "0000320193",
+                "canonical_concept": "Revenues",
+                "preferred_unit": "USD",
+                "entity_id": "cik320193",
+                "statement_type": "income",
+                "reporting_basis": "consolidated",
+                "statistic_kind": "absolute_amount",
+            },
+        )
+    )
+    assets_outcome = service.acquire(
+        FetchRequest(
+            dataset_id="sec_company_facts",
+            parameters={
+                "cik": "0000320193",
+                "canonical_concept": "Assets",
+                "preferred_unit": "USD",
+                "entity_id": "cik320193",
+                "statement_type": "balance",
+                "reporting_basis": "consolidated",
+                "statistic_kind": "absolute_amount",
+            },
+        )
+    )
+    assert revenue_outcome.asset.source_metadata["source_id"] == "financial_sec_company_facts"
+    assert assets_outcome.asset.source_metadata["source_id"] == "financial_sec_company_facts"
+    assert revenue_outcome.asset.source_metadata["snapshot_reference"]["snapshot_id"]
+    assert assets_outcome.asset.source_metadata["snapshot_reference"]["snapshot_id"]
+
     report = {
         "source": "sec_companyconcept",
         "request_timestamp": response.headers.get("date"),
