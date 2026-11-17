@@ -259,3 +259,80 @@ def test_normalization_is_immutable_deterministic_and_local_versioned():
     assert first == second
     assert first.lineage["normalization_version"] == FINANCIAL_NORMALIZATION_VERSION
     assert FINANCIAL_NORMALIZATION_VERSION.startswith("b10.2")
+
+
+def test_statement_rejects_currency_mismatch_without_fx():
+    statement = _statement(
+        kind="income",
+        items=[_item(Decimal("100"), currency="USD")],
+    )
+    with pytest.raises(FinancialNormalizationError, match="statement currency"):
+        normalize_financial_statement(statement)
+
+
+def test_statement_fx_updates_statement_and_line_item_currency():
+    rate = FinancialCurrencyRate(
+        source_currency="CNY",
+        target_currency="USD",
+        rate=Decimal("0.14"),
+        rate_date="2024-12-31",
+        rate_source="test-source",
+        direction="source_to_target",
+        rate_version="v1",
+    )
+    statement = _statement(kind="income", items=[_item(Decimal("100"))])
+    result = normalize_financial_statement(
+        statement,
+        target_currency="USD",
+        currency_rate=rate,
+    )
+    assert result.output_statement.currency == "USD"
+    assert result.output_statement.line_items[0].unit.currency == "USD"
+    assert result.output_statement.line_items[0].value == Decimal("14.00")
+
+
+def test_currency_rate_requires_traceability_fields():
+    with pytest.raises(FinancialNormalizationError, match="rate_date"):
+        FinancialCurrencyRate(
+            source_currency="CNY",
+            target_currency="USD",
+            rate=Decimal("0.14"),
+            rate_date="",
+            rate_source="test-source",
+            direction="source_to_target",
+            rate_version="v1",
+        )
+    with pytest.raises(FinancialNormalizationError, match="rate_source"):
+        FinancialCurrencyRate(
+            source_currency="CNY",
+            target_currency="USD",
+            rate=Decimal("0.14"),
+            rate_date="2024-12-31",
+            rate_source="",
+            direction="source_to_target",
+            rate_version="v1",
+        )
+    with pytest.raises(FinancialNormalizationError, match="rate_version"):
+        FinancialCurrencyRate(
+            source_currency="CNY",
+            target_currency="USD",
+            rate=Decimal("0.14"),
+            rate_date="2024-12-31",
+            rate_source="test-source",
+            direction="source_to_target",
+            rate_version="",
+        )
+
+
+def test_yoy_conversion_records_explicit_base():
+    item = FinancialLineItem(
+        canonical_concept="revenue_growth",
+        value=Decimal("102.5"),
+        statistic_kind="yoy_index",
+        unit=FinancialUnit(statistic_kind="yoy_index", numeric_unit="percent"),
+    )
+    result = normalize_financial_line_item(
+        item,
+        semantic_targets={"revenue_growth": "growth_rate"},
+    )
+    assert result.lineage["yoy_index_base"] == Decimal("100")

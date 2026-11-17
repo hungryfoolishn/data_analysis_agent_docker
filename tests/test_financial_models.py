@@ -382,3 +382,62 @@ def test_statement_json_roundtrip_preserves_decimal_precision():
     assert "1234567890.123456789" in stmt.model_dump_json()
 
 
+
+
+def test_statement_rejects_non_iso_and_invalid_dates():
+    with pytest.raises(ValidationError, match="ISO date"):
+        _duration_statement(period_start="not-a-date")
+    with pytest.raises(ValidationError, match="ISO date"):
+        _duration_statement(period_end="2024-12-32")
+    with pytest.raises(ValidationError, match="period_start"):
+        _duration_statement(period_start="2025-01-01")
+
+
+def test_statement_line_item_periods_must_match_when_present():
+    item = FinancialLineItem(
+        canonical_concept="revenue",
+        value=Decimal("100"),
+        statistic_kind="absolute_amount",
+        unit=_amount_unit("USD"),
+    )
+    statement = _duration_statement(line_items=(item,))
+    assert statement.line_items[0].period_start is None
+    mismatched = item.model_copy(
+        update={"period_start": "2023-01-01", "period_end": "2023-12-31"}
+    )
+    with pytest.raises(ValidationError, match="period"):
+        _duration_statement(line_items=(mismatched,))
+
+
+def test_line_item_kind_must_match_unit_kind():
+    with pytest.raises(ValidationError, match="statistic_kind"):
+        FinancialLineItem(
+            canonical_concept="revenue",
+            value=Decimal("100"),
+            statistic_kind="absolute_amount",
+            unit=FinancialUnit(
+                statistic_kind="percent_ratio", numeric_unit="percent"
+            ),
+        )
+
+
+def test_registry_requires_valid_key_and_asset_id():
+    registry = FinancialStatementRegistry()
+    invalid_key_entry = FinancialFactEntry(
+        key=None,
+        accession_number="ACC-001",
+        content_version="hash-1",
+        asset_id="asset_1",
+    )
+    with pytest.raises(FinancialIdentityError, match="key"):
+        registry.register(invalid_key_entry)
+    with pytest.raises(FinancialIdentityError, match="asset_id"):
+        registry.register(_entry(asset_id=""))
+
+
+def test_registry_source_version_includes_source_document_id():
+    registry = FinancialStatementRegistry()
+    first = registry.register(_entry(source_document_id="DOC-1"))
+    second = registry.register(_entry(source_document_id="DOC-2"))
+    assert first.source_version != second.source_version
+    assert len(registry.resolve_versions(first.key)) == 2

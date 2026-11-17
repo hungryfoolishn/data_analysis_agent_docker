@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal, Optional
 from uuid import uuid4, uuid5, NAMESPACE_URL
@@ -308,6 +308,21 @@ FiscalPeriodKind = Literal[
 _MARKET_WHITELIST = {"us", "cn"}
 _CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
 _CANONICAL_CONCEPT_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,80}$")
+_ISO_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_iso_date(value: Optional[str], field_name: str) -> Optional[str]:
+    if value is None:
+        return None
+    if not _ISO_DATE_PATTERN.fullmatch(value):
+        raise ValueError(f"{field_name} must be an ISO date (YYYY-MM-DD), got {value!r}")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO date (YYYY-MM-DD), got {value!r}") from exc
+    if parsed.isoformat() != value:
+        raise ValueError(f"{field_name} must be canonical ISO date, got {value!r}")
+    return value
 
 
 class FinancialUnit(BaseModel):
@@ -421,6 +436,8 @@ class Entity(BaseModel):
 class FinancialLineItem(BaseModel):
     """One canonical line item — the authority for normalized values."""
 
+    model_config = {"frozen": True}
+
     item_id: str = Field(default_factory=lambda: _financial_id("item"))
     canonical_concept: str
     original_concept: Optional[str] = None
@@ -433,6 +450,16 @@ class FinancialLineItem(BaseModel):
     source_metadata: dict[str, Any] = Field(default_factory=dict)
     normalization_metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("period_start")
+    @classmethod
+    def _item_period_start(cls, value, info):
+        return _validate_iso_date(value, "period_start")
+
+    @field_validator("period_end")
+    @classmethod
+    def _item_period_end(cls, value, info):
+        return _validate_iso_date(value, "period_end")
+
     @field_validator("canonical_concept")
     @classmethod
     def _canonical_concept(cls, value: str) -> str:
@@ -441,6 +468,20 @@ class FinancialLineItem(BaseModel):
                 f"canonical_concept must be snake_case, got {value!r}"
             )
         return value
+
+    @model_validator(mode="after")
+    def _item_semantics_are_consistent(self) -> "FinancialLineItem":
+        if self.unit.statistic_kind != self.statistic_kind:
+            raise ValueError(
+                "line item statistic_kind and unit.statistic_kind must match: "
+                f"{self.statistic_kind!r} != {self.unit.statistic_kind!r}"
+            )
+        if self.period_start and self.period_end and self.period_start > self.period_end:
+            raise ValueError(
+                "period_start must not be after period_end: "
+                f"{self.period_start} > {self.period_end}"
+            )
+        return self
 
     @model_validator(mode="after")
     def _growth_requires_comparison_basis(self) -> "FinancialLineItem":
@@ -459,6 +500,8 @@ class FinancialLineItem(BaseModel):
 
 class FinancialStatement(BaseModel):
     """Canonical statement — instant (balance) or duration (income/cash)."""
+
+    model_config = {"frozen": True}
 
     statement_id: str = Field(default_factory=lambda: _financial_id("stmt"))
     entity_id: str
@@ -499,6 +542,16 @@ class FinancialStatement(BaseModel):
 
     @field_validator("period_start")
     @classmethod
+    def _statement_period_start(cls, value, info):
+        return _validate_iso_date(value, "period_start")
+
+    @field_validator("period_end")
+    @classmethod
+    def _statement_period_end(cls, value: str) -> str:
+        return _validate_iso_date(value, "period_end")
+
+    @field_validator("period_start")
+    @classmethod
     def _duration_requires_start(cls, value, info):
         period_type = (info.data or {}).get("period_type")
         if period_type == "duration" and not value:
@@ -512,4 +565,32 @@ class FinancialStatement(BaseModel):
         if not self.version:
             derived = self.accession_number or self.source_document_id or ""
             object.__setattr__(self, "version", derived)
+        return self
+
+    @model_validator(mode="after")
+    def _statement_periods_are_consistent(self) -> "FinancialStatement":
+        if self.period_type == "duration" and self.period_start > self.period_end:
+            raise ValueError(
+                "period_start must not be after period_end: "
+                f"{self.period_start} > {self.period_end}"
+            )
+        for item in self.line_items:
+            if item.period_start is None and item.period_end is None:
+                continue
+            if self.period_type == "instant":
+                if item.period_start is not None:
+                    raise ValueError(
+                        f"instant line item {item.canonical_concept!r} must not carry period_start"
+                    )
+                if item.period_end != self.period_end:
+                    raise ValueError(
+                        f"instant line item {item.canonical_concept!r} period_end must match "
+                        f"statement period_end {self.period_end!r}"
+                    )
+            else:
+                if item.period_start != self.period_start or item.period_end != self.period_end:
+                    raise ValueError(
+                        f"duration line item {item.canonical_concept!r} period must match "
+                        f"statement period {self.period_start!r}..{self.period_end!r}"
+                    )
         return self

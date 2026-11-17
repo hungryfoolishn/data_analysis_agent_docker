@@ -121,8 +121,11 @@ class FinancialFactEntry:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def source_version(self) -> tuple[str, bool]:
-        return (self.accession_number, self.amendment)
+    def source_version(self) -> tuple[str, bool, str]:
+        # The source document id is part of source identity.  Two filings can
+        # share an accession label (for example a CN announcement batch) while
+        # representing different source documents; they must not collide.
+        return (self.accession_number, self.amendment, self.source_document_id or "")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -153,12 +156,20 @@ class FinancialStatementRegistry:
             raise FinancialIdentityError(
                 "Only FinancialFactEntry instances can be registered"
             )
-        if not entry.accession_number:
+        if not isinstance(entry.key, FinancialStatementKey):
+            raise FinancialIdentityError(
+                "key must be a valid FinancialStatementKey"
+            )
+        if not entry.asset_id or not entry.asset_id.strip():
+            raise FinancialIdentityError(
+                "asset_id is required; untraceable facts must not be registered"
+            )
+        if not entry.accession_number or not entry.accession_number.strip():
             raise FinancialIdentityError(
                 "accession_number (source identity) is required; facts without "
                 "a traceable source must not be registered"
             )
-        if not entry.content_version:
+        if not entry.content_version or not entry.content_version.strip():
             raise FinancialIdentityError("content_version is required")
         versions = self._entries.setdefault(entry.key, _KeyVersions())
         same_source = [
@@ -176,8 +187,9 @@ class FinancialStatementRegistry:
                 f"got {entry.content_version}; declare amendment or bump the "
                 "filing version instead of overwriting"
             )
+        # Keep registration order.  Lexicographic accession sorting is not a
+        # semantic filing order; explicit resolution APIs expose all versions.
         versions.entries.append(entry)
-        versions.entries.sort(key=lambda item: (item.amendment, item.accession_number))
         return entry
 
     def resolve_latest(self, key: FinancialStatementKey) -> FinancialFactEntry:

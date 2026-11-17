@@ -212,7 +212,7 @@ def test_canonical_to_legacy_rejects_filing_metadata_loss():
         accession_number="ACC-001",
         filing_date="2025-03-01",
     )
-    with pytest.raises(LegacyCompatibilityError, match="filing metadata"):
+    with pytest.raises(LegacyCompatibilityError, match="filing/source metadata"):
         canonical_statement_to_legacy(canonical)
 
 
@@ -228,3 +228,71 @@ def test_normalization_version_is_financial_local():
 
     assert FINANCIAL_NORMALIZATION_VERSION != STATISTICS_VERSION
     assert FINANCIAL_NORMALIZATION_VERSION.startswith("b10.2")
+
+
+def test_canonical_to_legacy_rejects_source_document_loss():
+    canonical = _canonical_income_for_legacy().model_copy(
+        update={"source_document_id": "DOC-1"}
+    )
+    with pytest.raises(LegacyCompatibilityError, match="source_document_id"):
+        canonical_statement_to_legacy(canonical)
+
+
+def test_canonical_to_legacy_rejects_non_whitelisted_item():
+    canonical = _canonical_income_for_legacy()
+    extra = FinancialLineItem(
+        canonical_concept="extra_concept",
+        value=Decimal("9"),
+        statistic_kind="unknown",
+        unit=FinancialUnit(statistic_kind="unknown", numeric_unit="1"),
+    )
+    rebuilt = canonical.model_copy(
+        update={"line_items": canonical.line_items + (extra,)}
+    )
+    with pytest.raises(LegacyCompatibilityError, match="no lossless legacy field"):
+        canonical_statement_to_legacy(rebuilt)
+
+
+def test_canonical_to_legacy_rejects_wrong_statistic_kind():
+    canonical = _canonical_income_for_legacy()
+    wrong_kind = canonical.line_items[0].model_copy(
+        update={
+            "statistic_kind": "percent_ratio",
+            "unit": FinancialUnit(
+                statistic_kind="percent_ratio", numeric_unit="percent"
+            ),
+        }
+    )
+    rebuilt = canonical.model_copy(
+        update={
+            "line_items": tuple(
+                wrong_kind if item.canonical_concept == "revenue" else item
+                for item in canonical.line_items
+            )
+        }
+    )
+    with pytest.raises(LegacyCompatibilityError, match="statistic_kind"):
+        canonical_statement_to_legacy(rebuilt)
+
+
+def test_canonical_to_legacy_rejects_currency_mismatch():
+    canonical = _canonical_income_for_legacy()
+    wrong_currency = canonical.line_items[0].model_copy(
+        update={
+            "unit": FinancialUnit(
+                statistic_kind="absolute_amount",
+                numeric_unit="USD",
+                currency="USD",
+            )
+        }
+    )
+    rebuilt = canonical.model_copy(
+        update={
+            "line_items": tuple(
+                wrong_currency if item.canonical_concept == "revenue" else item
+                for item in canonical.line_items
+            )
+        }
+    )
+    with pytest.raises(LegacyCompatibilityError, match="currency"):
+        canonical_statement_to_legacy(rebuilt)

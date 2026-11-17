@@ -56,6 +56,12 @@ class FinancialCurrencyRate:
             raise FinancialNormalizationError(
                 "currency rate direction must be explicit"
             )
+        for field_name in ("rate_date", "rate_source", "rate_version"):
+            value = getattr(self, field_name)
+            if not value or not value.strip():
+                raise FinancialNormalizationError(
+                    f"currency rate {field_name} is required for traceability"
+                )
 
 
 @dataclass(frozen=True)
@@ -251,6 +257,10 @@ def normalize_financial_line_item(
                 "output_unit": output_unit.model_dump(mode="json"),
                 "output_currency": output_currency,
                 "conversion_method": methods or ["identity"],
+                "yoy_index_base": Decimal("100")
+                if item.statistic_kind == "yoy_index"
+                and target_kind == "growth_rate"
+                else None,
                 "normalization_version": FINANCIAL_NORMALIZATION_VERSION,
                 "warnings": warnings,
                 "source_metadata": dict(item.source_metadata),
@@ -279,6 +289,25 @@ def normalize_financial_statement(
     currency_rate: Optional[FinancialCurrencyRate] = None,
 ) -> FinancialStatementNormalizationResult:
     """Normalize every line item while retaining statement filing identity."""
+    monetary_source_currencies = {
+        item.unit.currency
+        for item in statement.line_items
+        if item.unit.currency is not None
+    }
+    if len(monetary_source_currencies) > 1:
+        raise FinancialNormalizationError(
+            "statement contains mixed monetary line-item currencies; normalize "
+            "one currency per statement with explicit rates"
+        )
+    if (
+        monetary_source_currencies
+        and next(iter(monetary_source_currencies)) != statement.currency
+    ):
+        raise FinancialNormalizationError(
+            "statement currency does not match monetary line-item currency: "
+            f"statement={statement.currency!r}, line_item="
+            f"{next(iter(monetary_source_currencies))!r}"
+        )
     item_results = tuple(
         normalize_financial_line_item(
             item,
@@ -297,9 +326,14 @@ def normalize_financial_statement(
         "statement_version": statement.version,
     }
     output_items = tuple(result.output_line_item for result in item_results)
+    output_currency = target_currency if monetary_source_currencies else statement.currency
     output_statement = statement.model_copy(
-        update={"line_items": output_items, "metadata": {**statement.metadata,
-            "normalization_version": FINANCIAL_NORMALIZATION_VERSION}}
+        update={
+            "line_items": output_items,
+            "currency": output_currency,
+            "metadata": {**statement.metadata,
+                "normalization_version": FINANCIAL_NORMALIZATION_VERSION},
+        }
     )
     warnings = tuple(
         warning

@@ -719,3 +719,18 @@ B10.2 已完成 Financial Pack 基础层并通过最终验收；B9 冻结边界�
 - `compileall`、Financial import/circular check 与 `git diff --check` 通过；项目未配置 Ruff/Flake8/Mypy。
 
 最终状态：`B10.2 = FROZEN`，`B10.3 = UNLOCKED`。
+
+---
+
+## 十七、B10.2 独立审计修复复核（2026-11-17）
+
+B10.2 原验收在独立复核中发现四个 P1，原 `FROZEN` 状态失效。已完成最小修复与回归：
+
+- `FinancialStatement` 期间字段强制 ISO date、日历合法性和 start/end 顺序。
+- `canonical_statement_to_legacy()` 拒绝 `source_document_id`、非白名单科目、错误 statistic kind / currency / per-share denominator，杜绝静默丢失。
+- `FinancialStatementRegistry` 要求有效 9 维 key、非空 `asset_id`，并将 `source_document_id` 纳入 source version。
+- `normalize_financial_statement()` 拒绝 statement/item 币种不一致；显式 FX 会同步更新 statement 与 line item 币种。
+- 同时关闭 P2-1/P2-2/P2-3/P2-4/P2-5/P2-6/P2-7 中的可修复语义风险。
+- 修复后 Financial 专项回归：**339 passed / 0 failed**；三个核心测试文件：**68 passed / 0 failed**。
+
+当前状态：`B10.2 = FROZEN AFTER POST-AUDIT REPAIR`，`B10.3 = UNLOCKED`。

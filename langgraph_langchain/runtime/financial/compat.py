@@ -309,13 +309,17 @@ def canonical_statement_to_legacy(statement: FinancialStatement):
             "amended statements have no legacy representation; refusing to "
             "convert (legacy fixed fields cannot carry amendment semantics)"
         )
-    if statement.filing_date or statement.accession_number:
+    if (
+        statement.filing_date
+        or statement.accession_number
+        or statement.source_document_id
+    ):
         # Metadata that legacy fields cannot represent — a silent drop is a
         # loss.  Callers must accept the disclosure explicitly via params.
         raise LegacyCompatibilityError(
-            "canonical statement carries filing metadata (filing_date/"
-            "accession_number) that legacy models cannot represent; refusing "
-            "lossy conversion"
+            "canonical statement carries filing/source metadata (filing_date/"
+            "accession_number/source_document_id) that legacy models cannot "
+            "represent; refusing lossy conversion"
         )
 
     model_by_type = {
@@ -324,6 +328,42 @@ def canonical_statement_to_legacy(statement: FinancialStatement):
         "cash": CashFlowStatement,
     }
     legacy_model = model_by_type[statement.statement_type]
+    allowed_concepts = set(_STATEMENT_CONCEPTS[statement.statement_type])
+    seen_concepts = set()
+    for item in statement.line_items:
+        if item.canonical_concept not in allowed_concepts:
+            raise LegacyCompatibilityError(
+                "canonical line item "
+                f"{item.canonical_concept!r} has no lossless legacy field; "
+                "refusing to drop data"
+            )
+        if item.canonical_concept in seen_concepts:
+            raise LegacyCompatibilityError(
+                f"canonical line item {item.canonical_concept!r} appears more "
+                "than once; legacy fixed fields cannot represent duplicates"
+            )
+        seen_concepts.add(item.canonical_concept)
+        expected_kind = LEGACY_CONCEPT_KINDS[item.canonical_concept]
+        if item.statistic_kind != expected_kind:
+            raise LegacyCompatibilityError(
+                f"concept {item.canonical_concept!r} requires legacy statistic_kind "
+                f"{expected_kind!r}, got {item.statistic_kind!r}"
+            )
+        if item.unit.currency != statement.currency:
+            raise LegacyCompatibilityError(
+                f"concept {item.canonical_concept!r} currency "
+                f"{item.unit.currency!r} does not match statement currency "
+                f"{statement.currency!r}"
+            )
+        if expected_kind == "absolute_amount" and item.unit.numeric_unit != statement.currency:
+            raise LegacyCompatibilityError(
+                f"concept {item.canonical_concept!r} numeric_unit "
+                f"{item.unit.numeric_unit!r} is not the monetary statement currency"
+            )
+        if expected_kind == "per_share" and item.unit.unit_denominator != "share":
+            raise LegacyCompatibilityError(
+                f"concept {item.canonical_concept!r} requires per-share denominator 'share'"
+            )
     items_by_concept = {item.canonical_concept: item for item in statement.line_items}
 
     kwargs: dict = {
