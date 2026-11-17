@@ -62,7 +62,7 @@ def build_financial_pack_contract() -> DomainPackContract:
             "authority for canonical data",
         },
         normalization_contract={
-            "single_exit": "normalize_to_financial_line_item / "
+            "single_exit": "normalize_financial_line_item / "
             "normalize_financial_statement",
             "statistic_kinds": [
                 "absolute_amount",

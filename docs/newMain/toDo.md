@@ -697,3 +697,25 @@ B9.8.2 验收后代码复审发现 P1：G15 中美 CPI 同比比较的统计口�
 - 本轮提交：`f980b1e` → `c85363f` → `d946283` → `810cb4e` → 验收文档提交。
 
 **B9 维持正式冻结（P0/P1 清零，门禁全过）。B10.2 已解锁，待启动（本轮未实施）。**
+
+---
+
+## 十六、B10.2 Financial Models & Normalization 最终冻结（2026-11-17）
+
+B10.2 已完成 Financial Pack 基础层并通过最终验收；B9 冻结边界未被修改，B10.3 仅按原始范围解锁：
+
+- B10.2.0 Pack Contract/Registry：`2331213 feat(financial): complete financial pack contract and registration`。
+- B10.2.1 Financial Identity/Baseline：`efff83d docs(financial): freeze financial identity and baseline`。
+- B10.2.2 Canonical Models/Registry：`e931830 feat(financial): refactor canonical financial models`。
+- B10.2.3 Explicit Normalization：`6368f10 feat(financial): add explicit financial normalization`。
+- B10.2.4 Legacy Compatibility：`fbbeb35 feat(financial): add legacy model compatibility adapters`。
+- 最终验收报告：`docs/architecture/reviews/b10.2-final-acceptance.md`（最终提交 SHA 以本节更新提交为准）。
+
+验收结果：
+
+- Financial/Agent/Contract/Models/Normalization/Compatibility：**326 passed / 0 failed / 0 skipped**。
+- Platform、Asset、Snapshot、Acquisition、Evidence、Macro grouped regression：**297 passed / 4 skipped / 0 failed**。
+- 全量回归：**1617 passed / 11 failed / 9 skipped**；11 个失败全部在 B10.2.1 基线 HEAD `efff83d` 复现，属既有旧 Runtime/Dashboard 问题，本轮 0 新增。
+- `compileall`、Financial import/circular check 与 `git diff --check` 通过；项目未配置 Ruff/Flake8/Mypy。
+
+最终状态：`B10.2 = FROZEN`，`B10.3 = UNLOCKED`。
