@@ -781,3 +781,25 @@ B10.8 已按独立阶段实施、测试、验收、提交并推送。确定性�
 最终验收文档：`docs/architecture/reviews/b10.8-production-readiness-acceptance.md`。
 
 当前状态：`B10.8 = PARTIAL`，`B10 = NOT FROZEN`（P1：China PDF 财报解析器缺失，阻断完整外部验证矩阵），`B11 = LOCKED`。
+
+---
+
+## 二十、B10.9 China Financial Statement PDF Ingestion（2026-11-17）
+
+B10.9 已按独立阶段实施、测试、验收、提交并推送。真实 CNINFO 半年度报告 PDF 下载、文本模式解析、科目映射全部通过：
+
+- B10.9.0 基线审计：`1f5ed95 docs(financial): add B10.9 China PDF ingestion baseline audit`。
+- B10.9.1-3 核心实现（PDF 下载 + 表格解析 + 文本解析 + 科目映射）：`d66e72f`、`c27a641`。
+- B10.9.4 外部 smoke 测试：`061c882`。
+
+外部验证结果：
+
+- 上海浦东发展银行（600000）2024 年半年度报告 PDF：HTTP 200，5,674,330 bytes，SHA-256 `cb290105e8da0e1a9ffa867661facd2b98fbc68b1b23809a082ab260a72ee51b`，299 页，三大报表均检出，23 个科目映射成功。**PASS**。
+- 扫描型/OCR PDF：未实现（P1）。**BLOCKED**。
+
+Financial 回归：**470 passed / 0 failed**（含 32 个新增 China PDF 测试）。
+全量回归：**1768 passed / 11 failed / 11 skipped**（+32 passed，0 新增失败）。
+
+最终验收文档：`docs/architecture/reviews/b10.9-china-pdf-ingestion-final-acceptance.md`。
+
+当前状态：`B10.9 = PARTIAL`（文本模式 PASS / 扫描 PDF BLOCKED），`B10 = NOT FROZEN`，`B11 = LOCKED`。
