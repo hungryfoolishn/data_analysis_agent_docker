@@ -120,6 +120,20 @@ class FinancialContext:
         )
         if definition.metric_kind == "raw":
             return self._resolve_raw(definition, fiscal_year=self.intent.fiscal_year)
+        if definition.metric_kind == "difference":
+            minuend = self.resolve(definition.minuend_metric or "")
+            subtrahend = self.resolve(definition.subtrahend_metric or "")
+            return self._compute(
+                definition,
+                input_values={
+                    definition.minuend_metric or "minuend": minuend.value,
+                    definition.subtrahend_metric or "subtrahend": subtrahend.value,
+                },
+                lineage={
+                    "minuend": minuend.lineage,
+                    "subtrahend": subtrahend.lineage,
+                },
+            )
         if definition.metric_kind == "ratio":
             numerator = self.resolve(definition.numerator_metric or "")
             denominator = self.resolve(definition.denominator_metric or "")

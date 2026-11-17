@@ -37,7 +37,7 @@ class FinancialIndicatorDefinition:
     metric_id: str
     display_name: str
     market_scope: str
-    metric_kind: str  # raw | ratio | growth
+    metric_kind: str  # raw | ratio | growth | difference
     statistic_kind: FinancialStatisticKind
     unit: str
     statement_type: Optional[str] = None
@@ -45,6 +45,8 @@ class FinancialIndicatorDefinition:
     numerator_metric: Optional[str] = None
     denominator_metric: Optional[str] = None
     base_metric: Optional[str] = None
+    minuend_metric: Optional[str] = None
+    subtrahend_metric: Optional[str] = None
     period_requirement: str = "single_period"
     dependencies: tuple[str, ...] = ()
     version: str = "b10.4"
@@ -61,7 +63,7 @@ class FinancialIndicatorDefinition:
             raise FinancialIndicatorError(
                 f"market_scope must be one of {sorted(MARKET_SCOPES)}"
             )
-        if self.metric_kind not in {"raw", "ratio", "growth"}:
+        if self.metric_kind not in {"raw", "ratio", "growth", "difference"}:
             raise FinancialIndicatorError("metric_kind must be raw, ratio, or growth")
         if self.period_requirement not in {
             "single_period",
@@ -83,6 +85,16 @@ class FinancialIndicatorDefinition:
             if self.numerator_metric not in dependencies or self.denominator_metric not in dependencies:
                 raise FinancialIndicatorError(
                     "ratio dependencies must explicitly contain numerator and denominator"
+                )
+        if self.metric_kind == "difference":
+            if not self.minuend_metric or not self.subtrahend_metric:
+                raise FinancialIndicatorError(
+                    "difference metrics require minuend and subtrahend metrics"
+                )
+            dependencies = set(self.dependencies)
+            if self.minuend_metric not in dependencies or self.subtrahend_metric not in dependencies:
+                raise FinancialIndicatorError(
+                    "difference dependencies must explicitly contain minuend and subtrahend"
                 )
         if self.metric_kind == "growth":
             if not self.base_metric:
@@ -251,6 +263,37 @@ def compute_financial_indicator(
             lineage=dict(lineage or {}),
         )
 
+    if definition.metric_kind == "difference":
+        minuend = resolved.get(definition.minuend_metric or "")
+        subtrahend = resolved.get(definition.subtrahend_metric or "")
+        inputs = {
+            "minuend_metric": definition.minuend_metric,
+            "subtrahend_metric": definition.subtrahend_metric,
+            "minuend": minuend,
+            "subtrahend": subtrahend,
+        }
+        if minuend is None or subtrahend is None:
+            return FinancialIndicatorResult(
+                metric_id=definition.metric_id,
+                market_scope=definition.market_scope,
+                status=UNAVAILABLE,
+                statistic_kind=definition.statistic_kind,
+                unit=definition.unit,
+                inputs=inputs,
+                lineage=dict(lineage or {}),
+                reason="difference_input_missing",
+            )
+        return FinancialIndicatorResult(
+            metric_id=definition.metric_id,
+            market_scope=definition.market_scope,
+            status=CALCULATED,
+            statistic_kind=definition.statistic_kind,
+            value=minuend - subtrahend,
+            unit=definition.unit,
+            inputs=inputs,
+            lineage=dict(lineage or {}),
+        )
+
     base = resolved.get("current")
     comparison = resolved.get("previous")
     inputs = {"current": base, "previous": comparison, "base_metric": definition.base_metric}
@@ -351,6 +394,72 @@ def _seed_registry() -> FinancialIndicatorRegistry:
             dependencies=("revenue",),
             period_requirement="cumulative",
             description="Year-over-year revenue growth against an explicit baseline.",
+        )
+    )
+    for concept, statement_type in (
+        ("total_assets", "balance"),
+        ("total_equity", "balance"),
+        ("operating_cash_flow", "cash"),
+        ("capital_expenditure", "cash"),
+    ):
+        registry.register(
+            FinancialIndicatorDefinition(
+                metric_id=concept,
+                display_name=concept.replace("_", " ").title(),
+                market_scope="any",
+                metric_kind="raw",
+                statistic_kind="absolute_amount",
+                unit="source_currency",
+                statement_type=statement_type,
+                canonical_concept=concept,
+                period_requirement="single_period",
+                dependencies=(concept,),
+                description="Canonical reported financial-statement amount.",
+            )
+        )
+    registry.register(
+        FinancialIndicatorDefinition(
+            metric_id="roe",
+            display_name="Return on Equity",
+            market_scope="any",
+            metric_kind="ratio",
+            statistic_kind="percent_ratio",
+            unit="percent",
+            numerator_metric="net_profit",
+            denominator_metric="total_equity",
+            dependencies=("net_profit", "total_equity"),
+            period_requirement="single_period",
+            description="Net profit divided by total equity, reported as percent.",
+        )
+    )
+    registry.register(
+        FinancialIndicatorDefinition(
+            metric_id="roa",
+            display_name="Return on Assets",
+            market_scope="any",
+            metric_kind="ratio",
+            statistic_kind="percent_ratio",
+            unit="percent",
+            numerator_metric="net_profit",
+            denominator_metric="total_assets",
+            dependencies=("net_profit", "total_assets"),
+            period_requirement="single_period",
+            description="Net profit divided by total assets, reported as percent.",
+        )
+    )
+    registry.register(
+        FinancialIndicatorDefinition(
+            metric_id="free_cash_flow",
+            display_name="Free Cash Flow",
+            market_scope="any",
+            metric_kind="difference",
+            statistic_kind="absolute_amount",
+            unit="source_currency",
+            minuend_metric="operating_cash_flow",
+            subtrahend_metric="capital_expenditure",
+            dependencies=("operating_cash_flow", "capital_expenditure"),
+            period_requirement="single_period",
+            description="Operating cash flow minus capital expenditure.",
         )
     )
     return registry

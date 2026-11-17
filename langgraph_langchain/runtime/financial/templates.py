@@ -94,7 +94,21 @@ financial_template_registry.register(
     FinancialTemplate(
         template_id="single_metric_analysis",
         title="Analyze one canonical Financial indicator",
-        metrics=("revenue", "gross_profit", "net_profit", "eps", "gross_margin"),
-        required_statements=("income",),
+        metrics=(
+            "revenue",
+            "gross_profit",
+            "net_profit",
+            "eps",
+            "gross_margin",
+            "total_assets",
+            "total_equity",
+            "operating_cash_flow",
+            "capital_expenditure",
+            "roe",
+            "roa",
+            "free_cash_flow",
+            "revenue_growth",
+        ),
+        required_statements=("income", "balance", "cash"),
     )
 )

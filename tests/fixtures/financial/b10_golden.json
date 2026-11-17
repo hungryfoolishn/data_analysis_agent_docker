@@ -1,11 +1,12 @@
 {
-  "schema_version": "b10.7",
+  "schema_version": "b10.8.5",
   "normalization_version": "b10.2.3",
-  "period_semantics_version": "b10.3",
-  "catalog_version": "b10.4",
+  "period_semantics_version": "b10.8.3",
+  "catalog_version": "b10.8.5",
   "cases": [
     {
-      "case_id": "us_income_2024_gross_margin",
+      "case_id": "us_income_2024_revenue_raw",
+      "source_market": "us",
       "market": "us",
       "entity_id": "ent_us",
       "statement_type": "income",
@@ -14,18 +15,36 @@
       "period_end": "2024-12-31",
       "fiscal_year": 2024,
       "fiscal_period": "FY",
+      "period_basis": "single_period",
       "reporting_basis": "consolidated",
       "currency": "USD",
-      "metric_id": "gross_margin",
-      "expected_statistic_kind": "percent_ratio",
-      "expected_value": "25.00",
-      "line_items": {
-        "revenue": "1000.00",
-        "gross_profit": "250.00"
+      "metric_id": "revenue",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": "1000.00",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "sec/companyconcept_income.json",
+      "raw_line_items": {
+        "revenue": "1000.00"
+      },
+      "expected_normalized_line_items": {
+        "revenue": "1000.00"
+      },
+      "expected_indicators": {
+        "revenue": "1000.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
       }
     },
     {
-      "case_id": "cn_income_2024_gross_margin",
+      "case_id": "cn_income_2024_revenue_raw",
+      "source_market": "cn",
       "market": "cn",
       "entity_id": "ent_cn",
       "statement_type": "income",
@@ -34,15 +53,700 @@
       "period_end": "2024-12-31",
       "fiscal_year": 2024,
       "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "revenue",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": "800.00",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "china/statement_income_sample.csv",
+      "raw_line_items": {
+        "revenue": "800.00"
+      },
+      "expected_normalized_line_items": {
+        "revenue": "800.00"
+      },
+      "expected_indicators": {
+        "revenue": "800.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
+      }
+    },
+    {
+      "case_id": "us_income_2024_gross_margin",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "gross_margin",
+      "expected_statistic_kind": "percent_ratio",
+      "expected_value": "25.00",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "sec/companyconcept_income.json",
+      "raw_line_items": {
+        "revenue": "1000.00",
+        "gross_profit": "250.00"
+      },
+      "expected_normalized_line_items": {
+        "revenue": "1000.00",
+        "gross_profit": "250.00"
+      },
+      "expected_indicators": {
+        "gross_margin": "25.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
+      }
+    },
+    {
+      "case_id": "cn_income_2024_gross_margin",
+      "source_market": "cn",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
       "reporting_basis": "consolidated",
       "currency": "CNY",
       "metric_id": "gross_margin",
       "expected_statistic_kind": "percent_ratio",
       "expected_value": "40.00",
-      "line_items": {
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "china/statement_income_sample.csv",
+      "raw_line_items": {
         "revenue": "500.00",
         "gross_profit": "200.00"
+      },
+      "expected_normalized_line_items": {
+        "revenue": "500.00",
+        "gross_profit": "200.00"
+      },
+      "expected_indicators": {
+        "gross_margin": "40.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
       }
+    },
+    {
+      "case_id": "us_income_2024_eps",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "eps",
+      "expected_statistic_kind": "per_share",
+      "expected_value": "1.25",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "sec/companyconcept_income.json",
+      "raw_line_items": {
+        "eps": "1.25"
+      },
+      "expected_normalized_line_items": {
+        "eps": "1.25"
+      },
+      "expected_indicators": {
+        "eps": "1.25"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
+      }
+    },
+    {
+      "case_id": "cn_income_2024_net_profit_raw",
+      "source_market": "cn",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "net_profit",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": "90.00",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "china/statement_income_sample.csv",
+      "raw_line_items": {
+        "net_profit": "90.00"
+      },
+      "expected_normalized_line_items": {
+        "net_profit": "90.00"
+      },
+      "expected_indicators": {
+        "net_profit": "90.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
+      }
+    },
+    {
+      "case_id": "us_balance_2024_roa",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "balance",
+      "period_type": "instant",
+      "period_start": null,
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "roa",
+      "expected_statistic_kind": "percent_ratio",
+      "expected_value": "5.00",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "sec/companyconcept_balance.json",
+      "raw_line_items": {
+        "net_profit": "50.00",
+        "total_assets": "1000.00"
+      },
+      "expected_normalized_line_items": {
+        "net_profit": "50.00",
+        "total_assets": "1000.00"
+      },
+      "expected_indicators": {
+        "roa": "5.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
+      }
+    },
+    {
+      "case_id": "cn_balance_2024_roe",
+      "source_market": "cn",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "balance",
+      "period_type": "instant",
+      "period_start": null,
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "roe",
+      "expected_statistic_kind": "percent_ratio",
+      "expected_value": "20.00",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "china/statement_balance_sample.csv",
+      "raw_line_items": {
+        "net_profit": "80.00",
+        "total_equity": "400.00"
+      },
+      "expected_normalized_line_items": {
+        "net_profit": "80.00",
+        "total_equity": "400.00"
+      },
+      "expected_indicators": {
+        "roe": "20.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
+      }
+    },
+    {
+      "case_id": "us_cash_2024_operating_cash_flow",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "cash",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "operating_cash_flow",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": "300.00",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "sec/companyconcept_cashflow.json",
+      "raw_line_items": {
+        "operating_cash_flow": "300.00"
+      },
+      "expected_normalized_line_items": {
+        "operating_cash_flow": "300.00"
+      },
+      "expected_indicators": {
+        "operating_cash_flow": "300.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
+      }
+    },
+    {
+      "case_id": "cn_cash_2024_free_cash_flow",
+      "source_market": "cn",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "cash",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "free_cash_flow",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": "220.00",
+      "expected_status": "calculated",
+      "expected_reason": null,
+      "source_fixture": "china/statement_cashflow_sample.csv",
+      "raw_line_items": {
+        "operating_cash_flow": "300.00",
+        "capital_expenditure": "80.00"
+      },
+      "expected_normalized_line_items": {
+        "operating_cash_flow": "300.00",
+        "capital_expenditure": "80.00"
+      },
+      "expected_indicators": {
+        "free_cash_flow": "220.00"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": {
+        "validation_status": "reference_validated"
+      }
+    },
+    {
+      "case_id": "us_income_missing_revenue_raw",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "revenue",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "raw_value_missing",
+      "source_fixture": null,
+      "raw_line_items": {},
+      "expected_normalized_line_items": {},
+      "expected_indicators": {
+        "revenue": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "us_income_zero_revenue_denominator",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "gross_margin",
+      "expected_statistic_kind": "percent_ratio",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "denominator_zero",
+      "source_fixture": null,
+      "raw_line_items": {
+        "revenue": "0",
+        "gross_profit": "10"
+      },
+      "expected_normalized_line_items": {
+        "revenue": "0",
+        "gross_profit": "10"
+      },
+      "expected_indicators": {
+        "gross_margin": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "cn_income_zero_growth_baseline",
+      "source_market": "cn",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "revenue_growth",
+      "expected_statistic_kind": "growth_rate",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "growth_baseline_zero",
+      "source_fixture": null,
+      "raw_line_items": {
+        "revenue": "0"
+      },
+      "expected_normalized_line_items": {
+        "revenue": "0"
+      },
+      "expected_indicators": {
+        "revenue_growth": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "us_balance_missing_total_assets",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "balance",
+      "period_type": "instant",
+      "period_start": null,
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "roa",
+      "expected_statistic_kind": "percent_ratio",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "ratio_input_missing",
+      "source_fixture": null,
+      "raw_line_items": {
+        "net_profit": "50"
+      },
+      "expected_normalized_line_items": {
+        "net_profit": "50"
+      },
+      "expected_indicators": {
+        "roa": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "cn_balance_missing_total_equity",
+      "source_market": "cn",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "balance",
+      "period_type": "instant",
+      "period_start": null,
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "roe",
+      "expected_statistic_kind": "percent_ratio",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "ratio_input_missing",
+      "source_fixture": null,
+      "raw_line_items": {
+        "net_profit": "80"
+      },
+      "expected_normalized_line_items": {
+        "net_profit": "80"
+      },
+      "expected_indicators": {
+        "roe": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "us_cash_missing_operating_cash_flow",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "cash",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "free_cash_flow",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "difference_input_missing",
+      "source_fixture": null,
+      "raw_line_items": {
+        "capital_expenditure": "10"
+      },
+      "expected_normalized_line_items": {
+        "capital_expenditure": "10"
+      },
+      "expected_indicators": {
+        "free_cash_flow": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "cn_cash_missing_capital_expenditure",
+      "source_market": "cn",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "cash",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "free_cash_flow",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "difference_input_missing",
+      "source_fixture": null,
+      "raw_line_items": {
+        "operating_cash_flow": "10"
+      },
+      "expected_normalized_line_items": {
+        "operating_cash_flow": "10"
+      },
+      "expected_indicators": {
+        "free_cash_flow": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "us_income_unknown_period_basis",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "revenue",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "unknown_period_basis",
+      "source_fixture": null,
+      "raw_line_items": {},
+      "expected_normalized_line_items": {},
+      "expected_indicators": {
+        "revenue": "100"
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "cn_income_currency_mismatch",
+      "source_market": "cn",
+      "market": "cn",
+      "entity_id": "ent_cn",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "CNY",
+      "metric_id": "revenue",
+      "expected_statistic_kind": "absolute_amount",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "currency_mismatch",
+      "source_fixture": null,
+      "raw_line_items": {
+        "revenue": "100"
+      },
+      "expected_normalized_line_items": {
+        "revenue": "100"
+      },
+      "expected_indicators": {
+        "revenue": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
+    },
+    {
+      "case_id": "sec_companyconcept_ambiguous_unit",
+      "source_market": "us",
+      "market": "us",
+      "entity_id": "ent_us",
+      "statement_type": "income",
+      "period_type": "duration",
+      "period_start": "2024-01-01",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "fiscal_period": "FY",
+      "period_basis": "single_period",
+      "reporting_basis": "consolidated",
+      "currency": "USD",
+      "metric_id": "eps",
+      "expected_statistic_kind": "per_share",
+      "expected_value": null,
+      "expected_status": "rejected",
+      "expected_reason": "ambiguous_unit",
+      "source_fixture": null,
+      "raw_line_items": {
+        "eps": "1.25"
+      },
+      "expected_normalized_line_items": {
+        "eps": "1.25"
+      },
+      "expected_indicators": {
+        "eps": null
+      },
+      "expected_disclosures": [
+        "statistic_kind",
+        "currency",
+        "period_basis"
+      ],
+      "expected_evidence": null
     }
   ]
 }
