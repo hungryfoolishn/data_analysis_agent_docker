@@ -176,3 +176,46 @@ origin/codex/phase1-m2.4-sqlite-schema: 758a953 -> e47bb0e
 3. Re-run Financial regression and full suite after expansion.
 4. Perform another independent final audit.
 5. Only then consider changing `B10 = NOT FROZEN` to `B10 = FROZEN`.
+
+---
+
+## 10. B10.8 Production Readiness & External Data Validation Addendum (2026-11-17)
+
+B10.8 was implemented after this acceptance document to close the two open
+gates recorded above: real SEC/China external validation and Golden breadth.
+All deterministic stages passed; the China PDF parser boundary remains open.
+
+Result: **B10.8 = PARTIAL; B10 remains NOT FROZEN; B11 remains LOCKED.**
+
+| Gate | Result |
+|---|---|
+| SEC External Validation | PASS (Revenues duration + Assets instant, raw parse through AcquisitionService) |
+| China External Validation | BLOCKED (announcement layer live; PDF filing-document parser not implemented) |
+| Financial Period Semantics | PASS |
+| Financial Evidence Integration | PASS |
+| Golden Coverage | PASS (20 cases: 10 success + 10 rejection) |
+| Full Regression | PASS (no new failures vs baseline) |
+| Independent Audit | PASS |
+
+Stage commits: `c95a421` -> `172bca4` -> `58b763c` -> `2206639` -> `10c6a32` -> `8d4c7c4` -> `ef6022b` -> `b272042` -> `a9c5e51`.
+
+Full suite delta vs baseline `6628025`: **1676/11/9 -> 1736/11/11** (+60 passed, +2 skipped, 0 new failures).
+
+SEC external evidence:
+
+- Revenues: HTTP 200, 2252 bytes, 11 duration facts,
+  SHA-256 `ae228f6e452e9dd051b876be882802379f3a8a1569297ba4a8474ee437308c05`.
+- Assets: HTTP 200, 20242 bytes, 148 instant facts,
+  SHA-256 `72602d245bc4962e457a31e1f739aaefe19839dc51883700d9940595e4a39957`.
+
+China external evidence:
+
+- Announcement query: HTTP 200, 915 bytes, 101 total, 1 parsed,
+  announcement ID `1222155729`,
+  SHA-256 `caad256f47cc4b3184f407345835a531db5f77ee8f32beb073689af5e5b41dc2`.
+
+Open P1: China production PDF filing-document parser missing. The full B10
+external validation matrix cannot close until this parser is implemented and
+live-validated. See
+`docs/architecture/reviews/b10.8-production-readiness-acceptance.md` for the
+complete acceptance report.

@@ -752,3 +752,32 @@ B10.3–B10.7 已按独立阶段实施、测试、验收、提交并推送。确
 - 最终验收：`docs/architecture/reviews/b10-final-acceptance.md`。
 
 当前状态：`B10 = NOT FROZEN`。未冻结原因是真实 SEC/China 外部服务验证未执行，且 Golden 覆盖尚未达到完整生产级广度；不将确定性 Fixture 通过率夸大为完整冻结。
+
+---
+
+## 十九、B10.8 Financial Production Readiness & External Data Validation（2026-11-17）
+
+B10.8 已按独立阶段实施、测试、验收、提交并推送。确定性实现链路全部完成，真实 SEC 外部验证通过；China 外部验证在 PDF 财报解析器边界显式阻断：
+
+- B10.8.0 基线审计：`c95a421 docs(financial): add B10.8 production readiness audit`。
+- B10.8.1 SEC Company Concept 原始 JSON 解析：`172bca4 fix(financial): parse SEC company concept raw responses`。
+- B10.8.2 中国公告/文档采集层：`58b763c feat(financial): implement China filing document ingestion`。
+- B10.8.3 期间语义（缺失中间累计期间拒绝推导、申报版本不一致拒绝混合）：`2206639 fix(financial): enforce contiguous cumulative period semantics`。
+- B10.8.4 Runtime Evidence 集成（Platform 模式显式化、Decimal 精度保留、走既有 EvidenceRegistry）：`10c6a32 fix(financial): complete runtime evidence integration`。
+- B10.8.5 Golden 扩展（20 案例：10 成功 + 10 拒绝，覆盖原始源端 E2E）：`8d4c7c4 test(financial): expand production golden end-to-end coverage`。
+- B10.8.6 外部验证 smoke（opt-in）：`ef6022b test(financial): add external financial source smoke validation`。
+- SEC instant 补充验证与生产 acquisition 修复：`b272042`、`a9c5e51`。
+
+外部验证结果：
+
+- SEC：Revenues（duration，11 facts）与 Assets（instant，148 facts）均 HTTP 200，原始 JSON 解析成功，accession/filing date/response hash 完整，经生产 `AcquisitionService` 走通 DataAsset/SnapshotStore。**PASS**。
+  - Revenues SHA-256: `ae228f6e452e9dd051b876be882802379f3a8a1569297ba4a8474ee437308c05`。
+  - Assets SHA-256: `72602d245bc4962e457a31e1f739aaefe19839dc51883700d9940595e4a39957`。
+- China：公告发现层 live 验证成功（HTTP 200，announcement ID `1222155729`，SHA-256 `caad256f47cc4b3184f407345835a531db5f77ee8f32beb073689af5e5b41dc2`），但生产级 PDF 财报文档解析器未实现，财报数字链路无法端到端验证。**BLOCKED**。
+- Golden：20/20 通过（Financial 回归 423 passed / 0 failed）。
+
+全量回归（最终 HEAD `a9c5e51`）：**1736 passed / 11 failed / 11 skipped**（+60 passed，+2 skipped，0 新增失败）。11 个失败为既有 Runtime/Dashboard 基线失败集，与本轮无关。
+
+最终验收文档：`docs/architecture/reviews/b10.8-production-readiness-acceptance.md`。
+
+当前状态：`B10.8 = PARTIAL`，`B10 = NOT FROZEN`（P1：China PDF 财报解析器缺失，阻断完整外部验证矩阵），`B11 = LOCKED`。
