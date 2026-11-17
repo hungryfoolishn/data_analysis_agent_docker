@@ -1,0 +1,13 @@
+{
+  "cik": 320193,
+  "taxonomy": "us-gaap",
+  "tag": "NetCashProvidedByUsedInOperatingActivities",
+  "label": "Operating cash flow",
+  "description": "Operating activities",
+  "entityName": "Apple Inc.",
+  "units": {
+    "USD": [
+      {"start":"2024-01-01","end":"2024-03-31","val":26802000000,"accn":"0000320193-24-000004","fy":2024,"fp":"Q1","form":"10-Q","filed":"2024-05-01"}
+    ]
+  }
+}

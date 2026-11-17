@@ -21,10 +21,11 @@ from langgraph_langchain.data.adapters.base import (
     HttpJsonAdapter,
     QualityReport,
 )
+from .sec_raw import SecConceptParseError, parse_sec_company_concept
 
 __all__ = ["SecCompanyFactsAdapter"]
 
-_FINANCIAL_COLUMNS = (
+_REQUIRED_FINANCIAL_COLUMNS = (
     "market",
     "entity_id",
     "canonical_concept",
@@ -44,6 +45,15 @@ _FINANCIAL_COLUMNS = (
     "source_document_id",
 )
 
+_FINANCIAL_COLUMNS = (
+    *_REQUIRED_FINANCIAL_COLUMNS,
+    "source_form",
+    "source_frame",
+    "source_url",
+    "source_response_hash",
+    "entity_name",
+)
+
 
 class SecCompanyFactsAdapter(HttpJsonAdapter):
     descriptor = AdapterDescriptor(
@@ -61,7 +71,7 @@ class SecCompanyFactsAdapter(HttpJsonAdapter):
             unit="source_declared",
             frequency="filing_event",
             source_url="https://data.sec.gov/api/xbrl/companyconcept/",
-            required_columns=_FINANCIAL_COLUMNS,
+            required_columns=_REQUIRED_FINANCIAL_COLUMNS,
             time_column="period_end",
             update_policy="filing_event",
         )
@@ -88,7 +98,55 @@ class SecCompanyFactsAdapter(HttpJsonAdapter):
         request: FetchRequest,
         spec: DatasetSpec,
     ) -> pd.DataFrame:
-        rows = raw if isinstance(raw, list) else raw.get("facts", [])
+        if isinstance(raw, list):
+            rows = raw
+        elif isinstance(raw, dict) and "cik" in raw and "units" in raw:
+            taxonomy = request.parameters.get("taxonomy", "us-gaap")
+            concept = request.parameters.get("canonical_concept")
+            preferred_unit = request.parameters.get("preferred_unit")
+            source_url = self.datasets[spec.dataset_id].source_url
+            try:
+                parsed = parse_sec_company_concept(
+                    raw,
+                    taxonomy=str(taxonomy),
+                    concept=str(concept),
+                    preferred_unit=(
+                        str(preferred_unit) if preferred_unit is not None else None
+                    ),
+                    source_url=source_url,
+                )
+            except (SecConceptParseError, TypeError, ValueError) as exc:
+                raise AdapterRequestError(str(exc)) from exc
+            rows = []
+            for fact in parsed.facts:
+                currency = fact.unit if re.fullmatch(r"[A-Z]{3}", fact.unit) else None
+                rows.append({
+                    "market": request.parameters.get("market", "us"),
+                    "entity_id": request.parameters.get("entity_id") or f"cik{fact.cik}",
+                    "canonical_concept": fact.concept,
+                    "statement_type": request.parameters.get("statement_type"),
+                    "period_type": fact.period_type,
+                    "period_start": fact.period_start,
+                    "period_end": fact.period_end,
+                    "fiscal_year": fact.fiscal_year,
+                    "fiscal_period": fact.fiscal_period,
+                    "reporting_basis": request.parameters.get("reporting_basis"),
+                    "currency": currency,
+                    "value": fact.value,
+                    "statistic_kind": request.parameters.get("statistic_kind"),
+                    "unit": fact.unit,
+                    "accession_number": fact.accession_number,
+                    "filing_date": fact.filing_date,
+                    "source_document_id": fact.source_document_id,
+                    "source_form": fact.form,
+                    "source_frame": fact.frame,
+                    "source_url": fact.source_url,
+                    "source_response_hash": fact.source_response_hash,
+                    "entity_name": fact.entity_name,
+                })
+        else:
+            rows = raw.get("facts", []) if isinstance(raw, dict) else []
+
         normalized = []
         for row in rows:
             if not isinstance(row, dict):
@@ -111,6 +169,11 @@ class SecCompanyFactsAdapter(HttpJsonAdapter):
                 "accession_number": row.get("accession_number"),
                 "filing_date": row.get("filing_date"),
                 "source_document_id": row.get("source_document_id"),
+                "source_form": row.get("source_form"),
+                "source_frame": row.get("source_frame"),
+                "source_url": row.get("source_url"),
+                "source_response_hash": row.get("source_response_hash"),
+                "entity_name": row.get("entity_name"),
             })
         frame = pd.DataFrame(normalized, columns=_FINANCIAL_COLUMNS)
         if not frame.empty:
@@ -154,3 +217,5 @@ class SecCompanyFactsAdapter(HttpJsonAdapter):
             issues=tuple(issues),
             warnings=quality.warnings,
         )
+
+
