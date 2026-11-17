@@ -36,6 +36,13 @@ _CUMULATIVE_TO_QUARTER: Mapping[str, str] = {
     "FY": "Q4",
 }
 
+_CUMULATIVE_QUARTER_COUNT: Mapping[str, int] = {
+    "Q1": 1,
+    "H1": 2,
+    "9M": 3,
+    "FY": 4,
+}
+
 
 class PeriodSemanticsError(ValueError):
     """Raised when a period transformation cannot be performed safely."""
@@ -71,6 +78,8 @@ def _assert_compatible(
             raise PeriodSemanticsError("period conversion requires one reporting basis")
         if statement.currency != statements[0].currency:
             raise PeriodSemanticsError("period conversion requires one currency")
+        if statement.fiscal_year != statements[0].fiscal_year:
+            raise PeriodSemanticsError("period conversion requires one fiscal year")
         if item.statistic_kind != "absolute_amount":
             raise PeriodSemanticsError(
                 "only absolute_amount facts can be added or differenced"
@@ -97,6 +106,25 @@ def _assert_contiguous(
         )
     if previous.fiscal_period == current.fiscal_period and previous.period_end == current.period_end:
         raise PeriodSemanticsError("cumulative periods must not be repeated")
+    previous_count = _CUMULATIVE_QUARTER_COUNT.get(previous.fiscal_period)
+    current_count = _CUMULATIVE_QUARTER_COUNT.get(current.fiscal_period)
+    if previous_count is None or current_count is None:
+        raise PeriodSemanticsError(
+            "cumulative conversion requires explicit Q1/H1/9M/FY fiscal periods; "
+            "fiscal-calendar information is unavailable"
+        )
+    if current_count != previous_count + 1:
+        raise PeriodSemanticsError(
+            f"missing_intermediate_cumulative_period: {previous.fiscal_period} "
+            f"cannot be differenced directly to {current.fiscal_period}"
+        )
+    if previous.accession_number != current.accession_number or (
+        previous.source_document_id != current.source_document_id
+    ):
+        raise PeriodSemanticsError(
+            "cumulative statements must use one filing version; restatement "
+            "alignment must be explicit"
+        )
 
 
 def derive_single_quarter_item(

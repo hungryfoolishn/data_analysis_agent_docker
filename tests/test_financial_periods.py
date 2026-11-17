@@ -195,3 +195,60 @@ def test_existing_period_normalizer_semantics_do_not_regress():
     assert normalizer.parse("FY2025").previous().normalized_period == "2024"
     with pytest.raises(Exception, match="TTM/LTM"):
         normalizer.parse("TTM")
+
+def test_q1_and_fy_cannot_produce_q4_without_intermediate_periods():
+    q1 = _statement("2024-01-01", "2024-03-31", "Q1", Decimal("20"))
+    fy = _statement("2024-01-01", "2024-12-31", "FY", Decimal("100"))
+    with pytest.raises(PeriodSemanticsError, match="missing_intermediate_cumulative_period"):
+        derive_single_quarter_item(fy, q1, concept="revenue")
+
+
+def test_cumulative_conversion_requires_adjacent_fiscal_labels():
+    q1 = _statement("2024-01-01", "2024-03-31", "Q1", Decimal("20"))
+    nine_m = _statement("2024-01-01", "2024-09-30", "9M", Decimal("80"))
+    with pytest.raises(PeriodSemanticsError, match="missing_intermediate_cumulative_period"):
+        derive_single_quarter_item(nine_m, q1, concept="revenue")
+
+
+def test_version_mismatch_is_rejected_without_explicit_alignment():
+    q1 = _statement("2024-01-01", "2024-03-31", "Q1", Decimal("20"))
+    h1 = _statement("2024-01-01", "2024-06-30", "H1", Decimal("50"))
+    q1 = q1.model_copy(update={"accession_number": "acc-1", "source_document_id": "doc-1"})
+    h1 = h1.model_copy(update={"accession_number": "acc-2", "source_document_id": "doc-2"})
+    with pytest.raises(PeriodSemanticsError, match="filing version"):
+        derive_single_quarter_item(h1, q1, concept="revenue")
+
+
+def test_incompatible_identity_or_semantics_are_rejected():
+    q1 = _statement("2024-01-01", "2024-03-31", "Q1", Decimal("20"))
+    h1 = _statement("2024-01-01", "2024-06-30", "H1", Decimal("50"))
+    cases = [
+        (h1.model_copy(update={"entity_id": "ent_2"}), "one entity"),
+        (h1.model_copy(update={"statement_type": "cash"}), "one statement type"),
+        (h1.model_copy(update={"reporting_basis": "parent"}), "one reporting basis"),
+        (h1.model_copy(update={"currency": "USD"}), "currency"),
+        (h1.model_copy(update={"fiscal_year": 2025}), "one fiscal year"),
+    ]
+    for statement, reason in cases:
+        with pytest.raises(PeriodSemanticsError, match=reason):
+            derive_single_quarter_item(statement, q1, concept="revenue")
+
+
+def test_non_natural_fiscal_year_does_not_guess_missing_calendar():
+    q1 = _statement("2024-04-01", "2024-06-30", "Q1", Decimal("30"))
+    fy = _statement("2024-04-01", "2025-03-31", "FY", Decimal("120"))
+    with pytest.raises(PeriodSemanticsError, match="missing_intermediate"):
+        derive_single_quarter_item(fy, q1, concept="revenue")
+
+
+def test_negative_and_missing_cumulative_values_are_handled_explicitly():
+    q1 = _statement("2024-01-01", "2024-03-31", "Q1", Decimal("-20"))
+    h1 = _statement("2024-01-01", "2024-06-30", "H1", Decimal("-30"))
+    q1 = q1.model_copy(update={"accession_number": "acc-1", "source_document_id": "doc-1"})
+    h1 = h1.model_copy(update={"accession_number": "acc-1", "source_document_id": "doc-1"})
+    result = derive_single_quarter_item(h1, q1, concept="revenue")
+    assert result.value == Decimal("-10")
+
+    missing = h1.model_copy(update={"line_items": (_item(None),)})
+    with pytest.raises(PeriodSemanticsError, match="value is missing"):
+        derive_single_quarter_item(missing, q1, concept="revenue")
