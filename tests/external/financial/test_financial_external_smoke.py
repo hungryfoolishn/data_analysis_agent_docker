@@ -18,6 +18,7 @@ pytestmark = pytest.mark.external_integration
 
 _ENABLED = os.getenv("RUN_FINANCIAL_EXTERNAL_SMOKE") == "1"
 _SEC_URL = "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json"
+_SEC_ASSETS_URL = "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Assets.json"
 _CN_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 _USER_AGENT = "data_analysis_agent research@example.com"
 
@@ -59,6 +60,31 @@ def test_sec_company_concept_live_smoke(tmp_path):
     assert all(fact.filing_date for fact in parsed.facts)
     assert all(fact.source_response_hash == hashlib.sha256(stable_json(dict(payload)).encode("utf-8")).hexdigest() for fact in parsed.facts)
 
+    assets_response = requests.get(
+        _SEC_ASSETS_URL,
+        headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+        timeout=15,
+    )
+    assets_response.raise_for_status()
+    if len(assets_response.content) > 2_000_000:
+        pytest.fail("SEC assets response exceeded the smoke-test size limit")
+    assets_payload = assets_response.json()
+    assets = parse_sec_company_concept(
+        assets_payload,
+        taxonomy="us-gaap",
+        concept="Assets",
+        preferred_unit="USD",
+        source_url=_SEC_ASSETS_URL,
+    )
+    assert any(fact.period_type == "instant" for fact in assets.facts)
+    assert all(fact.accession_number for fact in assets.facts)
+    assert all(fact.filing_date for fact in assets.facts)
+    assert all(
+        fact.source_response_hash
+        == hashlib.sha256(stable_json(dict(assets_payload)).encode("utf-8")).hexdigest()
+        for fact in assets.facts
+    )
+
     report = {
         "source": "sec_companyconcept",
         "request_timestamp": response.headers.get("date"),
@@ -66,7 +92,7 @@ def test_sec_company_concept_live_smoke(tmp_path):
         "response_status": response.status_code,
         "response_hash": response_hash,
         "parser_version": "b10.8.1",
-        "normalized_record_count": len(parsed.facts),
+        "normalized_record_count": len(parsed.facts) + len(assets.facts),
         "validation_result": "PASS",
     }
     (tmp_path / "sec_smoke_report.json").write_text(json.dumps(report, indent=2))

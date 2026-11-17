@@ -25,7 +25,7 @@ __all__ = [
 
 _CIK_PATTERN = re.compile(r"\d+")
 _CURRENCY_PATTERN = re.compile(r"[A-Z]{3}")
-_REQUIRED_FACT_FIELDS = ("val", "end", "accn", "filed", "fy", "fp", "form")
+_REQUIRED_FACT_FIELDS = ("val", "end", "accn", "filed", "form")
 
 
 class SecConceptParseError(ValueError):
@@ -43,8 +43,8 @@ class SecConceptFact:
     period_type: str
     period_start: str | None
     period_end: str
-    fiscal_year: int
-    fiscal_period: str
+    fiscal_year: int | None
+    fiscal_period: str | None
     form: str
     accession_number: str
     filing_date: str
@@ -130,10 +130,15 @@ def _parse_fact(
             raise SecConceptParseError("fact start must not be after end")
 
     fiscal_year_value = fact.get("fy")
-    if isinstance(fiscal_year_value, bool) or not isinstance(fiscal_year_value, int):
-        raise SecConceptParseError("fact fy must be an integer")
-    if not isinstance(fact.get("fp"), str) or not fact["fp"]:
-        raise SecConceptParseError("fact fp must be a non-empty string")
+    if fiscal_year_value is not None and (
+        isinstance(fiscal_year_value, bool) or not isinstance(fiscal_year_value, int)
+    ):
+        raise SecConceptParseError("fact fy must be an integer or null")
+    fiscal_period_value = fact.get("fp")
+    if fiscal_period_value is not None and (
+        not isinstance(fiscal_period_value, str) or not fiscal_period_value
+    ):
+        raise SecConceptParseError("fact fp must be a non-empty string or null")
     if not isinstance(fact.get("form"), str) or not fact["form"]:
         raise SecConceptParseError("fact form must be a non-empty string")
 
@@ -148,7 +153,7 @@ def _parse_fact(
         period_start=period_start,
         period_end=period_end_value,
         fiscal_year=fiscal_year_value,
-        fiscal_period=fact["fp"],
+        fiscal_period=fiscal_period_value,
         form=fact["form"],
         accession_number=str(fact["accn"]),
         filing_date=str(fact["filed"]),
