@@ -31,6 +31,11 @@ from .metrics import (
     financial_metric_registry,
 )
 from .period import FinancialPeriod, PeriodNormalizer, PeriodNormalizationError, PeriodType
+from .periods import (
+    PeriodSemanticsError,
+    derive_single_quarter_item,
+    derive_ttm_item,
+)
 from .unit import UnitConversion, UnitNormalizer
 from .fact import FinancialFact, FinancialFactBuilder
 from .golden import (
@@ -100,6 +105,7 @@ __all__ = [
     "FinancialVerification",
     "IncomeStatement",
     "PeriodNormalizationError",
+    "PeriodSemanticsError",
     "PeriodNormalizer",
     "PeriodType",
     "RealCompanyRecord",
@@ -107,6 +113,8 @@ __all__ = [
     "RealFinancialDataset",
     "RealFinancialManifest",
     "RealSourceRecord",
+    "derive_single_quarter_item",
+    "derive_ttm_item",
     "UnitConversion",
     "UnitNormalizer",
     "financial_metric_registry",
