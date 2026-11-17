@@ -122,6 +122,48 @@ _UNIT_MULTIPLIERS = {
 _NEGATIVE_PAT = re.compile(r"^\(.*\)$|^[\uff08].*[\uff09]$")
 _AMOUNT_PAT = re.compile(r"^\d+(,\d{3})*(\.\d+)?$")
 
+# Additional subjects commonly found in Chinese bank annual reports
+_EXTRA_SUBJECTS: dict[str, tuple[str, str]] = {
+    "\u5229\u606f\u6536\u5165": ("interest_income", "income"),
+    "\u5229\u606f\u652f\u51fa": ("interest_expense", "income"),
+    "\u5229\u606f\u51c0\u6536\u5165": ("net_interest_income", "income"),
+    "\u624b\u7eed\u8d39\u53ca\u4f63\u91d1\u6536\u5165": ("fee_and_commission_income", "income"),
+    "\u624b\u7eed\u8d39\u53ca\u4f63\u91d1\u652f\u51fa": ("fee_and_commission_expense", "income"),
+    "\u624b\u7eed\u8d39\u53ca\u4f63\u91d1\u51c0\u6536\u5165": ("net_fee_and_commission_income", "income"),
+    "\u51c0\u4ea4\u6613\u635f\u76ca": ("net_trading_income", "income"),
+    "\u91d1\u878d\u6295\u8d44\u51c0\u635f\u76ca": ("net_financial_investment_income", "income"),
+    "\u5176\u4ed6\u8425\u4e1a\u51c0\u6536\u5165": ("other_operating_income", "income"),
+    "\u8425\u4e1a\u8d39\u7528": ("operating_expenses", "income"),
+    "\u8d44\u4ea7\u51cf\u503c\u635f\u5931": ("asset_impairment_loss", "income"),
+    "\u7a0e\u524d\u5229\u6da6": ("total_profit", "income"),
+    "\u53d1\u653e\u8d37\u6b3e\u548c\u57ab\u6b3e": ("loans_and_advances", "balance"),
+    "\u5b58\u653e\u4e2d\u592e\u94f6\u884c\u6b3e\u9879": ("deposits_with_central_bank", "balance"),
+    "\u73b0\u91d1\u53ca\u5b58\u653e\u4e2d\u592e\u94f6\u884c\u6b3e\u9879": ("cash_and_deposits_with_central_bank", "balance"),
+    "\u5b58\u653e\u548c\u62c6\u653e\u540c\u4e1a\u53ca\u5176\u4ed6\u91d1\u878d\u673a\u6784\u6b3e\u9879": ("deposits_with_banks", "balance"),
+    "\u8d35\u91d1\u5c5e": ("precious_metals", "balance"),
+    "\u884d\u751f\u91d1\u878d\u8d44\u4ea7": ("derivative_financial_assets", "balance"),
+    "\u4e70\u5165\u8fd4\u552e\u91d1\u878d\u8d44\u4ea7": ("financial_assets_held_for_resale", "balance"),
+    "\u91d1\u878d\u6295\u8d44": ("financial_investments", "balance"),
+    "\u4f7f\u7528\u6743\u8d44\u4ea7": ("right_of_use_assets", "balance"),
+    "\u5176\u4ed6\u8d44\u4ea7": ("other_assets", "balance"),
+    "\u5438\u6536\u5b58\u6b3e": ("customer_deposits", "balance"),
+    "\u7ecf\u8425\u6d3b\u52a8\u4ea7\u751f\u7684\u73b0\u91d1\u6d41\u91cf\u51c0\u989d": ("net_cash_from_operating_activities", "cash"),
+    "\u6295\u8d44\u6d3b\u52a8\u4ea7\u751f\u7684\u73b0\u91d1\u6d41\u91cf\u51c0\u989d": ("net_cash_from_investing_activities", "cash"),
+    "\u7b79\u8d44\u6d3b\u52a8\u4ea7\u751f\u7684\u73b0\u91d1\u6d41\u91cf\u51c0\u989d": ("net_cash_from_financing_activities", "cash"),
+}
+
+_ALL_SUBJECTS = {**_CN_SUBJECT_MAP, **_EXTRA_SUBJECTS}
+
+_NOTE_REF = re.compile(r"^\s*(?:[\u4e00-\u4e5d]+(?:\u3001\d+)?|\d+(?:\.\d+)?(?:\.\d+)?)\s+")
+_FULLWIDTH_MAP = str.maketrans({
+    "\uff0c": ",",
+    "\uff0d": "-",
+    "\uff08": "(",
+    "\uff09": ")",
+    "\u3000": " ",
+})
+
+
 
 class ChinaPdfDownloadError(Exception):
     """Raised when a PDF download fails integrity or safety checks."""
@@ -303,7 +345,9 @@ def parse_china_statement_pdf(
     except ImportError as exc:
         raise ChinaPdfUnsupportedError("pdfplumber is not installed") from exc
 
+    # Primary: table-based parsing (precise when bordered tables are detectable)
     page_hashes: list[str] = []
+    table_statements: list[ChinaPdfStatementBlock] | None = None
     try:
         with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
             total_pages = len(pdf.pages)
@@ -335,13 +379,10 @@ def parse_china_statement_pdf(
         for table_rows in tables:
             if not table_rows:
                 continue
-            # Try to classify by the first row (usually the statement title).
             title_type = _classify_table_title(table_rows[0])
-            # Filter header/title rows.
             content_rows = [r for r in table_rows if not _is_header_row(r) and r[0].strip()]
             if not content_rows:
                 continue
-            # Continuation: no title, but the first subject maps to a known type.
             merged = False
             if title_type is None and statements:
                 first_subject = _clean_subject(content_rows[0][0])
@@ -365,18 +406,151 @@ def parse_china_statement_pdf(
                     page_numbers=(page_num,), raw_rows=list(content_rows),
                 ))
 
-    if not statements:
-        raise ChinaPdfParseError("no financial statement blocks were detected")
+    if statements:
+        # Validate that at least one block has mapped subjects before accepting
+        # table-based results (management-discussion pages may produce empty tables).
+        has_mapped = False
+        for blk in statements:
+            for row in blk.raw_rows:
+                subj = _clean_subject(row[0])
+                if _CN_SUBJECT_MAP.get(subj) or _EXTRA_SUBJECTS.get(subj):
+                    has_mapped = True
+                    break
+            if has_mapped:
+                break
+        if has_mapped:
+            return ChinaPdfParseResult(
+            document_sha256=content_sha256,
+            total_pages=total_pages,
+            parser_version=parser_version,
+            mapping_version=MAPPING_VERSION,
+            statements=tuple(statements),
+            unmapped_subjects=(),
+            page_hashes=tuple(page_hashes),
+        )
 
-    return ChinaPdfParseResult(
-        document_sha256=content_sha256,
-        total_pages=total_pages,
-        parser_version=parser_version,
-        mapping_version=MAPPING_VERSION,
-        statements=tuple(statements),
-        unmapped_subjects=(),
-        page_hashes=tuple(page_hashes),
-    )
+    # Fallback: text-based line parsing (for real annual reports without bordered tables)
+    text_results = _parse_pdf_text_lines(pdf_content)
+    if any(text_results.values()):
+        text_statements: list[ChinaPdfStatementBlock] = []
+        for stmt_type, items in text_results.items():
+            if not items:
+                continue
+            rows = []
+            for item in items:
+                rows.append([item["original_concept"], str(item["value"]), ""])
+            seen: set[str] = set()
+            deduped = []
+            for r in rows:
+                if r[0] not in seen:
+                    seen.add(r[0])
+                    deduped.append(r)
+            pages = sorted({item["page"] for item in items})
+            text_statements.append(ChinaPdfStatementBlock(
+                statement_type=stmt_type, reporting_basis="consolidated",
+                page_numbers=tuple(pages), raw_rows=deduped,
+            ))
+        if text_statements:
+            return ChinaPdfParseResult(
+                document_sha256=content_sha256,
+                total_pages=total_pages,
+                parser_version=parser_version,
+                mapping_version=MAPPING_VERSION,
+                statements=tuple(text_statements),
+                unmapped_subjects=(),
+                page_hashes=tuple(page_hashes),
+            )
+
+    raise ChinaPdfParseError("no financial statement blocks were detected")
+
+    
+def _find_subject_in_line(line: str) -> tuple[str, str] | None:
+    """Find the longest matching Chinese accounting subject at the start of a line.
+
+    Returns ``(subject, remainder)`` or ``None``.
+    """
+    text = line.strip().translate(_FULLWIDTH_MAP)
+    if not text or text[0].isdigit():
+        return None
+    best: tuple[str, str] | None = None
+    for subject in _ALL_SUBJECTS:
+        if text.startswith(subject):
+            if best is None or len(subject) > len(best[0]):
+                best = (subject, text[len(subject):])
+    return best
+
+
+def _extract_line_amounts(remainder: str) -> list[str]:
+    """Extract numeric amounts from the remainder of a line, skipping note refs."""
+    text = remainder.strip()
+    m = _NOTE_REF.match(text)
+    if m:
+        text = text[m.end():].strip()
+    text = re.sub(r"[（](\u4eba\u6c11\u5e01)[\u5143/\u80a1]*[）]", "", text).strip()
+    tokens = text.split()
+    amounts = []
+    for t in tokens:
+        if _parse_amount(t) is not None:
+            amounts.append(t)
+    return amounts
+
+
+def _classify_page_text_type(text: str) -> str | None:
+    """Classify a page by checking the first few lines (statement titles)."""
+    lines = text.split("\n")[:5]
+    for line in lines:
+        if "\u5229\u6da6\u8868" in line and "\u6bcd\u516c\u53f8" not in line:
+            return "income"
+        if "\u8d22\u52a1\u72b6\u51b5\u8868" in line or "\u8d44\u4ea7\u8d1f\u503a\u8868" in line:
+            return "balance"
+        if "\u73b0\u91d1\u6d41\u91cf\u8868" in line:
+            return "cash"
+    return None
+
+
+def _parse_pdf_text_lines(pdf_content: bytes) -> dict[str, list[dict[str, Any]]]:
+    """Parse a PDF using text-based line matching for each page."""
+    results: dict[str, list[dict[str, Any]]] = {"income": [], "balance": [], "cash": []}
+    try:
+        import pdfplumber
+    except ImportError as exc:
+        raise ChinaPdfUnsupportedError("pdfplumber is not installed") from exc
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
+            for pnum, page in enumerate(pdf.pages):
+                text = page.extract_text() or ""
+                stmt_type = _classify_page_text_type(text)
+                if stmt_type is None:
+                    continue
+                for line in text.split("\n"):
+                    found = _find_subject_in_line(line)
+                    if found is None:
+                        continue
+                    subject, remainder = found
+                    mapping = _ALL_SUBJECTS.get(subject)
+                    if mapping is None or mapping[1] != stmt_type:
+                        continue
+                    amounts = _extract_line_amounts(remainder)
+                    if not amounts:
+                        continue
+                    val = _parse_amount(amounts[0])
+                    if val is None:
+                        continue
+                    results[stmt_type].append({
+                        "page": pnum + 1,
+                        "original_concept": subject,
+                        "canonical_concept": mapping[0],
+                        "value": val,
+                    })
+    except ChinaPdfParseError:
+        raise
+    except Exception as exc:
+        msg = str(exc)
+        if "password" in msg.lower() or "encrypt" in msg.lower():
+            raise ChinaPdfUnsupportedError("PDF is encrypted") from exc
+        raise ChinaPdfParseError(f"PDF parsing failed: {exc}") from exc
+    return results
+
 
 
 def _clean_subject(raw: str) -> str:
