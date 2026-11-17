@@ -31,6 +31,13 @@ from .metrics import (
     financial_metric_registry,
 )
 from .period import FinancialPeriod, PeriodNormalizer, PeriodNormalizationError, PeriodType
+from .catalog import (
+    FinancialIndicatorDefinition,
+    FinancialIndicatorRegistry,
+    FinancialIndicatorResult,
+)
+from .context import FinancialContext
+from .intent import FinancialIntent, resolve_financial_intent
 from .periods import (
     PeriodSemanticsError,
     derive_single_quarter_item,
@@ -114,6 +121,12 @@ __all__ = [
     "RealFinancialManifest",
     "RealSourceRecord",
     "derive_single_quarter_item",
+    "FinancialIndicatorDefinition",
+    "FinancialIndicatorRegistry",
+    "FinancialIndicatorResult",
+    "FinancialContext",
+    "FinancialIntent",
+    "resolve_financial_intent",
     "derive_ttm_item",
     "UnitConversion",
     "UnitNormalizer",

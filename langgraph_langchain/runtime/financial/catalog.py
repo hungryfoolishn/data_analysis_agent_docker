@@ -293,7 +293,7 @@ def compute_financial_indicator(
 
 def _seed_registry() -> FinancialIndicatorRegistry:
     registry = FinancialIndicatorRegistry()
-    for concept in ("revenue", "net_profit"):
+    for concept in ("revenue", "gross_profit", "net_profit"):
         registry.register(
             FinancialIndicatorDefinition(
                 metric_id=concept,
