@@ -21,7 +21,11 @@ from .evidence import register_financial_evidence
 from .intent import FinancialIntent
 from .templates import FinancialTemplateRegistry, financial_template_registry
 
-__all__ = ["FinancialDomainRuntime", "FinancialIndicatorTool"]
+__all__ = ["FinancialDomainRuntime", "FinancialIndicatorTool", "FinancialRuntimeModeError"]
+
+
+class FinancialRuntimeModeError(ValueError):
+    """Raised when an execution mode and Evidence wiring are incompatible."""
 
 
 class FinancialIndicatorTool:
@@ -63,10 +67,14 @@ class FinancialDomainRuntime:
         context: FinancialContext,
         templates: FinancialTemplateRegistry | None = None,
         evidence_registry: Any | None = None,
+        mode: str = "offline_calculation",
     ) -> None:
+        if mode not in {"offline_calculation", "platform_verified_execution"}:
+            raise FinancialRuntimeModeError(f"unsupported Financial runtime mode: {mode!r}")
         self.context = context
         self.templates = templates or financial_template_registry
         self.evidence_registry = evidence_registry
+        self.mode = mode
 
     def run(
         self,
@@ -75,6 +83,7 @@ class FinancialDomainRuntime:
         template_id: str = "single_metric_analysis",
         session_id: str = "financial_domain",
         run_id: str = "financial_domain_run",
+        task_id: str | None = None,
     ) -> FinancialDomainRuntimeResult:
         template = self.templates.get(template_id)
         plan: AnalysisPlan = template.build_plan(intent)
@@ -87,9 +96,26 @@ class FinancialDomainRuntime:
         )
         state = controller.graph.invoke({})
         execution = state.get("result")
+        if execution is not None and task_id:
+            execution = execution.model_copy(update={"task_id": task_id})
         indicator = self.context.resolve(intent.metric_id)
         evidence = None
-        if self.evidence_registry is not None and execution is not None:
+        if self.mode == "platform_verified_execution":
+            if self.evidence_registry is None:
+                raise FinancialRuntimeModeError(
+                    "platform_verified_execution requires EvidenceRegistry"
+                )
+            if not task_id:
+                raise FinancialRuntimeModeError(
+                    "platform_verified_execution requires explicit task_id"
+                )
+            if not self.context.input_asset_ids:
+                raise FinancialRuntimeModeError(
+                    "platform_verified_execution requires DataAsset input lineage"
+                )
+            if execution is not None and hasattr(self.evidence_registry, "register_execution"):
+                self.evidence_registry.register_execution(execution)
+        if self.mode == "platform_verified_execution" and execution is not None:
             if indicator.status == CALCULATED:
                 evidence = register_financial_evidence(
                     self.evidence_registry,

@@ -171,3 +171,63 @@ def test_domain_runtime_runs_through_runtime_v2_and_records_evidence():
     assert evidence.validation_status == "reference_validated"
     assert evidence.numeric_values["revenue"] == 1234.5
     assert evidence.source_metadata["financial_metric"]["statistic_kind"] == "absolute_amount"
+
+def test_platform_mode_registers_evidence_and_preserves_decimal_precision():
+    from langgraph_langchain.evidence.registry import EvidenceRegistry
+
+    context = FinancialContext(
+        intent=_intent(),
+        statements=[_statement(2024, {"revenue": Decimal("0.123456789123456789")})],
+        input_asset_ids=("asset_financial_1",),
+    )
+    registry = EvidenceRegistry(assets={"asset_financial_1": object()})
+    runtime = FinancialDomainRuntime(
+        context=context,
+        evidence_registry=registry,
+        mode="platform_verified_execution",
+    )
+    result = runtime.run(
+        _intent(),
+        session_id="financial_platform",
+        run_id="run_platform",
+        task_id="task_financial_1",
+    )
+    assert result.execution.status == "succeeded"
+    assert result.evidence is not None
+    assert result.evidence.validation_status == "reference_validated"
+    assert result.evidence.execution_id == result.execution.execution_id
+    assert result.evidence.task_id == "task_financial_1"
+    assert result.evidence.input_asset_ids == ["asset_financial_1"]
+    assert result.evidence.source_metadata["financial_metric"]["precise_value"] == (
+        "0.123456789123456789"
+    )
+    assert result.evidence.numeric_values["revenue"] != Decimal(
+        "0.123456789123456789"
+    )
+
+
+def test_platform_mode_rejects_missing_task_or_asset_lineage():
+    from langgraph_langchain.evidence.registry import EvidenceRegistry
+
+    context = FinancialContext(
+        intent=_intent(),
+        statements=[_statement(2024, {"revenue": 1})],
+        input_asset_ids=("asset_financial_1",),
+    )
+    runtime = FinancialDomainRuntime(
+        context=context,
+        evidence_registry=EvidenceRegistry(assets={"asset_financial_1": object()}),
+        mode="platform_verified_execution",
+    )
+    with pytest.raises(Exception, match="task_id"):
+        runtime.run(_intent(), task_id=None)
+    no_asset_context = FinancialContext(
+        intent=_intent(), statements=[_statement(2024, {"revenue": 1})]
+    )
+    runtime = FinancialDomainRuntime(
+        context=no_asset_context,
+        evidence_registry=EvidenceRegistry(),
+        mode="platform_verified_execution",
+    )
+    with pytest.raises(Exception, match="DataAsset"):
+        runtime.run(_intent(), task_id="task_financial_3")

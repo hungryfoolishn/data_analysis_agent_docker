@@ -26,6 +26,7 @@ class EvidenceRegistry:
         self._assets = assets if assets is not None else {}
         self._artifacts = artifacts if artifacts is not None else {}
         self._records: dict[str, CanonicalEvidence] = {}
+        self._registered_executions: dict[str, object] = {}
         if executions is None:
             self._execution_provider: Callable[[str], object | None] = (
                 lambda execution_id: None
@@ -34,7 +35,16 @@ class EvidenceRegistry:
             self._execution_provider = executions
         else:
             execution_map = dict(executions)
-            self._execution_provider = execution_map.get
+            self._registered_executions.update(execution_map)
+            self._execution_provider = self._registered_executions.get
+
+    def register_execution(self, execution: object) -> None:
+        """Register the execution backing evidence without changing evidence state."""
+        execution_id = getattr(execution, "execution_id", None)
+        if not execution_id:
+            raise EvidenceRegistryError("execution_id is required")
+        self._registered_executions[str(execution_id)] = execution
+        self._execution_provider = self._registered_executions.get
 
     @staticmethod
     def _reference_validated(evidence: CanonicalEvidence) -> CanonicalEvidence:

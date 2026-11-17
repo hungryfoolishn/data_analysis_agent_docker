@@ -49,6 +49,12 @@ def register_financial_evidence(
                 "market_scope": indicator.market_scope,
                 "statistic_kind": indicator.statistic_kind,
                 "unit": indicator.unit,
+                "precise_value": str(indicator.value),
+                "precise_inputs": {
+                    key: str(value)
+                    for key, value in dict(indicator.inputs).items()
+                    if value is not None
+                },
                 "inputs": dict(indicator.inputs),
                 "lineage": dict(indicator.lineage),
             },
