@@ -1,0 +1,16 @@
+{
+  "source_url": "https://www.cninfo.com.cn/new/hisAnnouncement/query",
+  "announcements": [
+    {
+      "secCode": "600000",
+      "secName": "Sample Bank",
+      "announcementId": "ann-2024-0001-C",
+      "announcementTitle": "2024年第一季度报告更正公告",
+      "announcementTime": "2024-06-01 00:00:00",
+      "announcementType": "correction",
+      "adjunctUrl": "finalpage/600000/2024/ann-2024-0001-C.pdf"
+    }
+  ],
+  "totalAnnouncement": 1,
+  "hasMore": false
+}

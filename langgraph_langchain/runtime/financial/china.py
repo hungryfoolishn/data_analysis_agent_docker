@@ -7,7 +7,6 @@ tests inject a transport.  Real external-service validation remains separate.
 
 from __future__ import annotations
 
-import json
 from decimal import Decimal
 from typing import Any
 
@@ -23,6 +22,8 @@ from langgraph_langchain.data.adapters.base import (
 )
 
 __all__ = ["ChinaCompanyFilingsAdapter"]
+
+from .china_documents import parse_china_announcement_list
 
 _FINANCIAL_COLUMNS = (
     "market",
@@ -42,6 +43,19 @@ _FINANCIAL_COLUMNS = (
     "accession_number",
     "filing_date",
     "source_document_id",
+)
+
+_ANNOUNCEMENT_COLUMNS = (
+    "stock_code",
+    "stock_name",
+    "announcement_id",
+    "title",
+    "announcement_time",
+    "announcement_type",
+    "document_url",
+    "source_url",
+    "source_response_hash",
+    "document_hash",
 )
 
 
@@ -65,7 +79,18 @@ class ChinaCompanyFilingsAdapter(HttpJsonAdapter):
             required_columns=_FINANCIAL_COLUMNS,
             time_column="period_end",
             update_policy="filing_event",
-        )
+        ),
+        "cn_announcements": DatasetSpec(
+            dataset_id="cn_announcements",
+            name="China company announcements",
+            description="Official announcement metadata; not financial statement data.",
+            unit="announcement",
+            frequency="announcement_event",
+            source_url="https://www.cninfo.com.cn/new/hisAnnouncement/query",
+            required_columns=_ANNOUNCEMENT_COLUMNS,
+            time_column="announcement_time",
+            update_policy="announcement_event",
+        ),
     }
 
     def _fetch_raw(self, request: FetchRequest, spec: DatasetSpec) -> Any:
@@ -76,7 +101,7 @@ class ChinaCompanyFilingsAdapter(HttpJsonAdapter):
             "stock": stock_code,
             "report_type": request.parameters.get("report_type", "financial"),
         }
-        return self._transport(self.datasets["cn_company_filings"].source_url, params)
+        return self._transport(self.datasets[spec.dataset_id].source_url, params)
 
     def normalize(
         self,
@@ -84,6 +109,30 @@ class ChinaCompanyFilingsAdapter(HttpJsonAdapter):
         request: FetchRequest,
         spec: DatasetSpec,
     ) -> pd.DataFrame:
+        if spec.dataset_id == "cn_announcements":
+            try:
+                parsed = parse_china_announcement_list(raw)
+            except (TypeError, ValueError) as exc:
+                raise AdapterRequestError(str(exc)) from exc
+            return pd.DataFrame(
+                [
+                    {
+                        "stock_code": item.stock_code,
+                        "stock_name": item.stock_name,
+                        "announcement_id": item.announcement_id,
+                        "title": item.title,
+                        "announcement_time": item.announcement_time,
+                        "announcement_type": item.announcement_type,
+                        "document_url": item.document_url,
+                        "source_url": item.source_url,
+                        "source_response_hash": item.source_response_hash,
+                        "document_hash": item.document_hash,
+                    }
+                    for item in parsed.announcements
+                ],
+                columns=_ANNOUNCEMENT_COLUMNS,
+            )
+
         rows = raw if isinstance(raw, list) else raw.get("filings", [])
         normalized = []
         for row in rows:
@@ -140,6 +189,15 @@ class ChinaCompanyFilingsAdapter(HttpJsonAdapter):
         issues = list(quality.issues)
         if frame.empty:
             return quality
+        if spec.dataset_id == "cn_announcements":
+            for column in ("announcement_id", "document_url", "source_response_hash"):
+                if frame[column].isna().any() or (frame[column].astype(str).str.strip() == "").any():
+                    issues.append(f"missing announcement traceability field: {column}")
+            return QualityReport(
+                status="failed" if issues else quality.status,
+                issues=tuple(issues),
+                warnings=quality.warnings,
+            )
         for column in ("accession_number", "filing_date", "source_document_id"):
             if frame[column].isna().any() or (frame[column].astype(str).str.strip() == "").any():
                 issues.append(f"missing filing traceability field: {column}")

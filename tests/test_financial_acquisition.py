@@ -109,7 +109,7 @@ def test_financial_adapters_register_into_existing_b8_registry():
     ids = {adapter.describe().adapter_id for adapter in registry.adapters()}
     assert "financial_sec_company_facts" in ids
     assert "financial_cn_company_filings" in ids
-    assert len(registry.catalog()) == 2
+    assert len(registry.catalog()) == 3
 
 
 def test_adapter_deduplicates_identical_filing_rows():
