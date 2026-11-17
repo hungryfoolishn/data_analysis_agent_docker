@@ -41,3 +41,6 @@ scikit-learn>=1.4.0
 # Optional: remote executors
 # e2b-code-interpreter>=0.0.5    # E2B sandbox
 # docker>=7.0.0                   # Docker executor
+
+# PDF parsing (B10.9 China financial statement ingestion)
+pdfplumber>=0.11.0
