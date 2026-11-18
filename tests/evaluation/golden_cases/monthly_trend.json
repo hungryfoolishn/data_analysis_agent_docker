@@ -273,7 +273,7 @@
     "expected_metrics": [
       {
         "metric": "monthly_revenue",
-        "value": 0,
+        "value": 632016.0,
         "tolerance": 0.01,
         "period": "2026-04",
         "dimension": "department",
@@ -285,7 +285,7 @@
       },
       {
         "metric": "monthly_revenue",
-        "value": 0,
+        "value": 665280.0,
         "tolerance": 0.01,
         "period": "2026-05",
         "dimension": "department",
@@ -297,7 +297,7 @@
       },
       {
         "metric": "monthly_revenue",
-        "value": 0,
+        "value": 632940.0,
         "tolerance": 0.01,
         "period": "2026-06",
         "dimension": "department",
@@ -338,7 +338,7 @@
     "expected_metrics": [
       {
         "metric": "monthly_revenue",
-        "value": 0,
+        "value": 721116.0,
         "tolerance": 0.01,
         "period": "2026-04",
         "dimension": "department",
@@ -350,7 +350,7 @@
       },
       {
         "metric": "monthly_revenue",
-        "value": 0,
+        "value": 757680.0,
         "tolerance": 0.01,
         "period": "2026-05",
         "dimension": "department",
@@ -362,7 +362,7 @@
       },
       {
         "metric": "monthly_revenue",
-        "value": 0,
+        "value": 719565.0,
         "tolerance": 0.01,
         "period": "2026-06",
         "dimension": "department",
