@@ -841,3 +841,15 @@ Bank-specific revenue indicator → Post-freeze (non-breaking)
 冻结文档：`docs/architecture/reviews/b10.11-financial-pack-freeze-acceptance.md`。
 
 当前状态：`B10.11 = PASS`，`B10 = FROZEN`，`B10.9 = COMPLETE (text-mode)`，`OCR = DEFERRED`，`B11 = LOCKED`（按独立前置条件判定）。
+
+---
+
+## 二十二、B11.0 Multi-Agent Runtime Readiness & Unlock Audit（2026-11-18）
+
+B11.0 解锁审查通过。所有 B11 前置依赖（B4–B10）均已冻结，Runtime 架构具备多 Agent 编排基础：
+
+- Runtime 核心测试（B11.1 closure + Golden + Runtime + Evidence + Financial）：**220 passed / 0 failed**。
+- 全量回归：**1778 passed / 11 failed / 13 skipped**（0 新增失败）。
+- 无 P0、无 P1。
+
+当前状态：`B11.0 = PASS`，`B11 = UNLOCKED`。
