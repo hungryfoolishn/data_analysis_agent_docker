@@ -853,3 +853,17 @@ B11.0 解锁审查通过。所有 B11 前置依赖（B4–B10）均已冻结，R
 - 无 P0、无 P1。
 
 当前状态：`B11.0 = PASS`，`B11 = UNLOCKED`。
+
+---
+
+## 二十三、B11.1–B11.6 多 Agent 研究编排实施与 B11 正式冻结（2026-11-18）
+
+B11 各阶段已按独立提交实施、测试并验收：
+
+- B11.1（`5182fc5` + `f40492c`）：Planner/Executor/Reviewer 契约、`MultiAgentOrchestrator`、`SingleAgentRunner` 基线、`compare_benchmark`。
+- B11.2–B11.5（`0f36e92`）：`ResearchPlanningAgent` 多步依赖计划（含 `RuntimePlanStep` 转换）、DataAnalyst/ReportWriter/QualityAuditor 专职角色、Research Finding/Synthesis Evidence 契约（有序去重）、`ResearchOrchestrator` 有界重试 + 预算 + 冲突消解（含 `step_executor` 回归测试）。
+- B11.6（`c2c559d`）：`ResearchBenchmarkRunner` 基于 B6 Golden Dataset 的公平对照基准；48 个可验证用例数值正确率单/多均为 1.00，证据有效率 1.00，无数值回归；故障注入场景多 Agent 结构化不确定性披露 1.0 vs 单 Agent 0.0；延迟开销比约 1.01。
+- B11 Final（`docs/architecture/reviews/b11-final-acceptance.md`）：全量回归 **1715 passed / 2 failed / 13 skipped**，仅存基线 `test_dashboard.py` 两个已知失败，0 新增失败。
+- 已知 P2：B6 Golden JSON Q2 趋势 ground truth 与冻结数据集不一致（2 例）及 comprehensive `revenue_change_pct` 缺少 compare_period 语义（12 项），已在基准中显式排除并记录为 B6 数据质量遗留项。
+
+当前状态：`B11 = PASS / FROZEN`。
