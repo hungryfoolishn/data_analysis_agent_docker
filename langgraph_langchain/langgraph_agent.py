@@ -1602,25 +1602,35 @@ async def _run_runtime_v2_graph_stream(
         )
         return metadata
 
+    loop = asyncio.get_running_loop()
+    stream_events: asyncio.Queue = asyncio.Queue()
+
+    def _forward_react_token(text: str) -> None:
+        if text:
+            loop.call_soon_threadsafe(stream_events.put_nowait, ("token", text))
+
+    react_executor = ReactTaskExecutor(
+        agent=react_agent,
+        agent_runner=(
+            None
+            if react_agent is not None
+            else lambda request: (_ for _ in ()).throw(
+                RuntimeError("React executor is not configured")
+            )
+        ),
+        prompt_builder=lambda request: (
+            f"Task: {request.task.question}\n"
+            f"Data file: {source_path}\n"
+            "Use the available analysis tools and finish with a concise result."
+        ),
+        token_callback=_forward_react_token,
+    )
+
     controller = runtime.build_execution_controller(
         structured_executor=StructuredTaskExecutor(
             tool_resolver=lambda name: tool_map.get(name),
         ),
-        react_executor=ReactTaskExecutor(
-            agent=react_agent,
-            agent_runner=(
-                None
-                if react_agent is not None
-                else lambda request: (_ for _ in ()).throw(
-                    RuntimeError("React executor is not configured")
-                )
-            ),
-            prompt_builder=lambda request: (
-                f"Task: {request.task.question}\n"
-                f"Data file: {source_path}\n"
-                "Use the available analysis tools and finish with a concise result."
-            ),
-        ),
+        react_executor=react_executor,
         python_executor=PythonTaskExecutor(
             workspace_dir=runtime.workspace_dir,
             source_path=source_path,
@@ -1677,19 +1687,90 @@ async def _run_runtime_v2_graph_stream(
     if _v2_cancel_requested():
         yield await _cancel_runtime_v2_stream()
         return
+    async def _produce_graph_events() -> None:
+        try:
+            graph_iter = controller.graph.astream({}).__aiter__()
+            while True:
+                # Never start a new task once cancellation was requested.
+                if _v2_cancel_requested():
+                    break
+                update = await graph_iter.__anext__()
+                await stream_events.put(("update", update))
+        except StopAsyncIteration:
+            pass
+        except BaseException as exc:  # forwarded to the stream loop below
+            stream_events.put_nowait(("error", exc))
+        finally:
+            stream_events.put_nowait(("done", None))
+
+    producer_task = asyncio.ensure_future(_produce_graph_events())
     try:
-        async for update in controller.graph.astream({}):
-            if _v2_cancel_requested():
+        while True:
+            get_task = asyncio.ensure_future(stream_events.get())
+            cancel_wait = asyncio.ensure_future(session.cancel_event.wait())
+            _done, _pending = await asyncio.wait(
+                {get_task, cancel_wait},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if cancel_wait.done() and session.cancel_event.is_set():
+                cancel_wait.cancel()
+                stream_finished = False
+                if get_task.done():
+                    kind0, _payload0 = get_task.result()
+                    stream_finished = kind0 == "done"
+                if not stream_finished:
+                    # Let the in-flight task reach its safe execution boundary
+                    # so its result is recorded consistently.  The producer
+                    # stops pulling new tasks once cancellation is requested.
+                    loop_time = asyncio.get_running_loop().time
+                    deadline = loop_time() + 30.0
+                    while True:
+                        remaining = deadline - loop_time()
+                        if remaining <= 0:
+                            break
+                        try:
+                            drain_kind, _drain_payload = await asyncio.wait_for(
+                                stream_events.get(), timeout=remaining
+                            )
+                        except asyncio.TimeoutError:
+                            break
+                        if drain_kind in {"done", "error"}:
+                            break
                 yield await _cancel_runtime_v2_stream()
                 return
+            cancel_wait.cancel()
+            kind, payload = (
+                get_task.result() if get_task.done() else await get_task
+            )
+            if kind == "token":
+                session.process_log.append(payload)
+                yield payload, []
+                continue
+            if kind == "error":
+                raise payload
+            if kind == "done":
+                break
+            # LangGraph streams node-nested state updates ({"execute_task":
+            # {...}}); unwrap them so result/action handling works on the
+            # node state itself.  Flat state dicts stay supported.
+            update = payload
+            if isinstance(update, dict):
+                nested_state = update.get("execute_task")
+                if isinstance(nested_state, dict):
+                    update = nested_state
             result = update.get("result") if isinstance(update, dict) else None
             if result is not None:
+                task_was_streamed = react_executor.streamed_output
+                react_executor.streamed_output = False
                 if result.status == "succeeded":
-                    preview = _format_preview_text(result.stdout_preview)
-                    if preview:
-                        msg = f"\n> `{result.tool_name} done`\n\n{preview}\n\n"
-                        session.process_log.append(msg)
-                        yield msg, []
+                    if not task_was_streamed:
+                        # Model tokens were already streamed for this task;
+                        # suppress the duplicate end-of-task preview.
+                        preview = _format_preview_text(result.stdout_preview)
+                        if preview:
+                            msg = f"\n> `{result.tool_name} done`\n\n{preview}\n\n"
+                            session.process_log.append(msg)
+                            yield msg, []
                 else:
                     message = (
                         result.error.get("message", "")
@@ -1840,6 +1921,9 @@ async def _run_runtime_v2_graph_stream(
             error_code="runtime_stream_failed",
         )
         yield "\n\n**Runtime V2 failed.**\n", []
+    finally:
+        if not producer_task.done():
+            producer_task.cancel()
 # ── Public async stream ───────────────────────────────────────────────────────
 async def run_analysis_stream(
     instruction: str,
