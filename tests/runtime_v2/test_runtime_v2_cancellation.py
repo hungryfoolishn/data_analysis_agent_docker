@@ -21,19 +21,6 @@ from langgraph_langchain.runtime.plans import AnalysisPlan
 from langgraph_langchain.schemas import AnalysisTask
 
 
-class ThreadSafeFlag:
-    """Minimal cancel flag safe to set from worker threads (is_set only reads)."""
-
-    def __init__(self) -> None:
-        self._flag = False
-
-    def is_set(self) -> bool:
-        return self._flag
-
-    def set(self) -> None:
-        self._flag = True
-
-
 def write_sales_csv(workspace: Path) -> Path:
     source = workspace / "sales.csv"
     source.write_text(
@@ -159,19 +146,34 @@ def test_v2_cancel_race_with_task_completion_yields_cancelled_state(tmp_path: Pa
     source = write_sales_csv(workspace)
     session = make_session(workspace, source)
     runtime = session.analysis_runtime
-    session.cancel_event = ThreadSafeFlag()
+    loop_holder: dict = {}
 
     original_execute = IsolatedPythonExecutor.execute
 
     def execute_then_cancel(self, request, *, cancel_event=None):
         result = original_execute(self, request, cancel_event=cancel_event)
-        # Cancel arrives in the same instant the task completes.
-        session.cancel_event.set()
+        # Cancel arrives in the same instant the task completes; signal it on
+        # the stream's own event loop from the worker thread.
+        loop = loop_holder.get("loop")
+        if loop is not None:
+            loop.call_soon_threadsafe(session.cancel_event.set)
         return result
 
     monkeypatch.setattr(IsolatedPythonExecutor, "execute", execute_then_cancel)
 
-    chunks = consume_stream(session, _make_tools(session), source)
+    async def run() -> list[str]:
+        loop_holder["loop"] = asyncio.get_running_loop()
+        chunks = []
+        async for chunk, artifacts in _run_runtime_v2_graph_stream(
+            session,
+            tools=_make_tools(session),
+            source_path=str(source),
+            react_agent=None,
+        ):
+            chunks.append(chunk)
+        return chunks
+
+    chunks = asyncio.run(run())
 
     assert any("Analysis cancelled" in chunk for chunk in chunks)
     statuses = {task.status for task in runtime.scheduler.tasks}
