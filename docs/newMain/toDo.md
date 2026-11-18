@@ -803,3 +803,41 @@ Financial 回归：**470 passed / 0 failed**（含 32 个新增 China PDF 测试
 最终验收文档：`docs/architecture/reviews/b10.9-china-pdf-ingestion-final-acceptance.md`。
 
 当前状态：`B10.9 = PARTIAL`（文本模式 PASS / 扫描 PDF BLOCKED），`B10 = NOT FROZEN`，`B11 = LOCKED`。
+
+---
+
+## 二十一、B10.11 Financial Pack Freeze Review & Acceptance（2026-11-18）
+
+B10.11 冻结审查通过。所有 B10.2–B10.9 能力均已通过测试、独立审计和真实外部验证，OCR 明确延期至 B10.12：
+
+- Financial/Platform/China PDF 全部测试：**560 passed / 0 failed**。
+- External live：SEC×2 + China PDF pipeline×1 全部 PASS。
+- 全量回归：**1778 passed / 11 failed / 13 skipped**（0 新增失败，11 个失败为既有 Runtime/Dashboard 基线集）。
+- 无 P0、无 P1（OCR 按任务书延期）。
+
+正式冻结范围：
+
+```text
+Financial Pack
+├── Financial Identity
+├── Financial Period Semantics
+├── Indicator Catalog
+├── SEC Financial Data
+├── China Financial Data (announcement + PDF download + text parse + mapping)
+├── AcquisitionService Integration
+├── DataAsset + SnapshotStore
+├── Financial Runtime + Evidence Auto-generation
+├── Golden Tests
+└── Report / Verification Integration
+```
+
+延期能力：
+
+```text
+OCR / Scanned PDF → B10.12 (Document Intelligence)
+Bank-specific revenue indicator → Post-freeze (non-breaking)
+```
+
+冻结文档：`docs/architecture/reviews/b10.11-financial-pack-freeze-acceptance.md`。
+
+当前状态：`B10.11 = PASS`，`B10 = FROZEN`，`B10.9 = COMPLETE (text-mode)`，`OCR = DEFERRED`，`B11 = LOCKED`（按独立前置条件判定）。
