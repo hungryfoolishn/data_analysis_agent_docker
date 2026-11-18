@@ -1,0 +1,3157 @@
+{
+ "dataset_version": "f7ee4d6874c0",
+ "case_count": 48,
+ "excluded_cases": [
+  "trend_analysis_005",
+  "trend_analysis_006"
+ ],
+ "summary": {
+  "single": {
+   "cases": 48,
+   "answer_accuracy_rate": 1.0,
+   "mean_finding_accuracy": 1.0,
+   "mean_evidence_validity": 1.0,
+   "mean_elapsed_seconds": 0.008251377981044547
+  },
+  "multi": {
+   "cases": 48,
+   "answer_accuracy_rate": 1.0,
+   "mean_finding_accuracy": 1.0,
+   "mean_evidence_validity": 1.0,
+   "mean_elapsed_seconds": 0.008331428748836819
+  },
+  "comparison": {
+   "numeric_no_regression": true,
+   "evidence_coverage_delta": 0.0,
+   "completeness_delta": 0.0,
+   "latency_overhead_ratio": 1.0097015029460739
+  },
+  "fault_injection": {
+   "cases": 1,
+   "single_structured_disclosure_rate": 0.0,
+   "multi_structured_disclosure_rate": 1.0
+  }
+ },
+ "results": [
+  {
+   "case_id": "anomaly_detection_001",
+   "task_type": "anomaly",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0067312899918761104,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_70f90fc6583e44aaaae86f3893614051"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0055897059792187065,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e285d53a2ab240229d3cd98e17b61b8b"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "anomaly_detection_002",
+   "task_type": "anomaly",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.005337245995178819,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_b6825152b7324e6f9e3c7baaaa62684a"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.00549652599147521,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_00ada0da2a7347eda325322aec3b074b"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "anomaly_detection_003",
+   "task_type": "anomaly",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.005391909013269469,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_5ff1f063145d41f3a4a9a37175ab067e"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.005483999993884936,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_33a787d4e411432ea46380d7c71190fe"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "anomaly_detection_004",
+   "task_type": "anomaly",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0054850809974595904,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_2571f1bd760b4c69b846e4edbf8c859b"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.005534197989618406,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_fb297a8686ad4e6088739c5e98a55ee4"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "anomaly_detection_005",
+   "task_type": "anomaly",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0054949500190559775,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d4e7bceb926b43c895b717c9e85d54bd"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.005633558990666643,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_2af2b9199a9e42b6a16b3ffcf641c8ac"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "anomaly_detection_006",
+   "task_type": "anomaly",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.005412662983871996,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_9365ba01d9064672aaa731c3e901cff6"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.005348060018150136,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "anomaly_count",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ab1ead15bf0f415fa9b5ff1f05560823"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "comprehensive_001",
+   "task_type": "report",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.007065784011501819,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ce285f86fd6b4c11a0395aa67d067529"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 0.968,
+      "actual": 0.968,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4c4db830e2984639891a5ee4e8ff0c9f"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": null,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.006862341018859297,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_58d8850c647445e78c1a115dd138c667"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 0.968,
+      "actual": 0.968,
+      "passed": true,
+      "evidence_ids": [
+       "evid_687fc8e4b3d34b6eac12354f08ef630c"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.1,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "comprehensive_002",
+   "task_type": "report",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.006904849986312911,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e9e79e5e2b384d3582128cff4b2e4bd6"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.034,
+      "actual": 1.034,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e0233bb09fdf4751baefe223d2e398bd"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": null,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.007245241024065763,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_0fe8740a1c4646028e2f7ea4f1506d7a"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.034,
+      "actual": 1.034,
+      "passed": true,
+      "evidence_ids": [
+       "evid_bd8b8e4d154d4af3bb57a690b86a5969"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0828,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "comprehensive_003",
+   "task_type": "report",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.006942002015421167,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_0fe32017ab184a4f8d830c3f7b885efb"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.133,
+      "actual": 1.133,
+      "passed": true,
+      "evidence_ids": [
+       "evid_06d6a093a7cc48e79dc5ccdae74bc653"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": null,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.007046502985758707,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e5e3cbcca19d4213ab76c8e44bc3a9f4"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.133,
+      "actual": 1.133,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d9af26e58d55463fbbd8e92419f13343"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.1989,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "comprehensive_004",
+   "task_type": "report",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.007143925991840661,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 899316.0,
+      "actual": 899316.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_029e5b808ed74d3eaca2a4b4b57a2f2f"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.188,
+      "actual": 1.188,
+      "passed": true,
+      "evidence_ids": [
+       "evid_f4ea03c3d072417c8c35cdf4b3c823c6"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": null,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.00728485599393025,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 899316.0,
+      "actual": 899316.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ab41c839afbb42d59e9665bea6be0d56"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.188,
+      "actual": 1.188,
+      "passed": true,
+      "evidence_ids": [
+       "evid_0ce02c3783b1473bb06270d399c90f32"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.2675,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "comprehensive_005",
+   "task_type": "report",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.006895282014738768,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 665280.0,
+      "actual": 665280.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_b9b6db6c9fc947be8489f39b01d7f0a4"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.232,
+      "actual": 1.232,
+      "passed": true,
+      "evidence_ids": [
+       "evid_95076536c1ee41d0944dd06e8db3bed0"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": null,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.00674828898627311,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 665280.0,
+      "actual": 665280.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_fec9a593549444e994813bb5b3c34d51"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.232,
+      "actual": 1.232,
+      "passed": true,
+      "evidence_ids": [
+       "evid_5317e45ae5454365b6e3052f8aa89818"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.3529,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "comprehensive_006",
+   "task_type": "report",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.007182660017861053,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 719565.0,
+      "actual": 719565.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_38420c2d842549ea833b5501c448293a"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.155,
+      "actual": 1.155,
+      "passed": true,
+      "evidence_ids": [
+       "evid_20e544ec00c1497896565b74728a143c"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": null,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 2,
+    "elapsed_seconds": 0.007292252994375303,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 719565.0,
+      "actual": 719565.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_abf38076064a470d861ae78d46515864"
+      ]
+     },
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.155,
+      "actual": 1.155,
+      "passed": true,
+      "evidence_ids": [
+       "evid_30a6b70f2cc740eebf6d32251370ef94"
+      ]
+     },
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.275,
+      "actual": null,
+      "passed": null,
+      "evidence_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "group_comparison_001",
+   "task_type": "comparison",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.013160904025426134,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_747dbf9298f54e95846b16c792d3e687"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 564344.0,
+      "actual": 564344.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_b0948a7a63ae4718857cd3aeb3ceeef8"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -72600.0,
+      "actual": -72600.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_202f74e39934488bb38a63cf2d5f855b"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.014167599001666531,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_917e3ca64f284f3c8c59077e3ccc9a73"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 564344.0,
+      "actual": 564344.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_784eb96ac1ff4fc2ab43fabf2f83ed3c"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -72600.0,
+      "actual": -72600.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_7e2af94f8f704dc6a76a31b6fc2e837f"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "group_comparison_002",
+   "task_type": "comparison",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012884530995506793,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_92cdcb1c4a7a42cab2575c1f80da45ff"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 688644.0,
+      "actual": 688644.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_c357e697707d44a2870809568d736488"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -77550.0,
+      "actual": -77550.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_8208e81a4859450f9b5fd040ddd2e97e"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.01297702599549666,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_23e5a1fb99964834b9f9dcd42f496a34"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 688644.0,
+      "actual": 688644.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_fce5eabd9fa24fc3a50dea7810b1e8b9"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -77550.0,
+      "actual": -77550.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_771bf32bfd744fb9b4b06b354743e919"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "group_comparison_003",
+   "task_type": "comparison",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012547595979413018,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_b2c313f47e884c5db0d41e4a3c479065"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 848617.0,
+      "actual": 848617.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_9c88db6549734b5d84a74c46e04fcf5c"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -84975.0,
+      "actual": -84975.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_da628b75bf3b4c74b1e807cb6b5e9abf"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.01280758500797674,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_b7e857d3f8e04645b9c66eb0eb1d718e"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 848617.0,
+      "actual": 848617.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4c386d50f6754e82ac5aad7016499b3d"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -84975.0,
+      "actual": -84975.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_b9618f9469274aafaaac321eacf6dde2"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "group_comparison_004",
+   "task_type": "comparison",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.01255235099233687,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 899316.0,
+      "actual": 899316.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_743def8600c84167b88a8489d3163ea7"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 632016.0,
+      "actual": 632016.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_88dce61c8a3b4ef3a61d3bc80e7e33e1"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": 267300.0,
+      "actual": 267300.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_f24acf052a1f457bb1c71e90169e49ec"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.013083375990390778,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 899316.0,
+      "actual": 899316.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_861f0d8c195e4a11b5bb2c18b723a01f"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 632016.0,
+      "actual": 632016.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e1fec3e7b2b24d269739a4b281b527ea"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": 267300.0,
+      "actual": 267300.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_82079b98e57642a49ad8395e6b5f0c9b"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "group_comparison_005",
+   "task_type": "comparison",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.01238945298246108,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 665280.0,
+      "actual": 665280.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_dee11b1527b24eca8ce5a2eeefb00ae0"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 757680.0,
+      "actual": 757680.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_f1e33161bde14855a2ad091db5907486"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -92400.0,
+      "actual": -92400.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4e09952889484491be807fae33143220"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012660893000429496,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 665280.0,
+      "actual": 665280.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_5983e1ac691a44d0b31a20f8e0342efe"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 757680.0,
+      "actual": 757680.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_a3b9a1acd1c34386bf78b1cc35e010b8"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -92400.0,
+      "actual": -92400.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_9ef2d0e4c6de4a40a588cd9f82e4ae06"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "group_comparison_006",
+   "task_type": "comparison",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012432376010110602,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 719565.0,
+      "actual": 719565.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e6c66ff540494dfe80585c7ba08dcbdc"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 806190.0,
+      "actual": 806190.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d239862618a94f9684d17e2643d72807"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -86625.0,
+      "actual": -86625.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_456a796ca8cb4a8590c5c0c38df5498f"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012816313013900071,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 719565.0,
+      "actual": 719565.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_22f055c1fde14dd98d062b50d1bb853c"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 806190.0,
+      "actual": 806190.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_dddf72ef229f45c9957c72ae14b7a1ba"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -86625.0,
+      "actual": -86625.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_34c8dc5359604852995dc5d292c0476d"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "group_comparison_007",
+   "task_type": "comparison",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012570064020110294,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 636944.0,
+      "actual": 636944.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_409616bd76ab4c3981787eb4a3f70724"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 709544.0,
+      "actual": 709544.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_58eaf236d293494288f1d13ddcae9743"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -72600.0,
+      "actual": -72600.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ad3651f41bad4b2fb6fe274f0e3ca438"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012460263998946175,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 636944.0,
+      "actual": 636944.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_aaa5b3a58e4f4eee9ec9a19a2a8789e2"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 709544.0,
+      "actual": 709544.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_53e30a4b46d6419597ae5d5c09d60b8a"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": -72600.0,
+      "actual": -72600.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e21fd18b88a847b09ce01a3d298a5d92"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "group_comparison_008",
+   "task_type": "comparison",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012536425987491384,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 766194.0,
+      "actual": 766194.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_8d4297b830e14579a2b04f57d99d8f19"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 533544.0,
+      "actual": 533544.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ad6f9cb338f74c628bc4957615a7bc04"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": 232650.0,
+      "actual": 232650.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_1954470618d84e57bc87acf2259a584c"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.012830495979869738,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "left_revenue_actual",
+      "expected": 766194.0,
+      "actual": 766194.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ba8075bb3c844f9ba43491585123a21b"
+      ]
+     },
+     {
+      "metric": "right_revenue_actual",
+      "expected": 533544.0,
+      "actual": 533544.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e897ff90cda442e58c48ac85f2c94076"
+      ]
+     },
+     {
+      "metric": "revenue_difference",
+      "expected": 232650.0,
+      "actual": 232650.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_092ccefb02104b799161f4990feba5e3"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "trend_analysis_001",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.015872461022809148,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "monthly_revenue",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_5fb02d739a0443e18d03a3831644f0cc"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 533544.0,
+      "actual": 533544.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_2aeeee7c53b44022acfdf5d0708deef5"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 593692.0,
+      "actual": 593692.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_1a88041d4cd84b0a86364554713ba692"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.015648770990082994,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "monthly_revenue",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_dac32e6eb21b4c1caaa8109d048f798c"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 533544.0,
+      "actual": 533544.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_7891a345c1c844b1ac563bcbf740ccdb"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 593692.0,
+      "actual": 593692.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_99e64c4647cd4ce7bad5792ca27128ef"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "trend_analysis_002",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.015605332009727135,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "monthly_revenue",
+      "expected": 564344.0,
+      "actual": 564344.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_cbec2fb4adeb435ea4520b3eb5a8e2d5"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ecc33bafa5244add8e4b3e2fba4ec644"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 678667.0,
+      "actual": 678667.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4e2dcb3fc9d34f8a8ea7ca24a97a9294"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.016112598998006433,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "monthly_revenue",
+      "expected": 564344.0,
+      "actual": 564344.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d441b0722a5c475e81312dcdebdb7a92"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_6c3059dc2e1b425aabb9f6ed3f5b64f0"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 678667.0,
+      "actual": 678667.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_461e2d82fd3c498db28c05d033aaa8c4"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "trend_analysis_003",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.01606875701691024,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "monthly_revenue",
+      "expected": 636944.0,
+      "actual": 636944.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_f34c3cfa515e4b5cb5fde79e232e718c"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 688644.0,
+      "actual": 688644.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_7a4482d1daaa4c679f578bb942b82bd7"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_a3045263f3b14fa88ec51ca84115fc2f"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.016083322989288718,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "monthly_revenue",
+      "expected": 636944.0,
+      "actual": 636944.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_beb11e69b2e442118353eddf62d4e478"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 688644.0,
+      "actual": 688644.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d885d2f1dc784651b53904d7e9273620"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d94e3053321e403e860bc2c410bcaf0a"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "trend_analysis_004",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.016066352982306853,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "monthly_revenue",
+      "expected": 709544.0,
+      "actual": 709544.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_45b72592939443dbbeac189bcf595fd7"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 766194.0,
+      "actual": 766194.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_b6c121e67d344151ad3f7691067d0a26"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 848617.0,
+      "actual": 848617.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_a0e83f24602949e0a354837d800b0b71"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.015603394014760852,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "monthly_revenue",
+      "expected": 709544.0,
+      "actual": 709544.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_2baa8dff451042ffb6192a953d2eb214"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 766194.0,
+      "actual": 766194.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_13db553a87c846b18a2ff43857211932"
+      ]
+     },
+     {
+      "metric": "monthly_revenue",
+      "expected": 848617.0,
+      "actual": 848617.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d14ca9c3705d4ba8a74948a7c5de1326"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "multi_metric_001",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.00882461600122042,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_581e5ce983df4ca887a254a37d0155ec"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 109.0,
+      "actual": 109.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_9969e895150b425db36185cbef578dc9"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4511.41,
+      "actual": 4511.41,
+      "passed": true,
+      "evidence_ids": [
+       "evid_86a0e3c200c0400c93302e9a90179a1d"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.009047253988683224,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4aa1c080c51b462ba3bb608a45963a55"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 109.0,
+      "actual": 109.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ba0f5efc4f25400b890cb31e4ddbea16"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4511.41,
+      "actual": 4511.41,
+      "passed": true,
+      "evidence_ids": [
+       "evid_be53b80084ea4b9a82d3fae70c1832b8"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "multi_metric_002",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008736313990084454,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_dfdfc66387604d4d9eeb1b650c4b9031"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 136.0,
+      "actual": 136.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_1ad7a46d44df4c9583f65ca055a4cfc4"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4493.34,
+      "actual": 4493.34,
+      "passed": true,
+      "evidence_ids": [
+       "evid_fa1c9e81b5ed42c581432088a4353a47"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008938657003454864,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_971be0cea1c34d1bbd7f31d051db0cc5"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 136.0,
+      "actual": 136.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e767bbe59d22497ebe9c97b891e9840f"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4493.34,
+      "actual": 4493.34,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d52660de88044450a5dc5650934b10b6"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "multi_metric_003",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008737940021092072,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_7658c725d50d47c7a44d9f84be35658c"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 170.0,
+      "actual": 170.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_f45209ccf8044cabb76971a27a011a61"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4492.01,
+      "actual": 4492.01,
+      "passed": true,
+      "evidence_ids": [
+       "evid_408b6cdc3fe642beae5758dd89b37055"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008763202000409365,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_454478c9c17643ea9a50e9899255d548"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 170.0,
+      "actual": 170.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d5ded784f48643a688210dfa6a29e47e"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4492.01,
+      "actual": 4492.01,
+      "passed": true,
+      "evidence_ids": [
+       "evid_9c0ba53bda9948f8a80db3260e8a5d36"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "multi_metric_004",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008634852012619376,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 899316.0,
+      "actual": 899316.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_716a797d2ad14cd7aef0895d9b86ca81"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 200.0,
+      "actual": 200.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ff6ad4ca227b4f19b10ee5cb6924c896"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4496.58,
+      "actual": 4496.58,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ee649b2a54bb42779928cd62c6033dea"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008592099999077618,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 899316.0,
+      "actual": 899316.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_f94c567e26a64941930a4f4656a74013"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 200.0,
+      "actual": 200.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_7ce6479936704cefb37fb4ec540a62ac"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4496.58,
+      "actual": 4496.58,
+      "passed": true,
+      "evidence_ids": [
+       "evid_1a54b1f926b542debd53ee80cbf9546c"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "multi_metric_005",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.009049637010321021,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 665280.0,
+      "actual": 665280.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4fca965f6a594d41b83ac6a8e1435dab"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 148.0,
+      "actual": 148.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_a8cf6415ba1f4c8ca8c993bc659d74b6"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4495.14,
+      "actual": 4495.14,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e8e36aa702064829ba2745126d39e26b"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008530769002391025,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 665280.0,
+      "actual": 665280.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_e195561857a4410d94c5fc4b0d9ca19c"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 148.0,
+      "actual": 148.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_74f1d6ae590442659450f54fead85ed3"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4495.14,
+      "actual": 4495.14,
+      "passed": true,
+      "evidence_ids": [
+       "evid_91788f613d874e5aabf935593802ea9e"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "multi_metric_006",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008605633018305525,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 806190.0,
+      "actual": 806190.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_665f966a36d54bfdb85a3183ed02525a"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 179.0,
+      "actual": 179.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_8e8d7c662c75485293bacc7223205a5d"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4503.85,
+      "actual": 4503.85,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4d5b5972e0ae4013a5ea20330f9bcfdc"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 3,
+    "elapsed_seconds": 0.008288023993372917,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 806190.0,
+      "actual": 806190.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_7d48bdf91f5e46b1859d83dd2c1231fc"
+      ]
+     },
+     {
+      "metric": "orders",
+      "expected": 179.0,
+      "actual": 179.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_45dff6af18674384810572e46832e5f3"
+      ]
+     },
+     {
+      "metric": "avg_order_value",
+      "expected": 4503.85,
+      "actual": 4503.85,
+      "passed": true,
+      "evidence_ids": [
+       "evid_a6125c7451c548a182733aef499e5944"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "period_comparison_001",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.006915262987604365,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_1b6e029d8b8943f381a922e68ae4e22e"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007091672014212236,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_cb39cd453ccf4be3977f6cd288f99271"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "period_comparison_002",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007186322996858507,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4827a0c8c9da44f4a63a36ad997fba65"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0072136259987019,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_3d7732eb165a43e2824f6af2b63c0bb1"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "period_comparison_003",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0068912539863958955,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d17411f307f04bd787ab0494a67f9cd3"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.00735558700398542,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_8db0c27f35994bc18df41f2222cb9cac"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "period_comparison_004",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0070043220184743404,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_bae35629cc634a9ab415327f5afb2895"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007329011015826836,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_7c519ccf8a2b4178975bdf5117044628"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "period_comparison_005",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007110831007594243,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0828,
+      "actual": 0.08283954467487915,
+      "passed": true,
+      "evidence_ids": [
+       "evid_11665643fa7343afa8ae6cfb3483661c"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007510655996156856,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0828,
+      "actual": 0.08283954467487915,
+      "passed": true,
+      "evidence_ids": [
+       "evid_d2e41a55595c442d8b46110b20cfb3e5"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "period_comparison_006",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007464788010111079,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.1089,
+      "actual": 0.10890677911954508,
+      "passed": true,
+      "evidence_ids": [
+       "evid_f32eb11d33784d4a89c6bd614f5da1b9"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007487347989808768,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.1089,
+      "actual": 0.10890677911954508,
+      "passed": true,
+      "evidence_ids": [
+       "evid_15d0baf6a893474ba589c99915abd0e7"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "period_comparison_007",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007302176003577188,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0597,
+      "actual": 0.05974308787120692,
+      "passed": true,
+      "evidence_ids": [
+       "evid_085e0f211e574096a72cbde7fd72ba1c"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007329132000450045,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0597,
+      "actual": 0.05974308787120692,
+      "passed": true,
+      "evidence_ids": [
+       "evid_77ad24db22944473ac269172a6ae4b25"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "period_comparison_008",
+   "task_type": "trend",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007222421001642942,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0526,
+      "actual": 0.05263157894736842,
+      "passed": true,
+      "evidence_ids": [
+       "evid_926365b531c74391af958c648ea31708"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.007404895004583523,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_change_pct",
+      "expected": 0.0526,
+      "actual": 0.05263157894736842,
+      "passed": true,
+      "evidence_ids": [
+       "evid_578799bf16c448f5854f658feffa8c52"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_001",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0048069079930428416,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_attainment",
+      "expected": 0.968,
+      "actual": 0.968,
+      "passed": true,
+      "evidence_ids": [
+       "evid_696426da01fe456eb903fccfd4f874f3"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0046721280086785555,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_attainment",
+      "expected": 0.968,
+      "actual": 0.968,
+      "passed": true,
+      "evidence_ids": [
+       "evid_2dfabec012d44ec7b6040648456e0b8e"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_002",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004702083999291062,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.034,
+      "actual": 1.034,
+      "passed": true,
+      "evidence_ids": [
+       "evid_1ab1013d17ae4d91aa0e43fc45d9d474"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004568515025312081,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.034,
+      "actual": 1.034,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4b0b16e38d0d46b6bda10bbd5c88a20d"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_003",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004721353994682431,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.133,
+      "actual": 1.133,
+      "passed": true,
+      "evidence_ids": [
+       "evid_ebac3d95a0d84191a61045023d38645d"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004508487996645272,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.133,
+      "actual": 1.133,
+      "passed": true,
+      "evidence_ids": [
+       "evid_def7a3aa12d94f6cbf61f7cf19cc3cd0"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_004",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004448856983799487,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.188,
+      "actual": 1.188,
+      "passed": true,
+      "evidence_ids": [
+       "evid_58c05637d61a4dc6a9b5843dafe4cafd"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004555651976261288,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_attainment",
+      "expected": 1.188,
+      "actual": 1.188,
+      "passed": true,
+      "evidence_ids": [
+       "evid_52266c133dab4e449429336390ab3928"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_005",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004442535020643845,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_86cf0773049a446dbae3e1ba276f8aa3"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004832721984712407,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 491744.0,
+      "actual": 491744.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_00f61eb320774487bca35d3bb0a07ce3"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_006",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.00439787597861141,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_4eaba3b33177468b9dd0c84115fa40aa"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004780643008416519,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 611094.0,
+      "actual": 611094.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_eb877d13c0074213b47a0bd1dd17cc82"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_007",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004477376991417259,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "orders",
+      "expected": 189.0,
+      "actual": 189.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_018941247ad849c0aa097acffc73b2cf"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.00463069201214239,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "orders",
+      "expected": 189.0,
+      "actual": 189.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_2b6c371d7b6442a69c33354efed5c896"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_008",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004714797018095851,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "avg_order_value",
+      "expected": 4509.17,
+      "actual": 4509.17,
+      "passed": true,
+      "evidence_ids": [
+       "evid_16e50cd3466e422aa356304e0d5b9c16"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004636288998881355,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "avg_order_value",
+      "expected": 4509.17,
+      "actual": 4509.17,
+      "passed": true,
+      "evidence_ids": [
+       "evid_a1b5a53bb4b0456d8e1bf173b839a9ff"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_009",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004464911005925387,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_418529302bbb4876bd7f34206f52f2d1"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0044845139782410115,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "revenue_actual",
+      "expected": 763642.0,
+      "actual": 763642.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_9e4985e359d74fe49f8a0b031292c5b2"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "case_id": "single_metric_010",
+   "task_type": "metric",
+   "dataset_version": "f7ee4d6874c0",
+   "single": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.0045288269757293165,
+    "review_decision": null,
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_actual",
+      "expected": 239855.0,
+      "actual": 239855.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_3570e20309f5412ab9d8a23d57cde1a3"
+      ]
+     }
+    ]
+   },
+   "multi": {
+    "finding_accuracy": 1.0,
+    "answer_accuracy": true,
+    "evidence_validity": 1.0,
+    "evidence_count": 1,
+    "elapsed_seconds": 0.004539832996670157,
+    "review_decision": "accept",
+    "issues": [],
+    "error": null,
+    "metric_results": [
+     {
+      "metric": "q2_1_actual",
+      "expected": 239855.0,
+      "actual": 239855.0,
+      "passed": true,
+      "evidence_ids": [
+       "evid_82a56bd8cdb447c483f5f11a158aadd1"
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "fault_injection_results": [
+  {
+   "case_id": "fault_missing_department",
+   "fault_injected": true,
+   "single": {
+    "metrics_produced": 0,
+    "structured_error_disclosure": false,
+    "review_decision": null,
+    "elapsed_seconds": 0.003344797994941473
+   },
+   "multi": {
+    "metrics_produced": 0,
+    "review_decision": "reject",
+    "structured_error_disclosure": true,
+    "issues": [
+     "no_findings",
+     "no_evidence",
+     "no_findings",
+     "no_evidence"
+    ],
+    "elapsed_seconds": 0.0026161889836657792
+   }
+  }
+ ]
+}
