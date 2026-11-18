@@ -1531,14 +1531,29 @@ async def _run_runtime_v2_graph_stream(
         return
 
     tool_map = {getattr(tool, "name", ""): tool for tool in tools}
-    runtime.initialize_plan(
-        plan,
-        max_running_tasks=1,
-        argument_defaults_by_method={
-            "load_data": {"file_path": source_path, "sheet_name": ""},
-        },
-        execution_tools=tool_map,
-    )
+    try:
+        runtime.initialize_plan(
+            plan,
+            max_running_tasks=1,
+            argument_defaults_by_method={
+                "load_data": {"file_path": source_path, "sheet_name": ""},
+            },
+            execution_tools=tool_map,
+        )
+    except Exception as exc:
+        # A persisted default/fallback plan (plan_first) that fails execution
+        # validation must hard-stop the stream, never crash it.
+        session.runtime_v2_fallback = False
+        session.logger.warning("runtime_v2_plan_initialize_failed error=%s", exc)
+        _set_runtime_run_status(session, "failed", error=str(exc))
+        session.runtime_outcome = runtime.build_runtime_outcome(
+            runtime_mode="runtime_v2",
+            report=None,
+            fallback_used=False,
+            error_code="runtime_plan_invalid",
+        )
+        yield "\n\nRuntime V2 failed: structured plan could not be initialized.\n", []
+        return
 
     unsupported = sorted({
         step.method

@@ -105,17 +105,19 @@ def log_runtime_route(
     logger: logging.Logger,
     decision: RuntimeRouteDecision,
     *,
+    session_id: str | None = None,
     task_id: str | None = None,
     execution_id: str | None = None,
 ) -> None:
     """Emit non-sensitive route/fallback observability."""
     logger.info(
         "runtime_route selected=%s fallback=%s reason=%s error_type=%s "
-        "task_id=%s execution_id=%s",
+        "session_id=%s task_id=%s execution_id=%s",
         decision.selected_runtime,
         decision.fallback,
         decision.reason,
         decision.error_type or "none",
+        session_id or "none",
         task_id or "none",
         execution_id or "none",
     )
