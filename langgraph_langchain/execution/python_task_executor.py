@@ -25,12 +25,14 @@ class PythonTaskExecutor:
         source_path: Optional[str | Path] = None,
         timeout_seconds: float = 60.0,
         artifact_recorder: Optional[Callable[[dict[str, Any]], Any]] = None,
+        cancel_event_provider: Optional[Callable[[], Any]] = None,
     ) -> None:
         self._executor = executor or IsolatedPythonExecutor()
         self._workspace_dir = workspace_dir
         self._source_path = source_path
         self._timeout_seconds = timeout_seconds
         self._artifact_recorder = artifact_recorder
+        self._cancel_event_provider = cancel_event_provider
 
     @staticmethod
     def _artifact_ids(records: list[Any]) -> list[str]:
@@ -52,6 +54,10 @@ class PythonTaskExecutor:
             code = request.code
             if code is None:
                 code = task.constraints.get("code")
+            if code is None:
+                arguments = task.constraints.get("arguments")
+                if isinstance(arguments, dict):
+                    code = arguments.get("code")
             if code is None and isinstance(task.external_context, dict):
                 code = task.external_context.get("code")
             if not code:
@@ -80,7 +86,13 @@ class PythonTaskExecutor:
                 max_output_chars=request.max_output_chars,
                 input_asset_ids=request.input_asset_ids,
             )
-            raw = self._executor.execute(execution_request)
+            cancel_event = None
+            if self._cancel_event_provider is not None:
+                cancel_event = self._cancel_event_provider()
+            if cancel_event is not None:
+                raw = self._executor.execute(execution_request, cancel_event=cancel_event)
+            else:
+                raw = self._executor.execute(execution_request)
 
             if raw.status == "succeeded" and raw.namespace_updates:
                 # The isolated worker returns only serializable values, so merge

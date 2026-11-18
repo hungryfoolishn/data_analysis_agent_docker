@@ -1626,6 +1626,7 @@ async def _run_runtime_v2_graph_stream(
             source_path=source_path,
             timeout_seconds=float(_CODE_TIMEOUT),
             artifact_recorder=_python_artifact_recorder,
+            cancel_event_provider=lambda: session.cancel_event,
         ),
         on_task_start=on_task_start,
         on_task_finish=on_task_finish,
@@ -1641,8 +1642,46 @@ async def _run_runtime_v2_graph_stream(
         verification_policy=VerificationPolicy(),
     )
 
+    def _v2_cancel_requested() -> bool:
+        event = getattr(session, "cancel_event", None)
+        return bool(event is not None and event.is_set())
+
+    async def _cancel_runtime_v2_stream() -> tuple[str, list]:
+        """Propagate user cancellation into scheduler, run, and stage state."""
+        if runtime.scheduler is not None:
+            for task in runtime.scheduler.tasks:
+                if task.status in {"pending", "running"}:
+                    try:
+                        runtime.scheduler.mark_cancelled(task.task_id)
+                    except ValueError:
+                        pass
+        session.fail_stage(
+            session.current_stage,
+            "cancelled",
+            "analysis cancelled",
+            retryable=True,
+            hint="Restart the analysis when ready.",
+            recovery_action="retry_same_scope",
+        )
+        session.logger.info("runtime_v2_cancelled session=%s", session.session_id)
+        _set_runtime_run_status(session, "cancelled", error="analysis cancelled")
+        session.runtime_v2_cancelled = True
+        session.runtime_outcome = runtime.build_runtime_outcome(
+            runtime_mode="runtime_v2",
+            report=None,
+            fallback_used=False,
+            error_code="runtime_cancelled",
+        )
+        return "\n\n**Analysis cancelled.**\n", []
+
+    if _v2_cancel_requested():
+        yield await _cancel_runtime_v2_stream()
+        return
     try:
         async for update in controller.graph.astream({}):
+            if _v2_cancel_requested():
+                yield await _cancel_runtime_v2_stream()
+                return
             result = update.get("result") if isinstance(update, dict) else None
             if result is not None:
                 if result.status == "succeeded":
@@ -1660,6 +1699,10 @@ async def _run_runtime_v2_graph_stream(
                     msg = f"\n> `{result.tool_name} failed`\n\n{message}\n\n"
                     session.process_log.append(msg)
                     yield msg, []
+
+            if result is not None and result.status == "cancelled":
+                yield await _cancel_runtime_v2_stream()
+                return
 
             if session.new_artifacts:
                 artifacts = list(session.new_artifacts)
@@ -1720,6 +1763,10 @@ async def _run_runtime_v2_graph_stream(
                 yield "\n\n**Runtime V2 plan stopped.**\n", []
                 return
 
+        if _v2_cancel_requested():
+            yield await _cancel_runtime_v2_stream()
+            return
+
         all_succeeded = all(task.status == "succeeded" for task in controller.scheduler.tasks)
         if not all_succeeded:
             session.runtime_v2_fallback = False
@@ -1774,6 +1821,10 @@ async def _run_runtime_v2_graph_stream(
         )
         if report is None:
             yield "\n\nRuntime V2 failed: structured plan completed without verified evidence.\n", []
+            return
+
+        if _v2_cancel_requested():
+            yield await _cancel_runtime_v2_stream()
             return
 
         session.runtime_v2_completed = True
@@ -1953,6 +2004,10 @@ async def run_analysis_stream(
             react_agent=agent,
         ):
             yield chunk, artifacts
+        if getattr(session, "runtime_v2_cancelled", False):
+            remove_trace_context(session_id)
+            session.cleanup()
+            return
         if getattr(session, "runtime_v2_completed", False):
             if session.report:
                 report_artifacts = list(session.new_artifacts)
