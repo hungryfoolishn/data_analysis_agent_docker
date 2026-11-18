@@ -1494,11 +1494,23 @@ async def _run_runtime_v2_graph_stream(
     source_path: str,
     react_agent=None,
 ) -> AsyncGenerator[tuple[str, list], None]:
-    """Try to execute a structured plan through Runtime V2.
+    """Execute a structured plan through Runtime V2 (opt-in bridge).
 
-    This is an opt-in bridge.  When a plan contains LLM-decided tasks, has
-    unknown tools, or fails to produce a report, the caller falls back to the
-    legacy ReAct stream.
+    Routing and fallback are owned by RuntimeSelectionPolicy
+    (runtime/runtime_route.py); this generator never decides fallback itself:
+
+    - Default configuration (RUNTIME_V2_ENABLED=1, strict mode on): any V2
+      failure -- plan init failure, unsupported tools, task failure, or a
+      report without verified evidence -- hard-stops the session.  The legacy
+      ReAct stream is never invoked for the same session.
+    - Legacy fallback requires both RUNTIME_V2_FALLBACK_ENABLED=1 and
+      RUNTIME_V2_STRICT_MODE=0, and applies only to infrastructure failures
+      (blocked / incomplete / limit_reached with no execution result).
+      Business task failures never fall back.
+    - Config rollback (switching the flags) affects only newly started
+      sessions.  A running V2 session is not guaranteed to resume under the
+      V1 ReAct loop: V2 AnalysisPlan progress is not replayed by V1.  Drain
+      active V2 sessions before rolling back.
     """
     from langgraph_langchain.evidence import EvidenceCollector
     from langgraph_langchain.runtime.analysis_report import (
