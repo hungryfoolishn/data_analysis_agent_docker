@@ -37,11 +37,11 @@ from langgraph_langchain.runtime.research_agent import (
     ResearchStep,
 )
 
-# Golden cases whose frozen ground truth is inconsistent with the dataset
-# (B6 golden data quality issue; documented in the B11.6 report).
-GROUND_TRUTH_INCONSISTENT_CASES = frozenset(
-    {"trend_analysis_005", "trend_analysis_006"}
-)
+# Golden cases with ground truth inconsistent with the dataset. Empty since
+# the post-B11 B6 remediation (b6-p2 fixes): Q2 trend values and
+# comprehensive revenue_change_pct compare_period semantics were corrected
+# and are covered by tests/test_b6_golden_ground_truth.py.
+GROUND_TRUTH_INCONSISTENT_CASES: frozenset[str] = frozenset()
 
 
 __all__ = [

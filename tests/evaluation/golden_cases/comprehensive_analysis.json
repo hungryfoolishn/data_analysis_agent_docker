@@ -35,13 +35,15 @@
       },
       {
         "metric": "revenue_change_pct",
-        "value": 0.1,
+        "value": -0.282544,
         "tolerance": 0.001,
         "period": "2026-01",
         "dimension": "department",
         "group": "杭州开发一部",
         "filters": {
-          "department": "杭州开发一部"
+          "department": "杭州开发一部",
+          "compare_period": "2025-12",
+          "comparison_type": "month_over_month"
         },
         "unit": null
       }
@@ -101,13 +103,15 @@
       },
       {
         "metric": "revenue_change_pct",
-        "value": 0.0828,
+        "value": 0.08284,
         "tolerance": 0.001,
         "period": "2026-02",
         "dimension": "department",
         "group": "杭州开发二部",
         "filters": {
-          "department": "杭州开发二部"
+          "department": "杭州开发二部",
+          "compare_period": "2026-01",
+          "comparison_type": "month_over_month"
         },
         "unit": null
       }
@@ -167,13 +171,15 @@
       },
       {
         "metric": "revenue_change_pct",
-        "value": 0.1989,
+        "value": 0.108907,
         "tolerance": 0.001,
         "period": "2026-03",
         "dimension": "department",
         "group": "数据分析部",
         "filters": {
-          "department": "数据分析部"
+          "department": "数据分析部",
+          "compare_period": "2026-02",
+          "comparison_type": "month_over_month"
         },
         "unit": null
       }
@@ -233,13 +239,15 @@
       },
       {
         "metric": "revenue_change_pct",
-        "value": 0.2675,
+        "value": 0.059743,
         "tolerance": 0.001,
         "period": "2026-04",
         "dimension": "department",
         "group": "平台架构部",
         "filters": {
-          "department": "平台架构部"
+          "department": "平台架构部",
+          "compare_period": "2026-03",
+          "comparison_type": "month_over_month"
         },
         "unit": null
       }
@@ -299,13 +307,15 @@
       },
       {
         "metric": "revenue_change_pct",
-        "value": 0.3529,
+        "value": 0.052632,
         "tolerance": 0.001,
         "period": "2026-05",
         "dimension": "department",
         "group": "杭州开发一部",
         "filters": {
-          "department": "杭州开发一部"
+          "department": "杭州开发一部",
+          "compare_period": "2026-04",
+          "comparison_type": "month_over_month"
         },
         "unit": null
       }
@@ -365,13 +375,15 @@
       },
       {
         "metric": "revenue_change_pct",
-        "value": 0.275,
+        "value": -0.050305,
         "tolerance": 0.001,
         "period": "2026-06",
         "dimension": "department",
         "group": "杭州开发二部",
         "filters": {
-          "department": "杭州开发二部"
+          "department": "杭州开发二部",
+          "compare_period": "2026-05",
+          "comparison_type": "month_over_month"
         },
         "unit": null
       }
