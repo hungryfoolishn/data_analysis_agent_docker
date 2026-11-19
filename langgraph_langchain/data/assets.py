@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -30,6 +31,36 @@ def hash_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
             digest.update(chunk)
     return digest.hexdigest()
 
+
+
+def hash_file_stable(path: Path, chunk_size: int = 1024 * 1024) -> tuple[str, bool]:
+    """Hash a file and report whether metadata stayed stable during the read.
+
+    The digest is the same streaming SHA-256 used by ``hash_file``. The
+    stability flag is a read-consistency guard, not an extra cryptographic
+    proof: if size, inode, mode, or mtime changes while the handle is open, the
+    caller must treat the result as an unstable read.
+    """
+    resolved = Path(path)
+    if not resolved.is_absolute():
+        raise ValueError("file path must be absolute")
+    if not resolved.is_file():
+        raise FileNotFoundError(f"file does not exist: {resolved}")
+
+    digest = hashlib.sha256()
+    with resolved.open("rb") as handle:
+        before = os.fstat(handle.fileno())
+        while chunk := handle.read(chunk_size):
+            digest.update(chunk)
+        after = os.fstat(handle.fileno())
+
+    stable = (
+        before.st_size == after.st_size
+        and before.st_ino == after.st_ino
+        and before.st_mode == after.st_mode
+        and before.st_mtime_ns == after.st_mtime_ns
+    )
+    return digest.hexdigest(), stable
 
 
 def canonical_text_sha256(path: Path) -> str:
