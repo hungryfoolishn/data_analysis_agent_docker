@@ -36,10 +36,12 @@ COPY langgraph_langchain/requirements-langgraph.txt /app/langgraph_langchain/req
 RUN pip install --no-cache-dir -r requirements.txt -r langgraph_langchain/requirements-langgraph.txt
 
 # Copy project code
+RUN rm -rf /app && mkdir -p /app
+
 COPY . /app/
 
 # Ensure runtime dirs exist and are owned by telebi (will be volume-mounted at runtime)
-RUN mkdir -p /app/workspace /app/temp_uploads \
+RUN chmod +x /app/docker-entrypoint.sh && mkdir -p /app/workspace /app/temp_uploads \
     && chown -R telebi:telebi /app
 
 # NOTE: do NOT set USER telebi here. Bind-mounted workspace/ and temp_uploads/
