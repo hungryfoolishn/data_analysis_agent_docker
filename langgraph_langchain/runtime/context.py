@@ -11,11 +11,12 @@ import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
-from langgraph_langchain.data.assets import DataAsset, hash_dataframe, hash_file
+from langgraph_langchain.data.assets import DataAsset, hash_dataframe, hash_file, hash_file_stable
 from langgraph_langchain.evidence.models import CanonicalEvidence
 from langgraph_langchain.evidence.registry import EvidenceRegistry
 from langgraph_langchain.runtime.outcome import RuntimeOutcome, derive_runtime_status
 from langgraph_langchain.data.snapshots import (
+    SnapshotIntegrityError,
     SnapshotNotFoundError,
     SnapshotReference,
     SnapshotStore,
@@ -519,12 +520,20 @@ class AnalysisRuntime:
         failed_steps = sum(task.status == "failed" for task in tasks)
         skipped_steps = sum(task.status == "skipped" for task in tasks)
         findings = []
+        asset_limitations = [
+            f"Restored asset {asset.asset_id} is {state}; current report trust is degraded."
+            for asset in self.assets.values()
+            if (state := self._asset_restore_state(asset)) in {
+                "UNVERIFIABLE", "MISSING", "STALE", "VALIDATION_FAILED"
+            }
+        ]
         for index, evidence in enumerate(verified, start=1):
-            limitations = (
+            evidence_limitations = (
                 ["The SQLite result was truncated."]
                 if evidence.source_metadata.get("truncated")
                 else []
             )
+            limitations = [*asset_limitations, *evidence_limitations]
             findings.append(
                 ReportFinding(
                     finding_id=f"F{index:03d}",
@@ -555,6 +564,7 @@ class AnalysisRuntime:
         limitations = [
             "This report contains deterministic execution results, not LLM-generated business insights."
         ]
+        limitations.extend(asset_limitations)
         if any(evidence.source_metadata.get("truncated") for evidence in verified):
             limitations.append("One or more SQLite results were truncated.")
         report = build_analysis_report(
@@ -585,6 +595,250 @@ class AnalysisRuntime:
                 "Runtime report validation failed: " + "; ".join(validation.errors)
             )
         return report, render_analysis_report(report)
+
+    @staticmethod
+    def _asset_restore_state(asset: DataAsset) -> str | None:
+        integrity = asset.source_metadata.get("restore_integrity")
+        if not isinstance(integrity, dict):
+            return None
+        return integrity.get("status") if isinstance(integrity.get("status"), str) else None
+
+    @staticmethod
+    def _restore_integrity(
+        *,
+        status: str,
+        reason: str | None = None,
+        algorithm: str | None = None,
+    ) -> dict[str, str | None]:
+        payload: dict[str, str | None] = {"status": status, "reason": reason}
+        if algorithm is not None:
+            payload["algorithm"] = algorithm
+        return payload
+
+    def _validate_restored_assets(self, assets: Mapping[str, DataAsset]) -> None:
+        """Re-establish asset trust from current content, not persisted trust."""
+        for asset in assets.values():
+            result = self._verify_restored_asset(asset)
+            asset.source_metadata["restore_integrity"] = result
+
+    def _verify_restored_asset(self, asset: DataAsset) -> dict[str, str | None]:
+        metadata = asset.source_metadata or {}
+        snapshot_payload = metadata.get("snapshot_reference")
+
+        if isinstance(snapshot_payload, dict):
+            try:
+                reference = SnapshotReference.model_validate(snapshot_payload)
+            except Exception as exc:
+                logger.warning(
+                    "restored_asset_reference_invalid asset_id=%s error=%s",
+                    asset.asset_id,
+                    exc,
+                )
+                return self._restore_integrity(
+                    status="VALIDATION_FAILED", reason="invalid_snapshot_reference"
+                )
+            if asset.content_hash is None:
+                return self._restore_integrity(
+                    status="UNVERIFIABLE", reason="missing_content_hash"
+                )
+            try:
+                dataframe = self.snapshot_store.load(reference)
+                actual_hash = hash_dataframe(dataframe)
+            except SnapshotNotFoundError as exc:
+                logger.warning(
+                    "restored_asset_snapshot_missing asset_id=%s error=%s",
+                    asset.asset_id,
+                    exc,
+                )
+                return self._restore_integrity(status="MISSING", reason="snapshot_missing")
+            except SnapshotIntegrityError as exc:
+                logger.warning(
+                    "restored_asset_snapshot_integrity_failed asset_id=%s error=%s",
+                    asset.asset_id,
+                    exc,
+                )
+                return self._restore_integrity(status="STALE", reason="snapshot_integrity_mismatch")
+            except Exception as exc:
+                logger.warning(
+                    "restored_asset_snapshot_validation_failed asset_id=%s error=%s",
+                    asset.asset_id,
+                    exc,
+                )
+                return self._restore_integrity(
+                    status="VALIDATION_FAILED", reason="snapshot_validation_failed"
+                )
+            if actual_hash == asset.content_hash:
+                return self._restore_integrity(
+                    status="VERIFIED",
+                    algorithm="sha256:dataframe-canonical-v1",
+                )
+            return self._restore_integrity(status="STALE", reason="content_hash_mismatch")
+
+        location = asset.location
+        if not isinstance(location, str) or not location:
+            return self._restore_integrity(
+                status="UNVERIFIABLE", reason="unsupported_content_representation"
+            )
+        path = Path(location)
+        if not path.is_absolute():
+            return self._restore_integrity(
+                status="VALIDATION_FAILED", reason="relative_asset_path"
+            )
+        if not path.is_file():
+            return self._restore_integrity(status="MISSING", reason="file_missing")
+        if asset.content_hash is None:
+            return self._restore_integrity(
+                status="UNVERIFIABLE", reason="missing_content_hash"
+            )
+        if asset.source_type == "sqlite_database" and (
+            Path(str(path) + "-wal").is_file()
+            or Path(str(path) + "-shm").is_file()
+        ):
+            return self._restore_integrity(
+                status="UNVERIFIABLE", reason="sqlite_sidecars_present"
+            )
+        try:
+            actual_hash, stable = hash_file_stable(path)
+        except Exception as exc:
+            logger.warning(
+                "restored_asset_hash_failed asset_id=%s error=%s", asset.asset_id, exc
+            )
+            return self._restore_integrity(
+                status="VALIDATION_FAILED", reason="hash_read_failed"
+            )
+        if not stable:
+            return self._restore_integrity(
+                status="VALIDATION_FAILED", reason="unstable_file_read"
+            )
+        if actual_hash == asset.content_hash:
+            return self._restore_integrity(
+                status="VERIFIED", algorithm="sha256:file-stream-v1"
+            )
+        return self._restore_integrity(status="STALE", reason="content_hash_mismatch")
+
+    def _revalidate_restored_canonical_evidence(self) -> None:
+        """Re-run registry verification against restored current content."""
+        for evidence in self.evidence_registry.records():
+            try:
+                self.verify_canonical_evidence(evidence.evidence_id)
+            except Exception as exc:
+                logger.warning(
+                    "restored_canonical_evidence_validation_failed "
+                    "execution_id=%s evidence_id=%s error=%s",
+                    evidence.execution_id,
+                    evidence.evidence_id,
+                    exc,
+                )
+
+    def _revalidate_restored_evidence(self) -> None:
+        """Fail closed for persisted legacy evidence after asset revalidation."""
+        failed_states = {"MISSING", "STALE", "VALIDATION_FAILED"}
+        degraded_states = failed_states | {"UNVERIFIABLE"}
+        for evidence in self.evidence:
+            asset_states: dict[str, str] = {}
+            blocked = False
+            unknown_asset = False
+            for asset_id in evidence.source_asset_ids:
+                asset = self.assets.get(asset_id)
+                if asset is None:
+                    unknown_asset = True
+                    continue
+                state = self._asset_restore_state(asset)
+                if state is None:
+                    state = "UNVERIFIABLE"
+                asset_states[asset_id] = state
+                if state in degraded_states:
+                    blocked = True
+
+            previous_status = evidence.verification_status
+            linked_verification = next(
+                (
+                    item
+                    for item in self.verifications
+                    if item.verification_id == evidence.verification_result_id
+                ),
+                None,
+            )
+            executions_ok = bool(evidence.source_execution_ids) and all(
+                self._lookup_execution(execution_id) is not None
+                and getattr(self._lookup_execution(execution_id), "status", None)
+                == "succeeded"
+                for execution_id in evidence.source_execution_ids
+            )
+            artifacts_ok = all(
+                artifact_id in self.artifacts
+                and Path(self.artifacts[artifact_id].path).is_file()
+                for artifact_id in evidence.source_artifact_ids
+            )
+            retain_verified = (
+                previous_status == "verified"
+                and not blocked
+                and not unknown_asset
+                and linked_verification is not None
+                and linked_verification.status == "passed"
+                and executions_ok
+                and artifacts_ok
+                and bool(evidence.source_asset_ids or evidence.source_artifact_ids)
+            )
+            if any(
+                asset_states.get(asset_id) in failed_states
+                for asset_id in asset_states
+            ) or unknown_asset:
+                evidence.verification_status = "failed"
+                reason = (
+                    "unknown_source_asset"
+                    if unknown_asset
+                    else "degraded_source_asset"
+                )
+                result_status = "failed"
+            elif retain_verified:
+                evidence.verification_status = "verified"
+                reason = "current_sources_and_original_verification_revalidated"
+                result_status = "passed"
+            else:
+                evidence.verification_status = "unverified"
+                reason = (
+                    "legacy_evidence_not_recomputable"
+                    if not evidence.source_asset_ids
+                    else "source_assets_verified_legacy_proof_not_recomputable"
+                )
+                result_status = "skipped"
+
+            verification_id = f"restore_evidence_{evidence.evidence_id}"
+            result = VerificationResult(
+                verification_id=verification_id,
+                run_id=self.run.run_id,
+                task_id=(
+                    self.executions[-1].task_id
+                    if evidence.source_execution_ids
+                    and self._lookup_execution(evidence.source_execution_ids[-1])
+                    else None
+                ),
+                execution_id=(
+                    evidence.source_execution_ids[-1]
+                    if evidence.source_execution_ids
+                    else None
+                ),
+                evidence_id=evidence.evidence_id,
+                check_type="custom",
+                status=result_status,
+                passed=result_status == "passed",
+                expected="current source-asset integrity and independent evidence proof",
+                actual={
+                    "previous_status": previous_status,
+                    "asset_states": asset_states,
+                    "has_source_assets": bool(evidence.source_asset_ids),
+                },
+                message="Restored legacy evidence is not trusted without revalidation.",
+                details={"reason": reason},
+            )
+            self.verifications = [
+                item
+                for item in self.verifications
+                if item.verification_id != verification_id
+            ]
+            self.verifications.append(result)
+            evidence.verification_result_id = verification_id
 
     def _lookup_execution(self, execution_id: str):
         return next(
@@ -639,6 +893,18 @@ class AnalysisRuntime:
                 "Evidence tool_name does not match execution "
                 f"{evidence.execution_id}"
             )
+
+        for asset_id in dict.fromkeys(
+            [*evidence.input_asset_ids, *evidence.output_asset_ids]
+        ):
+            asset = self.assets.get(asset_id)
+            if asset is None:
+                continue
+            restore_state = self._asset_restore_state(asset)
+            if restore_state is not None and restore_state != "VERIFIED":
+                errors.append(
+                    f"Restored asset {asset_id} is not verified: {restore_state}"
+                )
 
         if evidence.evidence_type == "analysis_operation":
             errors.extend(
@@ -764,6 +1030,15 @@ class AnalysisRuntime:
                 errors.append(
                     f"Output asset {asset_id} was not produced by execution "
                     f"{evidence.execution_id}"
+                )
+            evidence_content_hash = evidence.source_metadata.get("content_hash")
+            if (
+                evidence_content_hash is not None
+                and asset.content_hash != evidence_content_hash
+            ):
+                errors.append(
+                    f"SQLite output asset {asset_id} content hash does not "
+                    "match evidence provenance"
                 )
             snapshot_payload = asset.source_metadata.get("snapshot_reference")
             if not isinstance(snapshot_payload, dict):
@@ -2115,6 +2390,10 @@ class AnalysisRuntime:
             "task": self.task.model_dump(mode="json"),
             "run": self.run.model_dump(mode="json"),
             "assets": [asset.model_dump(mode="json") for asset in self.assets.values()],
+            "canonical_evidence": [
+                item.model_dump(mode="json")
+                for item in self.evidence_registry.records()
+            ],
             "executions": [item.model_dump(mode="json") for item in self.executions],
             "output_bindings": [
                 item.model_dump(mode="json")
@@ -2158,6 +2437,7 @@ class AnalysisRuntime:
             # Update in place so an existing AssetResolver keeps its mapping view.
             self.assets.clear()
             self.assets.update(restored_assets)
+            self._validate_restored_assets(restored_assets)
             self.executions = [
                 ExecutionResult.model_validate(item)
                 for item in raw.get("executions", [])
@@ -2187,6 +2467,9 @@ class AnalysisRuntime:
             # registrations are invisible to evidence reference validation.
             self.artifacts.clear()
             self.artifacts.update(restored_artifacts)
+            for item in raw.get("canonical_evidence", []):
+                canonical = CanonicalEvidence.model_validate(item)
+                self.evidence_registry.restore_record(canonical)
             self.findings = [dict(item) for item in raw.get("findings", [])]
             self.metric_definitions = [
                 dict(item) for item in raw.get("metric_definitions", [])
@@ -2200,6 +2483,8 @@ class AnalysisRuntime:
                 EvidenceItem.model_validate(item)
                 for item in raw.get("evidence", [])
             ]
+            self._revalidate_restored_canonical_evidence()
+            self._revalidate_restored_evidence()
             self.failures = [dict(item) for item in raw.get("failures", [])]
             self.evaluations = [
                 TaskEvaluation.model_validate(item)

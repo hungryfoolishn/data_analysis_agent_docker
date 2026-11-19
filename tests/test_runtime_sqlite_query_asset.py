@@ -147,6 +147,10 @@ def _sqlite_result(db_path: Path):
     )
 
 
+def _without_restore_integrity(metadata):
+    return {key: value for key, value in metadata.items() if key != "restore_integrity"}
+
+
 def test_runtime_registers_sqlite_query_asset(tmp_path: Path):
     db_path = _create_items(tmp_path / "items.sqlite")
     result = _sqlite_result(db_path)
@@ -194,7 +198,7 @@ def test_sqlite_query_asset_persists_and_reloads(tmp_path: Path):
 
     assert asset.asset_id in second.assets
     reloaded = second.assets[asset.asset_id]
-    assert reloaded.source_metadata == asset.source_metadata
+    assert _without_restore_integrity(reloaded.source_metadata) == asset.source_metadata
     assert reloaded.content_hash == asset.content_hash
     assert asset.asset_id in second.task.input_asset_ids
 
@@ -337,7 +341,7 @@ def test_sqlite_asset_snapshot_persists_across_restart(tmp_path: Path):
     )
     loaded = second.snapshot_store.load(reference)
 
-    assert restored.source_metadata == asset.source_metadata
+    assert _without_restore_integrity(restored.source_metadata) == asset.source_metadata
     assert second.snapshot_store.exists(reference) is True
     pd.testing.assert_frame_equal(loaded, result.dataframe)
     assert asset.asset_id in second.task.input_asset_ids

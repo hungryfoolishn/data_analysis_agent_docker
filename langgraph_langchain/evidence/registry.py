@@ -128,6 +128,23 @@ class EvidenceRegistry:
             raise EvidenceRegistryError(f"Unknown evidence_id: {evidence_id}")
         return evidence
 
+    def records(self) -> list[CanonicalEvidence]:
+        """Return a serialization-safe snapshot of registry records."""
+        return list(self._records.values())
+
+    def restore_record(self, evidence: CanonicalEvidence) -> CanonicalEvidence:
+        """Rehydrate one persisted record without inheriting its trust state.
+
+        This method intentionally does not run the normal duplicate-aware
+        ``register`` flow: a restored record may contain references that no
+        longer exist, and the restore chain must record that as ``failed``
+        rather than discarding the evidence.  The status is reset to
+        ``unverified`` before the caller explicitly verifies it.
+        """
+        evidence.validation_status = "unverified"
+        self._records[evidence.evidence_id] = evidence
+        return evidence
+
     def list(
         self,
         *,

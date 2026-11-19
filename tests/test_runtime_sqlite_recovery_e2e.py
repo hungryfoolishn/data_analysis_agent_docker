@@ -42,6 +42,10 @@ def _task(asset_id: str) -> AnalysisTask:
     )
 
 
+def _without_restore_integrity(metadata):
+    return {key: value for key, value in metadata.items() if key != "restore_integrity"}
+
+
 def _register_orders(runtime: AnalysisRuntime, source_path: Path):
     result = _source(source_path).execute_bounded_query(
         """
@@ -62,7 +66,7 @@ def test_register_restart_resolve_and_execute_golden_sqlite(tmp_path: Path):
     second = _new_runtime(tmp_path)
     assert asset.asset_id in second.assets
     restored = second.assets[asset.asset_id]
-    assert restored.source_metadata == asset.source_metadata
+    assert _without_restore_integrity(restored.source_metadata) == asset.source_metadata
     assert restored.content_hash == asset.content_hash
     assert asset.asset_id in second.task.input_asset_ids
 
@@ -230,6 +234,8 @@ def test_runtime_persist_failure_after_restart_keeps_existing_snapshot(
     with pytest.raises(OSError, match="simulated persistence failure"):
         second.register_sqlite_result(result=result)
 
-    assert second.assets[asset.asset_id] == asset
+    second_asset = second.assets[asset.asset_id]
+    assert _without_restore_integrity(second_asset.source_metadata) == asset.source_metadata
+    assert second_asset.content_hash == asset.content_hash
     assert asset.asset_id not in second.task.input_asset_ids
     assert (tmp_path / ".data_snapshots" / reference.snapshot_location).is_file()

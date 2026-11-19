@@ -181,30 +181,41 @@ def test_runtime_v6_state_is_restored_with_finding_provenance(tmp_path: Path):
         question=QUESTION,
     )
     assert len(restored.executions) == 3
-    assert len(restored.verification_results) == 3
-    assert len(restored.evidence) == 3
+    original_results = [
+        item
+        for item in restored.verification_results
+        if not item.verification_id.startswith("restore_evidence_")
+    ]
+    restore_results = [
+        item
+        for item in restored.verification_results
+        if item.verification_id.startswith("restore_evidence_")
+    ]
+    assert len(original_results) == 3
+    assert len(restore_results) == 3
+    assert all(item.status == "skipped" for item in restore_results)
+    assert all(
+        item.verification_status == "unverified"
+        for item in restored.evidence
+    )
     assert len(restored.findings) == 1
 
-    # The report contract intentionally draws only from findings whose evidence
-    # IDs exist in Runtime's verified lineage.
-    verified_ids = {item.verification_id for item in restored.verification_results}
+    # Restore no longer trusts a persisted verified status. These test-factory
+    # evidence records have no registered source assets, so they cannot be
+    # independently revalidated and must not feed a new trusted report.
+    report_finding = Finding.model_validate(restored.findings[0])
     evidence_ids = {
         item.evidence_id
         for item in restored.evidence
         if item.verification_status == "verified"
     }
-    report_finding = Finding.model_validate(restored.findings[0])
     accepted_findings = [
         item
         for item in [report_finding]
         if item.evidence
         and all(source in evidence_ids for source in item.supported_by)
     ]
-    report = "\n".join(
-        f"- {item.statement}" for item in accepted_findings
-    )
-    assert "verified runtime outputs" in report
-    assert accepted_findings[0].evidence[0].verification_result_id in verified_ids
+    assert accepted_findings == []
 
 
 def test_runtime_v6_business_failure_stops_without_evidence_path(tmp_path: Path):
