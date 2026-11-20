@@ -7,9 +7,12 @@ context, callables, database clients, LLM clients or raw multiprocessing objects
 
 from __future__ import annotations
 
+import io
+import pickle
 import re
 import uuid
-from typing import Literal, Optional, Union
+from types import ModuleType
+from typing import Any, Literal, Optional, Union
 from typing_extensions import TypeAliasType
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -95,7 +98,7 @@ class ArtifactPolicy(BaseModel):
 
     output_dir: str = Field(default="output", min_length=1, max_length=512)
     allowed_extensions: tuple[str, ...] = (
-        ".csv", ".json", ".txt", ".md", ".png", ".svg", ".parquet", ".xlsx",
+        ".csv", ".json", ".txt", ".md", ".png", ".svg", ".parquet", ".xlsx", ".xls", ".pkl", ".pickle", ".npy", ".npz", ".html", ".pdf", ".log", ".zip", ".db", ".sqlite", ".geojson",
     )
     max_files: int = Field(default=100, ge=1, le=1000)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
@@ -135,7 +138,7 @@ class WorkerExecutionOptions(BaseModel):
     max_output_chars: int = Field(default=3000, ge=256, le=100000)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
     max_artifacts: int = Field(default=100, ge=1, le=1000)
-    timeout_seconds: float = Field(default=60.0, gt=0, le=600)
+    timeout_seconds: float = Field(default=60.0, gt=0, le=3600)
     max_memory_mb: Optional[int] = Field(default=None, ge=64, le=16384)
     allow_network: bool = False
     environment: dict[str, str] = Field(default_factory=dict)
@@ -251,3 +254,43 @@ class WorkerJob(BaseModel):
                 yield key, "<redacted>"
             else:
                 yield key, value
+
+
+class ProcessWorkerJob(WorkerJob):
+    """Process-backend compatibility extension of the portable WorkerJob.
+
+    The portable WorkerJob keeps namespace JSON-safe. The current process
+    executor intentionally uses fork memory to preserve closures, modules and
+    analysis objects across calls. This subclass is therefore process-only and
+    is not accepted by a container backend; A1.4.2.2 must replace it with an
+    explicit artifact-based state mechanism.
+    """
+
+    namespace: dict[str, Any] = Field(default_factory=dict)
+
+
+
+def build_process_worker_job(
+    request,
+    *,
+    session_id: str | None = None,
+    task_id: str | None = None,
+    execution_id: str | None = None,
+) -> ProcessWorkerJob:
+    """Build a process-only job from the existing PythonExecutionRequest."""
+    return ProcessWorkerJob(
+        session_id=session_id,
+        task_id=task_id,
+        execution_id=execution_id,
+        code=request.code,
+        workspace_dir=request.workspace_dir,
+        source_path=request.source_path,
+        namespace=request.namespace,
+        execution_options=WorkerExecutionOptions(
+            timeout_seconds=request.timeout_seconds,
+            max_output_chars=request.max_output_chars,
+            max_artifact_bytes=request.max_artifact_bytes,
+            max_memory_mb=request.max_memory_mb,
+            environment=request.environment,
+        ),
+    )

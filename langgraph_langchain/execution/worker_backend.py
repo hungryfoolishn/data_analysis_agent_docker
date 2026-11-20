@@ -12,7 +12,7 @@ import os
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Optional, Protocol, runtime_checkable
+from typing import Any, Literal, Optional, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -90,6 +90,23 @@ class BackendHealth(BaseModel):
         return BackendHealth(state="not_implemented", detail=detail)
 
 
+class ProcessWorkerResult(WorkerResult):
+    """Process-specific result extension carrying namespace state updates."""
+
+    namespace_updates: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def output(self) -> str:
+        return self.stdout + ("\n" + self.stderr if self.stderr else "")
+
+    @property
+    def raw_artifacts(self) -> list[dict[str, Any]]:
+        return [
+            {"relative_path": artifact.relative_path, "size_bytes": artifact.size_bytes}
+            for artifact in self.artifacts
+        ]
+
+
 class BackendCapabilities(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -161,7 +178,7 @@ class ProcessWorkerBackend:
             supports_container_isolation=False,
         )
 
-    def execute(self, job: WorkerJob, cancellation: CancellationHandle) -> WorkerResult:
+    def execute(self, job: WorkerJob, cancellation: CancellationHandle) -> ProcessWorkerResult:
         started = time.monotonic()
         if cancellation.is_set():
             return WorkerResult(
@@ -192,7 +209,7 @@ class ProcessWorkerBackend:
             artifacts = self._validate_artifacts(job, raw.artifacts) if raw.status == WorkerStatus.SUCCEEDED.value else ()
             return self._map_result(job, raw, artifacts, started)
         except Exception as exc:
-            return WorkerResult(
+            return ProcessWorkerResult(
                 job_id=job.job_id,
                 status=WorkerStatus.FAILED,
                 duration_ms=int(max(0, (time.monotonic() - started) * 1000)),
@@ -224,7 +241,7 @@ class ProcessWorkerBackend:
         raw: PythonExecutionResult,
         artifacts: tuple[ArtifactReference, ...],
         started: float,
-    ) -> WorkerResult:
+    ) -> ProcessWorkerResult:
         duration_ms = int(max(0, round(raw.duration_ms or (time.monotonic() - started) * 1000)))
         if raw.status == WorkerStatus.SUCCEEDED.value:
             status = WorkerStatus.SUCCEEDED
@@ -261,7 +278,7 @@ class ProcessWorkerBackend:
                 safe_message=raw.error_message or f"Unexpected worker status: {raw.status}",
                 retryable=False,
             )
-        return WorkerResult(
+        return ProcessWorkerResult(
             job_id=job.job_id,
             status=status,
             stdout=raw.stdout[: job.execution_options.max_output_chars],
@@ -270,6 +287,7 @@ class ProcessWorkerBackend:
             duration_ms=duration_ms,
             artifacts=artifacts,
             error=error,
+            namespace_updates=raw.namespace_updates if status == WorkerStatus.SUCCEEDED else {},
         )
 
     def _validate_artifacts(

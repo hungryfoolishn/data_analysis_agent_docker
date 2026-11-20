@@ -73,7 +73,7 @@ def test_job_rejects_empty_code_and_invalid_job_id():
         job(job_id="bad id")
 
 
-@pytest.mark.parametrize("seconds", [0, -1, 601])
+@pytest.mark.parametrize("seconds", [0, -1, 3601])
 def test_job_rejects_timeout_outside_bounds(seconds):
     with pytest.raises(ValidationError):
         WorkerExecutionOptions(timeout_seconds=seconds)
@@ -136,3 +136,19 @@ def test_output_policy_normalizes_and_rejects_bad_values():
         ArtifactPolicy(allowed_extensions=("sub/dir.csv",))
     with pytest.raises(ValidationError, match="path traversal"):
         ArtifactPolicy(output_dir="../outside")
+
+
+def test_portable_job_rejects_callable_but_process_job_allows_function():
+    import pandas as pd
+    from langgraph_langchain.execution.job_contract import ProcessWorkerJob
+    values = {
+        "code": "print(df.shape)",
+        "workspace_dir": "/app/workspace/session-1",
+        "namespace": {"df": pd.DataFrame({"a": [1]})},
+    }
+    process_job = ProcessWorkerJob(**values)
+    assert set(process_job.namespace) == {"df"}
+    with pytest.raises(ValidationError):
+        WorkerJob(**{**values, "namespace": {"bad": lambda: None}})
+    process_callable = ProcessWorkerJob(**{**values, "namespace": {"helper": lambda: None}})
+    assert callable(process_callable.namespace["helper"])

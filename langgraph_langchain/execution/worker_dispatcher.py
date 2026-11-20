@@ -177,17 +177,6 @@ class WorkerDispatcher:
                         retryable=False,
                     ),
                 )
-            if result.status == WorkerStatus.SUCCEEDED and cancellation.is_set():
-                result = result.model_copy(
-                    update={
-                        "status": WorkerStatus.CANCELLED,
-                        "error": WorkerError(
-                            error_code=WorkerErrorCode.CANCELLED,
-                            error_type="CancelledError",
-                            safe_message="Cancellation arrived while the job completed",
-                        ),
-                    }
-                )
             if result.status == WorkerStatus.FAILED and result.error is None:
                 result = result.model_copy(
                     update={

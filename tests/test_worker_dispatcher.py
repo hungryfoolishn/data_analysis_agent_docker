@@ -46,6 +46,11 @@ class FakeBackend:
             self.release_event.wait(timeout=2)
         if self.set_cancel_after:
             cancellation.set()
+        if cancellation.is_set() and not self.set_cancel_after:
+            return WorkerResult(
+                job_id=job.job_id,
+                status=WorkerStatus.CANCELLED,
+            )
         if self.result is not None:
             return self.result
         return WorkerResult(job_id=job.job_id, status=WorkerStatus.SUCCEEDED)
@@ -123,12 +128,14 @@ def test_dispatcher_rejects_duplicate_active_job_id(tmp_path):
     assert dispatcher.state("job_same").status == WorkerStatus.SUCCEEDED
 
 
-def test_cancel_arriving_with_completion_is_not_marked_succeeded(tmp_path):
+def test_cancel_arriving_with_completion_preserves_backend_result(tmp_path):
+    # Runtime owns cancellation of an already completed task. The dispatcher
+    # must not discard a completed backend result; A1.3 tests expect the task
+    # to remain succeeded while the overall run becomes cancelled.
     dispatcher = WorkerDispatcher(FakeBackend(set_cancel_after=True))
     result = dispatcher.execute(make_job(tmp_path), threading.Event())
-    assert result.status == WorkerStatus.CANCELLED
-    assert result.error is not None
-    assert result.error.error_code == WorkerErrorCode.CANCELLED
+    assert result.status == WorkerStatus.SUCCEEDED
+    assert result.error is None
 
 
 def test_repeated_cancel_and_unknown_cancel_are_safe(tmp_path):

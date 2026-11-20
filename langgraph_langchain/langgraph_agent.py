@@ -1135,9 +1135,15 @@ class _Session:
                 "Please fix the syntax error and retry."
             )
 
-        from langgraph_langchain.execution import IsolatedPythonExecutor, PythonExecutionRequest
+        from langgraph_langchain.execution import (
+            ProcessWorkerBackend,
+            ProcessWorkerResult,
+            PythonExecutionRequest,
+            WorkerDispatcher,
+            build_process_worker_job,
+        )
 
-        result = IsolatedPythonExecutor().execute(PythonExecutionRequest(
+        request = PythonExecutionRequest(
             code=code,
             workspace_dir=str(self.workspace_dir),
             source_path=self.source_path,
@@ -1146,21 +1152,29 @@ class _Session:
             max_output_chars=_MAX_OUTPUT_LEN,
             input_asset_ids=[self.current_asset_id] if self.current_asset_id else [],
             allowed_directories=[str(self.workspace_dir)],
-        ), cancel_event=self.cancel_event)
-        if result.status == "succeeded":
-            # The worker never receives closures or service objects. Merge only
-            # serializable analysis values, retaining parent-side helper functions.
-            self.ns.update(result.namespace_updates)
-            return result.output
-        if result.status == "timed_out":
+        )
+        job = build_process_worker_job(request, session_id=self.session_id or None)
+        result = WorkerDispatcher(ProcessWorkerBackend(), backend_name="process").execute(
+            job,
+            self.cancel_event,
+        )
+        if result.status.value == "succeeded":
+            # Process-only state updates preserve the existing namespace
+            # semantics. The portable WorkerJob does not carry runtime objects.
+            if isinstance(result, ProcessWorkerResult):
+                self.ns.update(result.namespace_updates)
+            return result.stdout + ("\n" + result.stderr if result.stderr else "")
+        if result.status.value == "timed_out":
             return (
                 f"[ERROR] Execution timed out after {_CODE_TIMEOUT}s and the worker was terminated. "
                 "Break the code into smaller steps and retry."
             )
-        if result.status == "cancelled":
+        if result.status.value == "cancelled":
             return "[ERROR] Execution was cancelled and the worker was terminated."
-        details = result.output.strip() or result.error_message or "Python worker failed"
-        return f"[ERROR]\n{details}"
+        details = (result.stdout + result.stderr).strip()
+        if result.error is not None:
+            details = details or result.error.safe_message
+        return f"[ERROR]\n{details or 'Python worker failed'}"
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
