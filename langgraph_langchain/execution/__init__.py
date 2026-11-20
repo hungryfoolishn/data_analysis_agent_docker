@@ -1,7 +1,7 @@
 """Isolated execution backends used by analysis tools."""
 
 from .models import PythonExecutionRequest, PythonExecutionResult
-from .job_contract import ArtifactPolicy, ArtifactReference, WorkerExecutionOptions, WorkerJob
+from .job_contract import ArtifactPolicy, ArtifactReference, ProcessWorkerJob, WorkerExecutionOptions, WorkerJob, build_process_worker_job
 from .worker_backend import (
     BackendCapabilities,
     BackendHealth,
@@ -10,6 +10,7 @@ from .worker_backend import (
     DockerWorkerBackend,
     ProcessWorkerBackend,
     UnsupportedBackendError,
+    ProcessWorkerResult,
     WorkerBackend,
     WorkerError,
     WorkerErrorCode,
@@ -39,7 +40,9 @@ __all__ = [
     "ArtifactPolicy",
     "ArtifactReference",
     "WorkerExecutionOptions",
+    "ProcessWorkerJob",
     "WorkerJob",
+    "build_process_worker_job",
     "BackendCapabilities",
     "BackendHealth",
     "BackendUnavailableError",
@@ -50,6 +53,7 @@ __all__ = [
     "WorkerBackend",
     "WorkerError",
     "WorkerErrorCode",
+    "ProcessWorkerResult",
     "WorkerResult",
     "WorkerStatus",
     "DEFAULT_WORKER_BACKEND",
