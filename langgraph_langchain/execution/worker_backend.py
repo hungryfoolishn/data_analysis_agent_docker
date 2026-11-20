@@ -39,6 +39,8 @@ class WorkerErrorCode(str, Enum):
     CANCELLED = "cancelled"
     BACKEND_UNSUPPORTED = "backend_unsupported"
     BACKEND_UNAVAILABLE = "backend_unavailable"
+    CONTRACT_INVALID = "contract_invalid"
+    DUPLICATE_JOB = "duplicate_job"
     ARTIFACT_VALIDATION = "artifact_validation"
     INTERNAL = "internal"
 

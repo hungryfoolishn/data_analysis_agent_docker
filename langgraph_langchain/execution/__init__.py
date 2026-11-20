@@ -16,6 +16,15 @@ from .worker_backend import (
     WorkerResult,
     WorkerStatus,
 )
+from .worker_dispatcher import (
+    DEFAULT_WORKER_BACKEND,
+    DuplicateJobError,
+    JobState,
+    WorkerDispatcher,
+    WorkerValidationError,
+    create_worker_backend,
+    worker_backend_from_env,
+)
 from .python_executor import IsolatedPythonExecutor
 from .task_models import (
     TaskExecutionRequest,
@@ -43,6 +52,13 @@ __all__ = [
     "WorkerErrorCode",
     "WorkerResult",
     "WorkerStatus",
+    "DEFAULT_WORKER_BACKEND",
+    "DuplicateJobError",
+    "JobState",
+    "WorkerDispatcher",
+    "WorkerValidationError",
+    "create_worker_backend",
+    "worker_backend_from_env",
     "IsolatedPythonExecutor",
     "PythonExecutionRequest",
     "PythonExecutionResult",
