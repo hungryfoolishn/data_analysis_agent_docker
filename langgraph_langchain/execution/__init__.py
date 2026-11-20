@@ -1,6 +1,7 @@
 """Isolated execution backends used by analysis tools."""
 
 from .models import PythonExecutionRequest, PythonExecutionResult
+from .job_contract import ArtifactPolicy, ArtifactReference, WorkerExecutionOptions, WorkerJob
 from .python_executor import IsolatedPythonExecutor
 from .task_models import (
     TaskExecutionRequest,
@@ -12,6 +13,10 @@ from .react_executor import ReactTaskExecutor
 from .python_task_executor import PythonTaskExecutor
 
 __all__ = [
+    "ArtifactPolicy",
+    "ArtifactReference",
+    "WorkerExecutionOptions",
+    "WorkerJob",
     "IsolatedPythonExecutor",
     "PythonExecutionRequest",
     "PythonExecutionResult",
