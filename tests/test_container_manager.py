@@ -6,6 +6,7 @@ import json
 import pytest
 
 from langgraph_langchain.execution.container_manager import (
+    ContainerLifecycleError,
     DEFAULT_CPU_NANOCPUS,
     DEFAULT_MEMORY_BYTES,
     DEFAULT_PIDS_LIMIT,
@@ -38,25 +39,27 @@ class TestManagerUnit:
         assert host["AutoRemove"] is False
         assert config["User"] == "10001:10001"
         binds = host["Binds"]
-        assert f"{spec.input_dir}:/job/input:ro" in binds
-        assert f"{spec.output_dir}:/job/output:rw" in binds
+        assert f"{spec.input_dir}:/workspace/input:ro" in binds
+        assert f"{spec.output_dir}:/workspace/output:rw" in binds
         assert config["Labels"]["deepanalyze.managed"] == "true"
         assert config["Labels"]["deepanalyze.job_id"] == "job_sec0001"
         # network disabled via both mechanisms
         assert config["NetworkingConfig"]["EndpointsConfig"] == {}
 
     def test_stage_job_dir_copies_input_and_sets_ro(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        import langgraph_langchain.execution.container_manager as cm_mod
+        monkeypatch.setattr(cm_mod, "DEFAULT_JOBS_ROOT", str(tmp_path / "jobs"))
         manager = ContainerManager()
         staging = manager.stage_job_dir("job_stage01", b'{"x":1}', input_files={"data.csv": b"a,b\n1,2\n"})
         assert (staging / "input" / "job.json").read_bytes() == b'{"x":1}'
         assert (staging / "input" / "data.csv").read_bytes() == b"a,b\n1,2\n"
         assert (staging / "output").is_dir()
         mode = (staging / "input").stat().st_mode & 0o777
-        assert mode == 0o555
+        assert mode == 0o550
 
     def test_stage_job_dir_rejects_unsafe_names(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        import langgraph_langchain.execution.container_manager as cm_mod
+        monkeypatch.setattr(cm_mod, "DEFAULT_JOBS_ROOT", str(tmp_path / "jobs"))
         manager = ContainerManager()
         with pytest.raises(ValueError):
             manager.stage_job_dir("job_stage02", b"{}", input_files={"../evil": b"x"})
@@ -130,6 +133,13 @@ class TestManagerIntegration:
         manager = ContainerManager()
         assert manager.health_check(), "real docker engine required for integration tests"
         manager.ensure_image()
+        try:
+            manager.cleanup_workspace("job_hello001")
+        except ContainerLifecycleError:
+            pass
+        for item in manager._client.list_managed_containers():
+            if item.get("Labels", {}).get("deepanalyze.job_id") == "job_hello001":
+                manager._client.remove_container(item["Id"], force=True)
         import tempfile, os
 
         monkey_tmp = Path = None  # noqa: F841

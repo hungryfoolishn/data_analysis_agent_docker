@@ -6,6 +6,7 @@ import json
 import pytest
 
 from langgraph_langchain.execution.container_manager import (
+    ContainerLifecycleError,
     ContainerManager,
     ContainerSpec,
     DockerEngineClient,
@@ -16,6 +17,16 @@ from langgraph_langchain.execution.job_contract import WorkerExecutionOptions, W
 from langgraph_langchain.execution.worker_backend import DockerWorkerBackend, WorkerErrorCode, WorkerStatus
 from tests.test_container_manager import FakeClient
 
+
+def _preclean(manager, job_id: str) -> None:
+    """Remove stale workspace/container for a fixed job id from aborted runs."""
+    try:
+        manager.cleanup_workspace(job_id)
+    except ContainerLifecycleError:
+        pass
+    for item in manager._client.list_managed_containers():
+        if item.get("Labels", {}).get("deepanalyze.job_id") == job_id:
+            manager._client.remove_container(item["Id"], force=True)
 
 def make_job(**overrides) -> WorkerJob:
     defaults = dict(
@@ -133,7 +144,8 @@ class TestDockerIntegrationGate:
         assert result.status == WorkerStatus.FAILED
         assert result.error is not None
         assert result.error.error_code == WorkerErrorCode.PYTHON_ERROR
-        assert manager._client.list_managed_containers() == []
+        leftovers = {c["Labels"].get("deepanalyze.job_id") for c in manager._client.list_managed_containers()}
+        assert job.job_id not in leftovers
 
     def test_d_timeout_no_success(self):
         """Test D — timeout job is terminated, TIMED_OUT returned, no fallback."""
@@ -146,7 +158,8 @@ class TestDockerIntegrationGate:
         result = backend.execute(job, CancelEvent())
         assert result.status == WorkerStatus.TIMED_OUT
         assert result.error.error_code == WorkerErrorCode.TIMEOUT
-        assert manager._client.list_managed_containers() == []
+        leftovers = {c["Labels"].get("deepanalyze.job_id") for c in manager._client.list_managed_containers()}
+        assert job.job_id not in leftovers
 
     def test_e_invalid_protocol_rejected(self):
         """Test E — worker rejects invalid protocol; backend fails closed."""
@@ -188,7 +201,7 @@ class TestDockerIntegrationGate:
                 },
             }).encode(),
         )
-        spec = ContainerSpec(job_id="job_rescfg1", input_dir=str(root / "input"), output_dir=str(root / "output"))
+        spec = ContainerSpec(job_id="job_rescfg1", input_dir=str(root / "input"), output_dir=str(root / "output"), tmp_dir=str(root / "tmp"))
         handle = manager.run_container(spec)
         try:
             info = manager._client.inspect_container(handle.container_id)
@@ -213,6 +226,7 @@ class TestDockerIntegrationGate:
         import hashlib
 
         manager = self._manager()
+        _preclean(manager, "job_artft01")
         input_name = "input_data.txt"
         input_content = b"input-payload-123"
         envelope = {
@@ -221,11 +235,11 @@ class TestDockerIntegrationGate:
                 "job_id": "job_artft01",
                 "code": (
                     "import os\n"
-                    "with open('/job/input/input_data.txt','rb') as f: data = f.read()\n"
+                    "with open('/workspace/input/input_data.txt','rb') as f: data = f.read()\n"
                     "assert data == b'input-payload-123'\n"
                     "with open('copy_result.txt','wb') as f: f.write(data)\n"
                     "try:\n"
-                    "    with open('/job/input/input_data.txt','wb') as f: f.write(b'tamper')\n"
+                    "    with open('/workspace/input/input_data.txt','wb') as f: f.write(b'tamper')\n"
                     "    print('INPUT_MUTATED')\n"
                     "except OSError:\n"
                     "    print('INPUT_PROTECTED')\n"
@@ -239,7 +253,7 @@ class TestDockerIntegrationGate:
         }
         root = manager.stage_job_dir("job_artft01", json.dumps(envelope).encode(), input_files={input_name: input_content})
         original_mode = (root / "input" / input_name).stat().st_mode & 0o777
-        spec = ContainerSpec(job_id="job_artft01", input_dir=str(root / "input"), output_dir=str(root / "output"))
+        spec = ContainerSpec(job_id="job_artft01", input_dir=str(root / "input"), output_dir=str(root / "output"), tmp_dir=str(root / "tmp"))
         handle = manager.run_container(spec)
         try:
             outcome = manager.wait(handle, timeout_seconds=60)

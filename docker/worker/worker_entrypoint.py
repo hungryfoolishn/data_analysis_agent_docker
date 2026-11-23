@@ -1,17 +1,18 @@
-"""DeepAnalyze Docker worker entrypoint (A1.4.2.2.1 foundation).
+"""DeepAnalyze Docker worker entrypoint (A1.4.2.2.2 filesystem isolation).
 
 Protocol contract:
-- Reads exactly one argument: the job envelope path (/job/input/job.json).
+- Reads exactly one argument: the job envelope path (/workspace/input/job.json).
 - stdout: exactly one JSON result envelope line (protocol-clean).
 - stderr: logs only.
 - Exit codes: 0 = success, 1 = execution failure, 2 = protocol rejection.
 
-Security posture:
+Filesystem isolation posture (verified by integration tests, not claims):
 - Runs as non-root (10001) inside a container with network disabled.
+- /workspace/input is a read-only mount: any mutation attempt fails (OSError).
+- The process cwd is /workspace/output; only files under it are collected.
+- Output collection excludes symlinks, hardlinks are not exported as links,
+  dotfiles, over-deep paths, oversized files and policy-disallowed extensions.
 - Environment is reset to a minimal safe set (no host secrets inherited).
-- Input directory is read-only; artifacts must land under the cwd
-  (/job/output) to be collected.
-- No pickle, no arbitrary imports of host code, no network access.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import time
 import traceback
 
@@ -30,14 +32,22 @@ MAX_ENVELOPE_BYTES = 10 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 1024 * 1024 * 1024
 MAX_OUTPUT_CHARS = 100_000
 MAX_ARTIFACTS = 1000
+MAX_OUTPUT_DEPTH = 8
 
 SAFE_ENV = {
     "PATH": "/usr/local/bin:/usr/bin:/bin",
     "LANG": "C.UTF-8",
     "PYTHONUNBUFFERED": "1",
     "MPLBACKEND": "Agg",
-    "TMPDIR": "/tmp",
+    "TMPDIR": "/workspace/tmp",
 }
+
+
+class ProtocolReject(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
 def _log(message: str) -> None:
@@ -49,13 +59,13 @@ def _emit(envelope: dict) -> None:
     sys.stdout.flush()
 
 
-def _protocol_reject(code: str, message: str) -> int:
+def _protocol_reject(code: str, message: str, job_id: str = "unknown") -> int:
     _log(f"protocol rejection: {code}: {message}")
     _emit(
         {
             "protocol_version": PROTOCOL_VERSION,
             "kind": "result",
-            "job_id": "unknown",
+            "job_id": job_id,
             "status": "failed",
             "stdout": "",
             "stderr": "",
@@ -68,8 +78,6 @@ def _protocol_reject(code: str, message: str) -> int:
 
 
 def _load_envelope(path: str) -> tuple[dict, dict]:
-    if len(sys.argv) < 2:
-        raise ProtocolReject("MISSING_FIELD", "job envelope path argument is required")
     try:
         raw = open(path, "rb").read()
     except OSError as exc:
@@ -101,14 +109,17 @@ def _load_envelope(path: str) -> tuple[dict, dict]:
     return payload, job
 
 
-class ProtocolReject(Exception):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-        self.message = message
+def _relative_depth(rel: str) -> int:
+    return len(rel.split("/"))
 
 
 def _collect_artifacts(job: dict) -> tuple[list[dict], list[str]]:
+    """Collect outputs from the cwd (/workspace/output).
+
+    Rejected (never exported): dotfiles, symlinks (any kind), over-deep paths,
+    over-limit sizes/counts, and policy-disallowed extensions. Rejections are
+    logged to stderr; they never cause content to be read from a link target.
+    """
     policy = job.get("output_policy") or {}
     allowed_ext = set(policy.get("allowed_extensions") or [])
     max_files = int(policy.get("max_files") or 100)
@@ -119,11 +130,14 @@ def _collect_artifacts(job: dict) -> tuple[list[dict], list[str]]:
     for root, dirs, files in os.walk(output_dir):
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for name in files:
-            if name.startswith("."):
-                continue
             path = os.path.join(root, name)
             rel = os.path.relpath(path, output_dir).replace(os.sep, "/")
-            if os.path.islink(path):
+            if name.startswith("."):
+                continue
+            if os.path.islink(path) or not os.path.isfile(path):
+                rejected.append(rel)
+                continue
+            if _relative_depth(rel) > MAX_OUTPUT_DEPTH:
                 rejected.append(rel)
                 continue
             size = os.path.getsize(path)
@@ -149,7 +163,6 @@ def _collect_artifacts(job: dict) -> tuple[list[dict], list[str]]:
 
 
 def main() -> int:
-    job_id = "unknown"
     if len(sys.argv) < 2:
         return _protocol_reject("MISSING_FIELD", "job envelope path argument is required")
     try:
@@ -164,8 +177,20 @@ def main() -> int:
 
     os.environ.clear()
     os.environ.update(SAFE_ENV)
-    os.makedirs("/tmp/mplconfig", exist_ok=True)
-    os.environ["MPLCONFIGDIR"] = "/tmp/mplconfig"
+    try:
+        os.makedirs("/workspace/tmp/mplconfig", exist_ok=True)
+        tmp_root = "/workspace/tmp"
+    except OSError:
+        tmp_root = tempfile.gettempdir()
+        _log(f"workspace tmp unavailable; falling back to {tmp_root}")
+    try:
+        os.makedirs(os.path.join(tmp_root, "mplconfig"), exist_ok=True)
+        mpl_dir = os.path.join(tmp_root, "mplconfig")
+    except OSError:
+        mpl_dir = tempfile.mkdtemp(prefix="mplconfig")
+        _log(f"workspace mplconfig unavailable; falling back to {mpl_dir}")
+    os.environ["TMPDIR"] = tmp_root
+    os.environ["MPLCONFIGDIR"] = mpl_dir
 
     started = time.monotonic()
     stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
@@ -185,7 +210,7 @@ def main() -> int:
 
     artifacts, rejected = _collect_artifacts(job)
     for rel in rejected:
-        _log(f"artifact rejected by policy: {rel}")
+        _log(f"artifact rejected by isolation policy: {rel}")
 
     duration_ms = int((time.monotonic() - started) * 1000)
     envelope = {

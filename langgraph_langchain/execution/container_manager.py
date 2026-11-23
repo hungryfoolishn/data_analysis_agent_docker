@@ -26,14 +26,23 @@ import tarfile
 import tempfile
 import time
 import uuid
+import hashlib
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+
+from .path_safety import PathSafetyError, is_safe_published_filename, safe_workspace_join, validate_relative_path
 
 logger = logging.getLogger("deepanalyze.container_manager")
 
 DEFAULT_IMAGE = os.environ.get("DEEPANALYZE_WORKER_IMAGE", "deepanalyze-worker:1.0.0")
 DEFAULT_ENGINE_SOCKET = os.environ.get("DEEPANALYZE_DOCKER_SOCKET", "/var/run/docker.sock")
+DEFAULT_JOBS_ROOT = os.environ.get("DEEPANALYZE_WORKER_JOBS_ROOT", "/tmp/deepanalyze-worker-jobs")
+WORKER_UID = 10001
+WORKER_GID = 10001
+MAX_TOTAL_OUTPUT_BYTES = int(os.environ.get("DEEPANALYZE_WORKER_MAX_TOTAL_OUTPUT", str(512 * 1024 * 1024)))
+MAX_INPUT_TOTAL_BYTES = int(os.environ.get("DEEPANALYZE_WORKER_MAX_TOTAL_INPUT", str(512 * 1024 * 1024)))
 API_VERSION = "v1.44"
 
 # Resource baseline (WP6). Applied at Docker level, not just config.
@@ -197,25 +206,40 @@ class DockerEngineClient:
             raise ContainerLifecycleError(f"put archive failed (HTTP {status}): {data[:300].decode('utf-8', 'replace')}")
 
     def get_archive(self, container_id: str, container_path: str) -> tuple[tarfile.TarInfo, bytes]:
+        """Download a file from the container as a tar stream.
+
+        The response body is fully read INSIDE the connection lifetime (the
+        previous bug closed the connection before reading, returning an empty
+        stream and masking real 404 responses)."""
         import urllib.parse
 
-        status, response = self._request(
-            "GET",
-            f"/containers/{container_id}/archive?path={urllib.parse.quote(container_path, safe='/')}",
-            stream=True,
-        )
+        conn = _UnixHTTPConnection(self._socket_path)
+        try:
+            conn.request(
+                "GET",
+                f"/{API_VERSION}/containers/{container_id}/archive?path={urllib.parse.quote(container_path, safe='/')}",
+            )
+            response = conn.getresponse()
+            data = response.read()
+            status = response.status
+        except (OSError, http.client.HTTPException) as exc:
+            raise DockerUnavailableError(f"docker engine request failed: {exc}") from exc
+        finally:
+            conn.close()
         if status != 200:
-            raise ContainerLifecycleError(f"get archive failed (HTTP {status})")
-        stream: http.client.HTTPResponse = response  # type: ignore[assignment]
-        data = stream.read()
-        stream.close()
+            detail = data[:200].decode("utf-8", "replace")
+            raise ContainerLifecycleError(f"get archive failed (HTTP {status}): {detail}")
         with tarfile.open(fileobj=io.BytesIO(data), mode="r") as tar:
             member = tar.next()
             if member is None:
                 raise ContainerLifecycleError("archive response is empty")
-            return member, tar.extractfile(member).read() if tar.extractfile(member) else b""
-
-
+            handle = tar.extractfile(member)
+            if handle is None:
+                raise ContainerLifecycleError(
+                    f"archive member is not a regular file: {member.name}",
+                    reason="artifact_validation",
+                )
+            return member, handle.read()
 def _strip_log_stream_headers(data: bytes) -> bytes:
     """Docker log stream frames are 8-byte headers; strip them when present."""
     if len(data) < 8:
@@ -248,6 +272,7 @@ class ContainerSpec:
     # host paths (manager-created staging)
     input_dir: str = ""
     output_dir: str = ""
+    tmp_dir: str = ""
 
 
 @dataclass
@@ -275,22 +300,189 @@ class ContainerManager:
 
     # -- staging -----------------------------------------------------------
     def stage_job_dir(self, job_id: str, job_json: bytes, input_files: Optional[dict[str, bytes]] = None) -> Path:
-        """Create a job-specific host staging dir (input copied, never referenced in place)."""
-        root = Path(tempfile.gettempdir()) / f"deepanalyze-worker-{job_id}"
-        if root.exists():
-            _remove_tree(root)
-        input_dir = root / "input"
-        output_dir = root / "output"
-        input_dir.mkdir(parents=True)
-        output_dir.mkdir(parents=True)
-        (input_dir / "job.json").write_bytes(job_json)
-        for name, content in (input_files or {}).items():
-            safe = _safe_stage_name(name)
-            (input_dir / safe).write_bytes(content)
-        os.chmod(input_dir, 0o555)  # read-only for all users incl. container uid
-        os.chmod(output_dir, 0o777)  # writable by the container worker uid (10001)
-        return root
+        """Backward-compatible wrapper: create an isolated JobWorkspace and
+        return its root path. Inputs are copied (content copies, never
+        hardlinks), hashed into a manager-owned manifest, and mounted
+        read-only."""
+        workspace = self.create_workspace(job_id, job_json, input_files)
+        return workspace.root
 
+    def create_workspace(
+        self,
+        job_id: str,
+        job_json: bytes,
+        input_files: Optional[dict[str, bytes]] = None,
+        original_files: Optional[dict[str, Path]] = None,
+    ) -> "JobWorkspace":
+        """Create a manager-owned, isolated job workspace.
+
+        - One workspace per job; duplicate creation is rejected (no reuse).
+        - Inputs are content copies (hardlinks are NOT preserved).
+        - The manifest is manager-owned and lives outside container mounts.
+        """
+        _safe_stage_name(job_id)  # job_id must be a safe path component
+        root = Path(DEFAULT_JOBS_ROOT) / job_id
+        if root.exists():
+            raise ContainerLifecycleError(
+                f"job workspace already exists; reuse is forbidden: {job_id}",
+                reason="workspace_reuse_forbidden",
+            )
+        try:
+            (root / "input").mkdir(parents=True)
+        except FileExistsError as exc:
+            raise ContainerLifecycleError(
+                f"job workspace already exists; reuse is forbidden: {job_id}",
+                reason="workspace_reuse_forbidden",
+            ) from exc
+        for name in ("output", "tmp", "collected"):
+            (root / name).mkdir()
+        # Output/tmp are writable ONLY by the container worker uid (no world-writable).
+        os.chown(root / "output", WORKER_UID, WORKER_GID)
+        os.chmod(root / "output", 0o750)
+        os.chown(root / "tmp", WORKER_UID, WORKER_GID)
+        os.chmod(root / "tmp", 0o750)
+        os.chmod(root / "input", 0o750)
+        os.chown(root / "input", WORKER_UID, WORKER_GID)
+        # Read-only for the worker: owner+group read only (no write bit).
+        os.chmod(root / "input", 0o550)
+        os.chown(root / "input", 0, WORKER_GID)
+
+        inputs_meta = []
+        total_input = len(job_json)
+        (root / "input" / "job.json").write_bytes(job_json)
+        os.chmod(root / "input" / "job.json", 0o440)
+        os.chown(root / "input" / "job.json", 0, WORKER_GID)
+        for name, content in (input_files or {}).items():
+            _safe_stage_name(name)
+            total_input += len(content)
+            target = root / "input" / name
+            target.write_bytes(content)
+            os.chmod(target, 0o440)
+            os.chown(target, 0, WORKER_GID)
+            inputs_meta.append(
+                {
+                    "filename": name,
+                    "size_bytes": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                }
+            )
+        for name, original in (original_files or {}).items():
+            # Content copy from an original upload path; hash computed from data.
+            data = original.read_bytes()
+            total_input += len(data)
+            _safe_stage_name(name)
+            target = root / "input" / name
+            target.write_bytes(data)
+            os.chmod(target, 0o440)
+            os.chown(target, 0, WORKER_GID)
+            inputs_meta.append(
+                {
+                    "filename": name,
+                    "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+        if total_input > MAX_INPUT_TOTAL_BYTES:
+            _remove_tree(root)
+            raise ContainerLifecycleError(
+                "total input size exceeds the configured limit",
+                reason="input_quota_exceeded",
+            )
+        manifest = {
+            "job_id": job_id,
+            "protocol_version": "1",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "state": "INPUT_STAGED",
+            "inputs": inputs_meta,
+        }
+        _write_manifest_atomic(root / "manifest.json", manifest)
+        return JobWorkspace(root=root, manifest=manifest)
+
+    def verify_input_integrity(self, workspace: "JobWorkspace") -> None:
+        """Re-verify staged input hashes against the manager manifest."""
+        root = workspace.root
+        manifest = _read_manifest(root / "manifest.json")
+        if manifest.get("job_id") != workspace.manifest.get("job_id"):
+            raise ContainerLifecycleError("workspace manifest job_id mismatch", reason="workspace_identity_mismatch")
+        for item in manifest.get("inputs", []):
+            path = root / "input" / item["filename"]
+            data = path.read_bytes()
+            if len(data) != item["size_bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+                raise ContainerLifecycleError(
+                    f"staged input integrity failure: {item['filename']}",
+                    reason="input_integrity_failure",
+                )
+
+    def publish_artifacts(self, workspace: "JobWorkspace", artifacts: list[dict[str, Any]], contents: dict[str, bytes]) -> list[dict[str, Any]]:
+        """Materialize validated worker outputs into the manager-owned
+        `collected/` directory atomically (all-or-nothing).
+
+        Two-phase: validate every artifact first, then write temp files, then
+        atomically replace; any failure rolls back every destination this call
+        touched. Publish never overwrites pre-existing files and never follows
+        worker-provided paths."""
+        total = sum(len(contents.get(a["relative_path"], b"")) for a in artifacts)
+        if total > MAX_TOTAL_OUTPUT_BYTES:
+            raise ContainerLifecycleError("total output size exceeds limit", reason="output_quota_exceeded")
+        seen: set[str] = set()
+        for artifact in artifacts:
+            name = artifact["relative_path"]
+            if not is_safe_published_filename(name) or name.startswith("."):
+                raise ContainerLifecycleError(f"unsafe artifact filename: {name!r}", reason="artifact_validation")
+            if name in seen:
+                raise ContainerLifecycleError(f"duplicate artifact name: {name}", reason="artifact_validation")
+            seen.add(name)
+            if artifact.get("size_bytes") != len(contents[name]):
+                raise ContainerLifecycleError(f"artifact size mismatch during publish: {name}", reason="artifact_validation")
+            digest = hashlib.sha256(contents[name]).hexdigest()
+            if artifact.get("sha256") and digest != artifact["sha256"]:
+                raise ContainerLifecycleError(f"artifact hash mismatch during publish: {name}", reason="artifact_validation")
+        collected_dir = workspace.root / "collected"
+        temps: list[tuple[Path, Path]] = []
+        replaced: list[Path] = []
+        try:
+            for name in seen:
+                destination = collected_dir / name
+                if destination.exists():
+                    raise ContainerLifecycleError(
+                        f"publish destination already exists: {name}", reason="publish_collision"
+                    )
+            for name in seen:
+                temp = collected_dir / f".tmp-{uuid.uuid4().hex}"
+                temp.write_bytes(contents[name])
+                os.chmod(temp, 0o640)
+                temps.append((temp, collected_dir / name))
+            for temp, destination in temps:
+                os.replace(temp, destination)  # atomic within the same directory
+                replaced.append(destination)
+        except Exception:
+            for temp, _ in temps:
+                try:
+                    temp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            for destination in replaced:
+                try:
+                    destination.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
+        published = []
+        for name in sorted(seen):
+            data = (collected_dir / name).read_bytes()
+            published.append(
+                {
+                    "artifact_id": f"{workspace.manifest['job_id']}:published:{name}",
+                    "job_id": workspace.manifest["job_id"],
+                    "filename": name,
+                    "relative_path": name,
+                    "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "kind": "output",
+                }
+            )
+        return published
+    # -- monitoring --------------------------------------------------------
     def run_container(self, spec: ContainerSpec) -> ContainerHandle:
         """Create and start one container. Cleans up partial containers on failure."""
         self.ensure_image()
@@ -312,12 +504,14 @@ class ContainerManager:
 
     def _build_config(self, spec: ContainerSpec) -> dict[str, Any]:
         binds = [
-            f"{spec.input_dir}:/job/input:ro",
-            f"{spec.output_dir}:/job/output:rw",
+            f"{spec.input_dir}:/workspace/input:ro",
+            f"{spec.output_dir}:/workspace/output:rw",
         ]
+        if spec.tmp_dir:
+            binds.append(f"{spec.tmp_dir}:/workspace/tmp:rw")
         return {
             "Image": self._image,
-            "Cmd": ["/job/input/job.json"],
+            "Cmd": ["/workspace/input/job.json"],
             "Labels": {
                 LABEL_MANAGED: MANAGED_LABEL_VALUE,
                 LABEL_JOB_ID: spec.job_id,
@@ -338,9 +532,8 @@ class ContainerManager:
                 "Tmpfs": {"/tmp": f"size={spec.tmpfs_size_mb}m"},
                 "AutoRemove": False,
             },
+            "WorkingDir": "/workspace/output",
         }
-
-    # -- monitoring --------------------------------------------------------
     def wait(self, handle: ContainerHandle, *, timeout_seconds: float, cancel_event: Optional[Any] = None) -> str:
         """Wait for container exit. Returns one of: exited | timeout | cancelled.
 
@@ -384,23 +577,56 @@ class ContainerManager:
         return info.get("State", {}).get("ExitCode")
 
     def collect_output_files(self, handle: ContainerHandle, names: list[str]) -> dict[str, bytes]:
-        """Fetch job output files from /job/output via the archive API."""
+        """Fetch job output files from /workspace/output via the archive API.
+
+        Names are validated (no traversal); symlink/link/directory members are
+        rejected without following their targets."""
         out: dict[str, bytes] = {}
         for name in names:
+            validate_relative_path(name, field_name="artifact name")
             try:
-                _, content = self._client.get_archive(handle.container_id, f"/job/output/{name}")
-                out[name] = content
+                member, content = self._client.get_archive(handle.container_id, f"/workspace/output/{name}")
             except ContainerLifecycleError:
                 continue
+            if member.issym() or member.islnk() or not member.isfile():
+                raise ContainerLifecycleError(
+                    f"artifact is not a regular file: {name}",
+                    reason="artifact_validation",
+                )
+            out[name] = content
         return out
 
     def cleanup(self, handle: ContainerHandle) -> None:
-        """Remove container and staging dir. Idempotent; raises on removal failure."""
+        """Remove container and job workspace. Idempotent; raises on removal failure."""
         try:
             self._client.remove_container(handle.container_id, force=True)
         except ContainerLifecycleError as exc:
             raise ContainerLifecycleError(f"cleanup failed for {handle.name}: {exc}") from exc
-        root = Path(tempfile.gettempdir()) / f"deepanalyze-worker-{handle.spec.job_id}"
+        self.cleanup_workspace(handle.spec.job_id)
+
+    def cleanup_workspace(self, job_id: str) -> None:
+        """Safely remove a job workspace after verifying its manager manifest.
+
+        Refuses when the manifest is missing or the job_id mismatches, when the
+        root is a symlink, or when the path escapes the managed root."""
+        _safe_stage_name(job_id)
+        root = Path(DEFAULT_JOBS_ROOT) / job_id
+        if not root.exists():
+            return  # idempotent
+        if root.is_symlink():
+            raise ContainerLifecycleError("workspace root is a symlink; refusing cleanup", reason="cleanup_identity_failure")
+        manifest_path = root / "manifest.json"
+        if not manifest_path.is_file():
+            raise ContainerLifecycleError("workspace manifest missing; refusing cleanup", reason="cleanup_identity_failure")
+        manifest = _read_manifest(manifest_path)
+        if manifest.get("job_id") != job_id:
+            raise ContainerLifecycleError("workspace manifest job_id mismatch; refusing cleanup", reason="cleanup_identity_failure")
+        try:
+            root.resolve().relative_to(Path(DEFAULT_JOBS_ROOT).resolve())
+        except ValueError as exc:
+            raise ContainerLifecycleError("workspace path escapes managed root", reason="cleanup_identity_failure") from exc
+        manifest["state"] = "CLEANUP_PENDING"
+        _write_manifest_atomic(manifest_path, manifest)
         _remove_tree(root)
 
     def reconcile_orphans(self) -> list[str]:
@@ -418,6 +644,28 @@ class ContainerManager:
         return removed
 
 
+
+@dataclass
+class JobWorkspace:
+    """Manager-owned, per-job isolated workspace."""
+
+    root: Path
+    manifest: dict[str, Any]
+
+
+def _write_manifest_atomic(path: Path, manifest: dict[str, Any]) -> None:
+    temp = path.parent / f".manifest-{uuid.uuid4().hex}"
+    temp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    os.replace(temp, path)
+
+
+def _read_manifest(path: Path) -> dict[str, Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ContainerLifecycleError(
+            f"cannot read workspace manifest: {exc}", reason="cleanup_identity_failure"
+        ) from exc
 def _safe_stage_name(name: str) -> str:
     if not name or "/" in name or "\\" in name or name in {".", ".."} or name.startswith("."):
         raise ValueError(f"unsafe input artifact name: {name!r}")

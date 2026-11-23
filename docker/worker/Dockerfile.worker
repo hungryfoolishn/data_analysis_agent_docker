@@ -1,4 +1,4 @@
-# DeepAnalyze dedicated worker image (A1.4.2.2.1 foundation)
+# DeepAnalyze dedicated worker image (A1.4.2.2.2 filesystem isolation)
 # - pinned base (no :latest); digest pinning tracked in follow-up hardening
 # - non-root user (uid/gid 10001)
 # - zero third-party Python dependencies (stdlib only)
@@ -15,16 +15,18 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN groupadd --gid 10001 worker \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin worker \
-    && mkdir -p /app /job/input /job/output \
-    && chown -R 10001:10001 /job/output \
-    && chmod 555 /job/input
+    && mkdir -p /app /workspace/input /workspace/output /workspace/tmp \
+    && chown -R 10001:10001 /workspace/output /workspace/tmp \
+    && chown root:10001 /workspace/input \
+    && chmod 750 /workspace/input /workspace/output /workspace/tmp \
+    && chmod 555 /app
 
 COPY worker_entrypoint.py /app/worker_entrypoint.py
 RUN chmod 0555 /app/worker_entrypoint.py
 
 USER 10001:10001
 
-WORKDIR /job/output
+WORKDIR /workspace/output
 
 ENTRYPOINT ["python3", "/app/worker_entrypoint.py"]
-CMD ["/job/input/job.json"]
+CMD ["/workspace/input/job.json"]

@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .job_contract import ArtifactReference, WorkerJob
 from .docker_worker_protocol import PROTOCOL_VERSION, DockerJobEnvelope, DockerResultEnvelope, ProtocolProtocolError
-from .container_manager import ContainerManager, ContainerSpec, DockerUnavailableError, ImageMissingError, ContainerLifecycleError
+from .container_manager import ContainerManager, ContainerSpec, DockerUnavailableError, ImageMissingError, ContainerLifecycleError, JobWorkspace
 import logging
 
 logger = logging.getLogger("deepanalyze.docker_backend")
@@ -426,14 +426,35 @@ class DockerWorkerBackend:
                 ),
             )
         envelope = DockerJobEnvelope(protocol_version=PROTOCOL_VERSION, job=job)
-        staging = self._manager.stage_job_dir(job.job_id, envelope.to_json_bytes())
+        # Copy authorized inputs from the session workspace into the isolated
+        # job workspace (content copies; originals are never mounted).
+        original_files: dict[str, Path] = {}
+        host_workspace = Path(job.workspace_dir)
+        for artifact in job.input_artifacts:
+            from .path_safety import safe_workspace_join
+
+            source = safe_workspace_join(host_workspace, artifact.relative_path)
+            original_files[artifact.relative_path] = source
+        workspace = self._manager.create_workspace(
+            job.job_id,
+            envelope.to_json_bytes(),
+            original_files=original_files,
+        )
         spec = ContainerSpec(
             job_id=job.job_id,
             image=self._manager._image,
-            input_dir=str(staging / "input"),
-            output_dir=str(staging / "output"),
+            input_dir=str(workspace.root / "input"),
+            output_dir=str(workspace.root / "output"),
+            tmp_dir=str(workspace.root / "tmp"),
         )
-        handle = self._manager.run_container(spec)
+        try:
+            handle = self._manager.run_container(spec)
+        except BaseException:
+            try:
+                self._manager.cleanup_workspace(job.job_id)
+            except Exception:
+                logger.warning("workspace cleanup after pre-container failure failed for job=%s", job.job_id)
+            raise
         try:
             outcome = self._manager.wait(
                 handle,
@@ -471,7 +492,7 @@ class DockerWorkerBackend:
             stdout_bytes = self._manager.collect_stdout(handle)
             exit_code = self._manager.collect_exit_code(handle)
             result = DockerResultEnvelope.parse_output(stdout_bytes, expected_job_id=job.job_id)
-            artifacts = self._collect_and_validate_artifacts(job, handle, result)
+            artifacts = self._collect_validate_publish(job, workspace, handle, result)
             self._manager.cleanup(handle)
             duration_ms = self._duration(started)
             if result.status == "success":
@@ -521,19 +542,30 @@ class DockerWorkerBackend:
                 logger.warning("cleanup after failure failed for job=%s", job.job_id)
             raise
 
-    def _collect_and_validate_artifacts(
+    def _collect_validate_publish(
         self,
         job: WorkerJob,
+        workspace: "JobWorkspace",
         handle: ContainerHandle,
         result: DockerResultEnvelope,
     ) -> tuple[ArtifactReference, ...]:
+        """Collect declared outputs, verify input integrity, then publish.
+
+        Order matters: input integrity is checked BEFORE accepting any output
+        so an attacker cannot mutate inputs and still publish artifacts."""
         if len(result.artifacts) > job.execution_options.max_artifacts:
             raise ArtifactValidationError("worker returned too many artifacts")
+        # 1) Verify staged inputs were not mutated (manager manifest hashes).
+        self._manager.verify_input_integrity(workspace)
         if not result.artifacts:
             return ()
+        # 2) Fetch outputs (symlink/link members rejected by the manager).
         names = [artifact.relative_path for artifact in result.artifacts]
         files = self._manager.collect_output_files(handle, names)
-        approved: list[ArtifactReference] = []
+        validated: list[dict[str, Any]] = []
+        contents: dict[str, bytes] = {}
+        import hashlib
+
         for index, artifact in enumerate(result.artifacts):
             content = files.get(artifact.relative_path)
             if content is None:
@@ -546,22 +578,29 @@ class DockerWorkerBackend:
             suffix = Path(artifact.relative_path).suffix.lower()
             if suffix not in job.output_policy.allowed_extensions:
                 raise ArtifactValidationError(f"artifact type is not allowed: {artifact.relative_path}")
-            import hashlib
-
             digest = hashlib.sha256(content).hexdigest()
             if artifact.sha256 is not None and artifact.sha256 != digest:
                 raise ArtifactValidationError(f"artifact hash mismatch: {artifact.relative_path}")
-            approved.append(
-                ArtifactReference(
-                    artifact_id=f"{job.job_id}:output:{index}",
-                    artifact_type=suffix.lstrip(".") or "file",
-                    relative_path=artifact.relative_path,
-                    size_bytes=actual_size,
-                    sha256=digest,
-                )
+            validated.append(
+                {
+                    "relative_path": artifact.relative_path,
+                    "size_bytes": actual_size,
+                    "sha256": digest,
+                }
             )
-        return tuple(approved)
-
+            contents[artifact.relative_path] = content
+        # 3) Atomic all-or-nothing publish into the manager-owned collected dir.
+        published = self._manager.publish_artifacts(workspace, validated, contents)
+        return tuple(
+            ArtifactReference(
+                artifact_id=item["artifact_id"],
+                artifact_type=Path(item["relative_path"]).suffix.lstrip(".").lower() or "file",
+                relative_path=item["relative_path"],
+                size_bytes=item["size_bytes"],
+                sha256=item["sha256"],
+            )
+            for item in published
+        )
     @staticmethod
     def _failed(job_id: str, code: WorkerErrorCode, error_type: str, message: str, started: float, retryable: bool = False) -> WorkerResult:
         return WorkerResult(
