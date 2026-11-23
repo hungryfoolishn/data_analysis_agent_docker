@@ -1,0 +1,30 @@
+# DeepAnalyze dedicated worker image (A1.4.2.2.1 foundation)
+# - pinned base (no :latest); digest pinning tracked in follow-up hardening
+# - non-root user (uid/gid 10001)
+# - zero third-party Python dependencies (stdlib only)
+# - no docker CLI, no docker socket, no network tools, no build tooling at runtime
+
+FROM python:3.11.11-slim-bookworm
+
+LABEL maintainer="DeepAnalyze" \
+      description="DeepAnalyze untrusted python-analysis worker (one job per container)"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    MPLBACKEND=Agg
+
+RUN groupadd --gid 10001 worker \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin worker \
+    && mkdir -p /app /job/input /job/output \
+    && chown -R 10001:10001 /job/output \
+    && chmod 555 /job/input
+
+COPY worker_entrypoint.py /app/worker_entrypoint.py
+RUN chmod 0555 /app/worker_entrypoint.py
+
+USER 10001:10001
+
+WORKDIR /job/output
+
+ENTRYPOINT ["python3", "/app/worker_entrypoint.py"]
+CMD ["/job/input/job.json"]
