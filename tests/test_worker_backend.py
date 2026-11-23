@@ -102,14 +102,20 @@ def test_process_backend_rejects_disallowed_artifact_type(tmp_path):
     assert isinstance(result.error.safe_message, str)
 
 
-def test_docker_backend_is_fail_closed(tmp_path):
-    backend = DockerWorkerBackend()
+def test_docker_backend_fails_closed_without_engine(tmp_path):
+    """A1.4.2.2.1: the Docker backend is real, but fails closed when the
+    engine is unreachable. There is no raise-based stub contract anymore."""
+    from langgraph_langchain.execution.container_manager import ContainerManager, DockerEngineClient
+
+    backend = DockerWorkerBackend(ContainerManager(DockerEngineClient(socket_path=str(tmp_path / "missing.sock"))))
     job = make_job(tmp_path, "pass")
     cancellation = threading.Event()
-    with pytest.raises(UnsupportedBackendError):
-        backend.execute(job, cancellation)
-    with pytest.raises(UnsupportedBackendError):
-        backend.cancel(job.job_id)
+    result = backend.execute(job, cancellation)
+    assert result.status == WorkerStatus.FAILED
+    assert result.error is not None
+    assert result.error.error_code == WorkerErrorCode.BACKEND_UNAVAILABLE
+    assert backend.cancel(job.job_id) is None  # idempotent no-op
     health = backend.health_check()
-    assert health.state == "not_implemented"
-    assert backend.capabilities == BackendCapabilities()
+    assert health.state == "unavailable"
+    assert backend.capabilities.supports_container_isolation is True
+    assert backend.capabilities.supports_network_isolation is True

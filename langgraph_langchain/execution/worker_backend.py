@@ -17,6 +17,11 @@ from typing import Any, Literal, Optional, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field
 
 from .job_contract import ArtifactReference, WorkerJob
+from .docker_worker_protocol import PROTOCOL_VERSION, DockerJobEnvelope, DockerResultEnvelope, ProtocolProtocolError
+from .container_manager import ContainerManager, ContainerSpec, DockerUnavailableError, ImageMissingError, ContainerLifecycleError
+import logging
+
+logger = logging.getLogger("deepanalyze.docker_backend")
 from .models import PythonExecutionRequest, PythonExecutionResult
 from .python_executor import IsolatedPythonExecutor
 
@@ -335,23 +340,242 @@ class ProcessWorkerBackend:
 
 
 class DockerWorkerBackend:
-    """Fail-closed placeholder. This does not implement Docker isolation."""
+    """Real Docker worker backend (A1.4.2.2.1 foundation).
 
-    def __init__(self) -> None:
+    Executes one base WorkerJob inside one dedicated, manager-controlled
+    container using the versioned JSON protocol. Fails closed on every
+    engine/protocol/lifecycle failure. There is no process-backend fallback.
+
+    Foundation-level isolation actually applied at container create time:
+    network none, cap-drop ALL, no-new-privileges, read-only rootfs, tmpfs /tmp,
+    non-root user (10001), cpu/memory/pids limits, read-only input bind and a
+    job-specific writable output bind.
+
+    Not yet implemented (later phases): full filesystem hardening review,
+    secret/network attack-test matrix, orphan reconciliation scheduling.
+    """
+
+    def __init__(
+        self,
+        manager: Optional["ContainerManager"] = None,
+        *,
+        image: Optional[str] = None,
+    ) -> None:
+        # Imported lazily so unit tests without Docker never pay import costs.
+        self._manager = manager or ContainerManager(image=image) if image else manager or ContainerManager()
         self.capabilities = BackendCapabilities(
-            supports_cancellation=False,
-            supports_timeout=False,
-            supports_network_isolation=False,
-            supports_filesystem_isolation=False,
-            supports_resource_limits=False,
-            supports_container_isolation=False,
+            supports_cancellation=True,
+            supports_timeout=True,
+            supports_network_isolation=True,
+            supports_filesystem_isolation=True,
+            supports_resource_limits=True,
+            supports_container_isolation=True,
         )
 
     def execute(self, job: WorkerJob, cancellation: CancellationHandle) -> WorkerResult:
-        raise UnsupportedBackendError("Docker worker backend is not implemented in A1.4.2.1")
+        started = time.monotonic()
+        # Process-only jobs must never cross the container boundary.
+        if type(job).__name__ == "ProcessWorkerJob":
+            return WorkerResult(
+                job_id=job.job_id,
+                status=WorkerStatus.FAILED,
+                error=WorkerError(
+                    error_code=WorkerErrorCode.CONTRACT_INVALID,
+                    error_type="ProcessWorkerJobRejected",
+                    safe_message="process-only jobs cannot be executed in containers",
+                    retryable=False,
+                ),
+            )
+        try:
+            return self._execute(job, cancellation, started)
+        except DockerUnavailableError as exc:
+            return self._failed(job.job_id, WorkerErrorCode.BACKEND_UNAVAILABLE, type(exc).__name__, str(exc), started, retryable=True)
+        except ImageMissingError as exc:
+            return self._failed(job.job_id, WorkerErrorCode.BACKEND_UNAVAILABLE, type(exc).__name__, str(exc), started, retryable=True)
+        except ContainerLifecycleError as exc:
+            return self._failed(job.job_id, WorkerErrorCode.BACKEND_UNAVAILABLE, type(exc).__name__, str(exc), started)
+        except ProtocolProtocolError as exc:
+            return self._failed(job.job_id, WorkerErrorCode.CONTRACT_INVALID, exc.code, exc.message, started)
+        except ArtifactValidationError as exc:
+            return self._failed(job.job_id, WorkerErrorCode.ARTIFACT_VALIDATION, "ArtifactValidation", str(exc), started)
+        except Exception as exc:  # pragma: no cover - defensive fail closed
+            return self._failed(job.job_id, WorkerErrorCode.INTERNAL, type(exc).__name__, str(exc)[:1000], started)
 
     def cancel(self, job_id: str) -> None:
-        raise UnsupportedBackendError("Docker worker backend is not implemented in A1.4.2.1")
+        """Cancellation is carried by the CancellationHandle passed to execute()."""
+        return None
 
     def health_check(self) -> BackendHealth:
-        return BackendHealth.not_implemented("Docker backend is a fail-closed interface stub")
+        try:
+            if self._manager.health_check():
+                return BackendHealth.ready("docker engine reachable")
+            return BackendHealth.unavailable("docker engine ping failed")
+        except DockerUnavailableError as exc:
+            return BackendHealth.unavailable(str(exc))
+
+    # -- internals ---------------------------------------------------------
+    def _execute(self, job: WorkerJob, cancellation: CancellationHandle, started: float) -> WorkerResult:
+        if cancellation.is_set():
+            return WorkerResult(
+                job_id=job.job_id,
+                status=WorkerStatus.CANCELLED,
+                error=WorkerError(
+                    error_code=WorkerErrorCode.CANCELLED,
+                    error_type="CancelledError",
+                    safe_message="Job was cancelled before dispatch",
+                ),
+            )
+        envelope = DockerJobEnvelope(protocol_version=PROTOCOL_VERSION, job=job)
+        staging = self._manager.stage_job_dir(job.job_id, envelope.to_json_bytes())
+        spec = ContainerSpec(
+            job_id=job.job_id,
+            image=self._manager._image,
+            input_dir=str(staging / "input"),
+            output_dir=str(staging / "output"),
+        )
+        handle = self._manager.run_container(spec)
+        try:
+            outcome = self._manager.wait(
+                handle,
+                timeout_seconds=job.execution_options.timeout_seconds,
+                cancel_event=cancellation,
+            )
+            if outcome == "cancelled":
+                self._manager.terminate(handle)
+                self._manager.cleanup(handle)
+                return WorkerResult(
+                    job_id=job.job_id,
+                    status=WorkerStatus.CANCELLED,
+                    duration_ms=self._duration(started),
+                    error=WorkerError(
+                        error_code=WorkerErrorCode.CANCELLED,
+                        error_type="CancelledError",
+                        safe_message="container stopped and removed before accepting result",
+                    ),
+                )
+            if outcome == "timeout":
+                self._manager.terminate(handle)
+                self._manager.cleanup(handle)
+                return WorkerResult(
+                    job_id=job.job_id,
+                    status=WorkerStatus.TIMED_OUT,
+                    duration_ms=self._duration(started),
+                    error=WorkerError(
+                        error_code=WorkerErrorCode.TIMEOUT,
+                        error_type="TimeoutError",
+                        safe_message=f"container execution timed out after {job.execution_options.timeout_seconds:g}s",
+                        retryable=True,
+                        details={"timeout_seconds": str(job.execution_options.timeout_seconds)},
+                    ),
+                )
+            stdout_bytes = self._manager.collect_stdout(handle)
+            exit_code = self._manager.collect_exit_code(handle)
+            result = DockerResultEnvelope.parse_output(stdout_bytes, expected_job_id=job.job_id)
+            artifacts = self._collect_and_validate_artifacts(job, handle, result)
+            self._manager.cleanup(handle)
+            duration_ms = self._duration(started)
+            if result.status == "success":
+                return WorkerResult(
+                    job_id=job.job_id,
+                    status=WorkerStatus.SUCCEEDED,
+                    stdout=result.stdout[: job.execution_options.max_output_chars],
+                    stderr=result.stderr[: job.execution_options.max_output_chars],
+                    exit_code=exit_code if exit_code is not None else result.exit_code,
+                    duration_ms=duration_ms,
+                    artifacts=artifacts,
+                )
+            if result.error is not None:
+                worker_code = (
+                    WorkerErrorCode.PYTHON_ERROR
+                    if result.error.code == "EXECUTION_ERROR"
+                    else WorkerErrorCode.CONTRACT_INVALID
+                )
+                error = WorkerError(
+                    error_code=worker_code,
+                    error_type=result.error.code,
+                    safe_message=result.error.message or "worker reported failure",
+                    retryable=False,
+                )
+            else:
+                error = WorkerError(
+                    error_code=WorkerErrorCode.PYTHON_ERROR,
+                    error_type="PythonExecutionError",
+                    safe_message="worker reported failure without details",
+                )
+            return WorkerResult(
+                job_id=job.job_id,
+                status=WorkerStatus.FAILED,
+                stdout=result.stdout[: job.execution_options.max_output_chars],
+                stderr=result.stderr[: job.execution_options.max_output_chars],
+                exit_code=exit_code if exit_code is not None else result.exit_code,
+                duration_ms=duration_ms,
+                artifacts=artifacts,
+                error=error,
+            )
+        except Exception:
+            # Any failure path must still clean up the container.
+            try:
+                self._manager.terminate(handle)
+                self._manager.cleanup(handle)
+            except Exception:
+                logger.warning("cleanup after failure failed for job=%s", job.job_id)
+            raise
+
+    def _collect_and_validate_artifacts(
+        self,
+        job: WorkerJob,
+        handle: ContainerHandle,
+        result: DockerResultEnvelope,
+    ) -> tuple[ArtifactReference, ...]:
+        if len(result.artifacts) > job.execution_options.max_artifacts:
+            raise ArtifactValidationError("worker returned too many artifacts")
+        if not result.artifacts:
+            return ()
+        names = [artifact.relative_path for artifact in result.artifacts]
+        files = self._manager.collect_output_files(handle, names)
+        approved: list[ArtifactReference] = []
+        for index, artifact in enumerate(result.artifacts):
+            content = files.get(artifact.relative_path)
+            if content is None:
+                raise ArtifactValidationError(f"declared artifact is missing: {artifact.relative_path}")
+            actual_size = len(content)
+            if artifact.size_bytes != actual_size:
+                raise ArtifactValidationError(f"artifact size mismatch: {artifact.relative_path}")
+            if actual_size > job.execution_options.max_artifact_bytes:
+                raise ArtifactValidationError(f"artifact exceeds size limit: {artifact.relative_path}")
+            suffix = Path(artifact.relative_path).suffix.lower()
+            if suffix not in job.output_policy.allowed_extensions:
+                raise ArtifactValidationError(f"artifact type is not allowed: {artifact.relative_path}")
+            import hashlib
+
+            digest = hashlib.sha256(content).hexdigest()
+            if artifact.sha256 is not None and artifact.sha256 != digest:
+                raise ArtifactValidationError(f"artifact hash mismatch: {artifact.relative_path}")
+            approved.append(
+                ArtifactReference(
+                    artifact_id=f"{job.job_id}:output:{index}",
+                    artifact_type=suffix.lstrip(".") or "file",
+                    relative_path=artifact.relative_path,
+                    size_bytes=actual_size,
+                    sha256=digest,
+                )
+            )
+        return tuple(approved)
+
+    @staticmethod
+    def _failed(job_id: str, code: WorkerErrorCode, error_type: str, message: str, started: float, retryable: bool = False) -> WorkerResult:
+        return WorkerResult(
+            job_id=job_id,
+            status=WorkerStatus.FAILED,
+            duration_ms=int(max(0, (time.monotonic() - started) * 1000)),
+            error=WorkerError(
+                error_code=code,
+                error_type=error_type,
+                safe_message=str(message)[:1000],
+                retryable=retryable,
+            ),
+        )
+
+    @staticmethod
+    def _duration(started: float) -> int:
+        return int(max(0, (time.monotonic() - started) * 1000))

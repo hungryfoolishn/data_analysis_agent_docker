@@ -99,11 +99,15 @@ def test_dispatcher_validates_contract_fail_closed(tmp_path):
 
 
 def test_docker_backend_failure_does_not_fall_back_to_process(tmp_path):
-    dispatcher = WorkerDispatcher(DockerWorkerBackend(), backend_name="docker")
+    """A1.4.2.2.1: Docker failure is an explicit failure, never a process fallback."""
+    from langgraph_langchain.execution.container_manager import ContainerManager, DockerEngineClient
+
+    backend = DockerWorkerBackend(ContainerManager(DockerEngineClient(socket_path=str(tmp_path / "missing.sock"))))
+    dispatcher = WorkerDispatcher(backend, backend_name="docker")
     result = dispatcher.execute(make_job(tmp_path), threading.Event())
     assert result.status == WorkerStatus.FAILED
     assert result.error is not None
-    assert result.error.error_code == WorkerErrorCode.BACKEND_UNSUPPORTED
+    assert result.error.error_code == WorkerErrorCode.BACKEND_UNAVAILABLE
     assert isinstance(dispatcher._backend, DockerWorkerBackend)
 
 
