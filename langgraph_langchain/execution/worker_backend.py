@@ -17,6 +17,8 @@ from typing import Any, Literal, Optional, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field
 
 from .job_contract import ArtifactReference, WorkerJob
+from .path_safety import safe_workspace_join
+from .product_job import STATE_DIR_NAME, STATE_PREFIX
 from .docker_worker_protocol import PROTOCOL_VERSION, DockerJobEnvelope, DockerResultEnvelope, ProtocolProtocolError
 from .container_manager import ContainerManager, ContainerSpec, DockerUnavailableError, ImageMissingError, ContainerLifecycleError, JobWorkspace
 import logging
@@ -71,9 +73,19 @@ class WorkerResult(BaseModel):
     duration_ms: int = Field(default=0, ge=0)
     artifacts: tuple[ArtifactReference, ...] = ()
     error: Optional[WorkerError] = None
+    # R0a-1B: internal analysis state channel (``state__`` artifacts).
+    # Content is data-only (parquet/npy/json); never pickled.
+    state_files: dict[str, bytes] = Field(default_factory=dict)
 
     def model_dump_safe(self) -> dict:
         return self.model_dump(mode="json", exclude_none=True)
+
+    @property
+    def raw_artifacts(self) -> list[dict[str, Any]]:
+        return [
+            {"relative_path": artifact.relative_path, "size_bytes": artifact.size_bytes}
+            for artifact in self.artifacts
+        ]
 
 
 class BackendHealth(BaseModel):
@@ -103,13 +115,6 @@ class ProcessWorkerResult(WorkerResult):
     @property
     def output(self) -> str:
         return self.stdout + ("\n" + self.stderr if self.stderr else "")
-
-    @property
-    def raw_artifacts(self) -> list[dict[str, Any]]:
-        return [
-            {"relative_path": artifact.relative_path, "size_bytes": artifact.size_bytes}
-            for artifact in self.artifacts
-        ]
 
 
 class BackendCapabilities(BaseModel):
@@ -401,6 +406,34 @@ class DockerWorkerBackend:
         except Exception as exc:  # pragma: no cover - defensive fail closed
             return self._failed(job.job_id, WorkerErrorCode.INTERNAL, type(exc).__name__, str(exc)[:1000], started)
 
+    def _accept_artifacts(
+        self,
+        job: WorkerJob,
+        workspace: JobWorkspace,
+        artifacts: tuple[ArtifactReference, ...],
+    ) -> tuple[list[ArtifactReference], dict[str, bytes]]:
+        """Accept published artifacts after validation.
+
+        User artifacts are copied into the session workspace (the same
+        observable location the process backend writes to). Internal
+        ``state__`` artifacts are returned through the state channel and
+        are never exposed to the user or copied into the workspace.
+        """
+        collected_root = workspace.root / "collected"
+        user_refs: list[ArtifactReference] = []
+        state_files: dict[str, bytes] = {}
+        host_workspace = Path(job.workspace_dir)
+        for ref in artifacts:
+            content = (collected_root / ref.relative_path).read_bytes()
+            if ref.relative_path.startswith(STATE_PREFIX):
+                state_files[ref.relative_path] = content
+                continue
+            destination = safe_workspace_join(host_workspace, ref.relative_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+            user_refs.append(ref)
+        return user_refs, state_files
+
     def cancel(self, job_id: str) -> None:
         """Cancellation is carried by the CancellationHandle passed to execute()."""
         return None
@@ -433,7 +466,13 @@ class DockerWorkerBackend:
         for artifact in job.input_artifacts:
             from .path_safety import safe_workspace_join
 
-            source = safe_workspace_join(host_workspace, artifact.relative_path)
+            if artifact.artifact_type == 'state' or artifact.relative_path.startswith(STATE_PREFIX):
+                # Product state artifacts are staged in the hidden session
+                # state directory, not at the workspace root; the flat
+                # relative_path is the container input name only.
+                source = host_workspace / STATE_DIR_NAME / artifact.relative_path
+            else:
+                source = safe_workspace_join(host_workspace, artifact.relative_path)
             original_files[artifact.relative_path] = source
         workspace = self._manager.create_workspace(
             job.job_id,
@@ -492,7 +531,11 @@ class DockerWorkerBackend:
             stdout_bytes = self._manager.collect_stdout(handle)
             exit_code = self._manager.collect_exit_code(handle)
             result = DockerResultEnvelope.parse_output(stdout_bytes, expected_job_id=job.job_id)
-            artifacts = self._collect_validate_publish(job, workspace, handle, result)
+            published = self._collect_validate_publish(job, workspace, handle, result)
+            # R0a-1B: validated artifacts are accepted into the session
+            # workspace; internal ``state__`` files travel through the
+            # dedicated state channel and never reach user artifact lists.
+            artifacts, state_files = self._accept_artifacts(job, workspace, published)
             self._manager.cleanup(handle)
             duration_ms = self._duration(started)
             if result.status == "success":
@@ -504,6 +547,7 @@ class DockerWorkerBackend:
                     exit_code=exit_code if exit_code is not None else result.exit_code,
                     duration_ms=duration_ms,
                     artifacts=artifacts,
+                    state_files=state_files,
                 )
             if result.error is not None:
                 worker_code = (
@@ -531,6 +575,7 @@ class DockerWorkerBackend:
                 exit_code=exit_code if exit_code is not None else result.exit_code,
                 duration_ms=duration_ms,
                 artifacts=artifacts,
+                state_files=state_files,
                 error=error,
             )
         except Exception:

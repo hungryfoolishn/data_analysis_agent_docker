@@ -41,9 +41,22 @@ services:
       DEFAULT_MODEL: ${DEFAULT_MODEL:-deepseek-chat}
       # both | backend | frontend
       START_MODE: ${START_MODE:-both}
+      # R0a-1B: worker execution backend. Docker is the production default;
+      # the worker image must exist on the daemon reachable from this container.
+      WORKER_BACKEND: ${WORKER_BACKEND:-docker}
+      DEEPANALYZE_WORKER_IMAGE: ${DEEPANALYZE_WORKER_IMAGE:-deepanalyze-worker:1.1.0}
+      # R0a-1B: path the API container uses to reach the shared session
+      # workspace from the HOST view (sibling worker containers mount host
+      # paths). Must be an absolute host path; empty means native-host mode.
+      DEEPANALYZE_WORKSPACE_HOST: ${DEEPANALYZE_WORKSPACE_HOST:-}
     volumes:
       - ./langgraph_langchain:/app/langgraph_langchain
       - ./webui:/app/webui
       - ./workspace:/app/workspace
       - ./temp_uploads:/app/temp_uploads
+      # R0a-1B sibling-container deployment requirements:
+      # - the docker socket so the API can create worker containers
+      # - identity bind of the jobs root (same path on host and container)
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DEEPANALYZE_WORKER_JOBS_ROOT:-/tmp/deepanalyze-worker-jobs}:${DEEPANALYZE_WORKER_JOBS_ROOT:-/tmp/deepanalyze-worker-jobs}
     restart: unless-stopped

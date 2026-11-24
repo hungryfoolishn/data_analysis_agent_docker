@@ -22,6 +22,11 @@ from langgraph_langchain.execution.execution_policy import (
     ExecutionPolicyError,
     resolve_execution_backend,
 )
+from langgraph_langchain.execution.product_job import (
+    ProductStateError,
+    build_product_worker_job,
+    restore_product_namespace_state,
+)
 from langgraph_langchain.execution.worker_dispatcher import WorkerDispatcher
 
 
@@ -110,6 +115,7 @@ class PythonTaskExecutor:
             if self._cancel_event_provider is not None:
                 cancel_event = self._cancel_event_provider()
 
+            resolved = None
             if self._legacy_executor is not None:
                 if cancel_event is not None:
                     raw = self._legacy_executor.execute(execution_request, cancel_event=cancel_event)
@@ -136,20 +142,40 @@ class PythonTaskExecutor:
                             error={"type": "ExecutionPolicyDenied", "message": str(exc)},
                             duration_ms=(time.perf_counter() - started_at) * 1000,
                         )
-                job = build_process_worker_job(
-                    execution_request,
-                    session_id=task.session_id,
-                    task_id=task.task_id,
-                    execution_id=request.execution_id,
-                )
-                cancellation = cancel_event if cancel_event is not None else threading.Event()
-                result = WorkerDispatcher(
-                    self._resolved_backend.backend,
-                    backend_name=self._resolved_backend.backend_name,
-                ).execute(
-                    job,
-                    cancellation,
-                )
+                resolved = self._resolved_backend
+                prepared = None
+                try:
+                    if resolved.backend_name == "docker":
+                        prepared = build_product_worker_job(
+                            code=str(code),
+                            workspace_dir=str(workspace_dir),
+                            source_path=str(source_path or ""),
+                            namespace=dict(namespace),
+                            timeout_seconds=request.timeout_seconds,
+                            max_output_chars=request.max_output_chars,
+                            session_id=task.session_id,
+                            task_id=task.task_id,
+                            execution_id=request.execution_id,
+                        )
+                        job = prepared.job
+                    else:
+                        job = build_process_worker_job(
+                            execution_request,
+                            session_id=task.session_id,
+                            task_id=task.task_id,
+                            execution_id=request.execution_id,
+                        )
+                    cancellation = cancel_event if cancel_event is not None else threading.Event()
+                    result = WorkerDispatcher(
+                        resolved.backend,
+                        backend_name=resolved.backend_name,
+                    ).execute(
+                        job,
+                        cancellation,
+                    )
+                finally:
+                    if prepared is not None:
+                        prepared.cleanup_staging()
                 status = result.status.value
                 output = result.stdout + ("\n" + result.stderr if result.stderr else "")
                 namespace_updates = (
@@ -162,6 +188,19 @@ class PythonTaskExecutor:
                 error_message = result.error.safe_message if result.error is not None else None
                 duration_ms = float(result.duration_ms)
 
+            if status == "succeeded" and resolved is not None and resolved.backend_name == "docker":
+                # R0a-1B: data-only state restore for container results.
+                try:
+                    restore_product_namespace_state(namespace, result.state_files)
+                except ProductStateError as exc:
+                    return build_execution_result(
+                        request,
+                        status="failed",
+                        tool_name=tool_name,
+                        stdout_preview="",
+                        error={"type": "StateRestoreError", "message": str(exc)},
+                        duration_ms=(time.perf_counter() - started_at) * 1000,
+                    )
             if status == "succeeded" and namespace_updates:
                 # Process namespace updates are a compatibility feature. The
                 # portable WorkerJob does not carry arbitrary runtime objects.

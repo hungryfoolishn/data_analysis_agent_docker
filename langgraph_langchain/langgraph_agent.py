@@ -1144,6 +1144,11 @@ class _Session:
             build_process_worker_job,
             resolve_execution_backend,
         )
+        from langgraph_langchain.execution.product_job import (
+            ProductStateError,
+            build_product_worker_job,
+            restore_product_namespace_state,
+        )
 
         request = PythonExecutionRequest(
             code=code,
@@ -1155,20 +1160,50 @@ class _Session:
             input_asset_ids=[self.current_asset_id] if self.current_asset_id else [],
             allowed_directories=[str(self.workspace_dir)],
         )
-        job = build_process_worker_job(request, session_id=self.session_id or None)
-        # R0a-1A: backend selection is policy controlled and fails closed.
+        # R0a-1A/1B: backend selection is policy controlled and fails closed.
         # No host-process inline execution and no backend fallback exists.
         try:
             resolved = resolve_execution_backend(UNTRUSTED)
         except ExecutionPolicyError as exc:
             return f"[SECURITY_DENIED] {exc}"
-        result = WorkerDispatcher(
-            resolved.backend, backend_name=resolved.backend_name
-        ).execute(
-            job,
-            self.cancel_event,
-        )
+        prepared = None
+        if resolved.backend_name == "docker":
+            try:
+                prepared = build_product_worker_job(
+                    code=code,
+                    workspace_dir=str(self.workspace_dir),
+                    source_path=str(self.source_path or ""),
+                    namespace=dict(self.ns),
+                    timeout_seconds=_CODE_TIMEOUT,
+                    max_output_chars=_MAX_OUTPUT_LEN,
+                    session_id=self.session_id or None,
+                )
+            except ProductStateError as exc:
+                return f"[ERROR] Execution state preparation failed: {exc}"
+            job = prepared.job
+        else:
+            job = build_process_worker_job(request, session_id=self.session_id or None)
+        try:
+            result = WorkerDispatcher(
+                resolved.backend, backend_name=resolved.backend_name
+            ).execute(
+                job,
+                self.cancel_event,
+            )
+        finally:
+            if prepared is not None:
+                prepared.cleanup_staging()
         if result.status.value == "succeeded":
+            if resolved.backend_name == "docker":
+                # Data-only state restore (parquet/npy/json); never pickle.
+                try:
+                    restore_product_namespace_state(self.ns, result.state_files)
+                except ProductStateError as exc:
+                    return (
+                        "[ERROR] Execution state restoration failed; the result is "
+                        f"not accepted: {exc}"
+                    )
+                return result.stdout + ("\n" + result.stderr if result.stderr else "")
             # Process-only state updates preserve the existing namespace
             # semantics. The portable WorkerJob does not carry runtime objects.
             if isinstance(result, ProcessWorkerResult):

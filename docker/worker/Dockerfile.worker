@@ -1,13 +1,29 @@
-# DeepAnalyze dedicated worker image (A1.4.2.2.2 filesystem isolation)
+# DeepAnalyze dedicated worker image (R0a-1B product execution path)
 # - pinned base (no :latest); digest pinning tracked in follow-up hardening
 # - non-root user (uid/gid 10001)
-# - zero third-party Python dependencies (stdlib only)
+# - analysis stack pinned to the host analysis environment versions so that
+#   Parquet/npy state round-trips faithfully between host and container
+# - CJK fonts for analysis charts
 # - no docker CLI, no docker socket, no network tools, no build tooling at runtime
 
 FROM python:3.11.11-slim-bookworm
 
 LABEL maintainer="DeepAnalyze" \
-      description="DeepAnalyze untrusted python-analysis worker (one job per container)"
+      description="DeepAnalyze untrusted python-analysis worker (one job per container)" \
+      image_version="1.1.0"
+
+# Pinned to the host analysis env versions (R0a-1B state round-trip fidelity).
+# Transitive deps (pillow, contourpy, ...) are resolved by pip at build time.
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        numpy==2.2.6 \
+        pandas==2.3.2 \
+        matplotlib==3.10.6 \
+        pyarrow==25.0.1 \
+        openpyxl==3.1.5
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

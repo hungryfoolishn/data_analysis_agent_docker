@@ -1124,11 +1124,31 @@ async def assess_candidate_release(request: ReleaseCandidateInput):
 @app.get("/health")
 async def health_check():
     active = 0 if _agent_semaphore is None else MAX_CONCURRENT_AGENTS - _agent_semaphore._value
+    # R0a-1B: an API 200 must not be mistaken for worker readiness.
+    worker_backend = os.environ.get("WORKER_BACKEND", "").strip().lower()
+    if not worker_backend:
+        worker_readiness = "unconfigured"
+    elif worker_backend == "docker":
+        try:
+            from langgraph_langchain.execution.worker_backend import DockerWorkerBackend
+
+            worker_readiness = DockerWorkerBackend().health_check().state
+        except Exception:
+            worker_readiness = "unavailable"
+    elif worker_backend == "process":
+        opt_in = os.environ.get("ALLOW_UNTRUSTED_PROCESS_EXECUTION", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        worker_readiness = "ready_unsandboxed" if opt_in else "unconfigured"
+    else:
+        worker_readiness = "invalid_backend"
     return {
         "status": "ok",
         "sessions": len(SESSIONS),
         "concurrent_agents": active,
         "max_concurrent_agents": MAX_CONCURRENT_AGENTS,
+        "worker_backend": worker_backend or "unset",
+        "worker_readiness": worker_readiness,
     }
 
 

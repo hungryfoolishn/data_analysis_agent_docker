@@ -36,7 +36,7 @@ from .path_safety import PathSafetyError, is_safe_published_filename, safe_works
 
 logger = logging.getLogger("deepanalyze.container_manager")
 
-DEFAULT_IMAGE = os.environ.get("DEEPANALYZE_WORKER_IMAGE", "deepanalyze-worker:1.0.0")
+DEFAULT_IMAGE = os.environ.get("DEEPANALYZE_WORKER_IMAGE", "deepanalyze-worker:1.1.0")
 DEFAULT_ENGINE_SOCKET = os.environ.get("DEEPANALYZE_DOCKER_SOCKET", "/var/run/docker.sock")
 DEFAULT_JOBS_ROOT = os.environ.get("DEEPANALYZE_WORKER_JOBS_ROOT", "/tmp/deepanalyze-worker-jobs")
 WORKER_UID = 10001

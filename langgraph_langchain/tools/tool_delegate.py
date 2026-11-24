@@ -160,6 +160,10 @@ def _factory(session):
             build_process_worker_job,
             resolve_execution_backend,
         )
+        from langgraph_langchain.execution.product_job import (
+            ProductStateError,
+            build_product_worker_job,
+        )
 
         cancel_event = getattr(session, "cancel_event", None)
         if not isinstance(cancel_event, threading.Event):
@@ -178,25 +182,47 @@ def _factory(session):
             recorder.fail(str(exc), error_type="ExecutionPolicyDenied")
             return tool_error(f"[SECURITY_DENIED] delegate_analysis refused: {exc}")
 
-        execution_request = PythonExecutionRequest(
-            code=code,
-            workspace_dir=str(ws),
-            source_path=source_path,
-            namespace=dict(sub_ns),
-            timeout_seconds=_CODE_TIMEOUT,
-            max_output_chars=_MAX_OUTPUT_LEN,
-            allowed_directories=[str(ws)],
-        )
+        prepared = None
         try:
-            job = build_process_worker_job(
-                execution_request,
-                session_id=session_id,
-            )
+            if resolved.backend_name == "docker":
+                # Delegated state uses the portable, data-only contract.
+                # Delegate semantics keep fresh-copy results: state is not
+                # restored into the session namespace.
+                prepared = build_product_worker_job(
+                    code=code,
+                    workspace_dir=str(ws),
+                    source_path=source_path,
+                    namespace=dict(sub_ns),
+                    timeout_seconds=_CODE_TIMEOUT,
+                    max_output_chars=_MAX_OUTPUT_LEN,
+                    session_id=session_id,
+                )
+                job = prepared.job
+            else:
+                execution_request = PythonExecutionRequest(
+                    code=code,
+                    workspace_dir=str(ws),
+                    source_path=source_path,
+                    namespace=dict(sub_ns),
+                    timeout_seconds=_CODE_TIMEOUT,
+                    max_output_chars=_MAX_OUTPUT_LEN,
+                    allowed_directories=[str(ws)],
+                )
+                job = build_process_worker_job(
+                    execution_request,
+                    session_id=session_id,
+                )
             result = WorkerDispatcher(
                 resolved.backend, backend_name=resolved.backend_name
             ).execute(
                 job,
                 cancel_event,
+            )
+        except ProductStateError as exc:
+            session._delegation_depth -= 1
+            recorder.fail(str(exc), error_type="ProductStateError")
+            return tool_error(
+                f"[ERROR] delegate_analysis state preparation failed: {exc}"
             )
         except Exception as exc:
             # Fail closed: dispatch/contract errors never trigger inline
@@ -206,6 +232,9 @@ def _factory(session):
             return tool_error(
                 f"[SECURITY_DENIED] delegate_analysis dispatch failed: {exc}"
             )
+        finally:
+            if prepared is not None:
+                prepared.cleanup_staging()
 
         if result.status.value == "timed_out":
             session._delegation_depth -= 1
