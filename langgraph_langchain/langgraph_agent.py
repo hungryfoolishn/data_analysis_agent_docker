@@ -1136,11 +1136,13 @@ class _Session:
             )
 
         from langgraph_langchain.execution import (
-            ProcessWorkerBackend,
+            ExecutionPolicyError,
             ProcessWorkerResult,
             PythonExecutionRequest,
+            UNTRUSTED,
             WorkerDispatcher,
             build_process_worker_job,
+            resolve_execution_backend,
         )
 
         request = PythonExecutionRequest(
@@ -1154,7 +1156,15 @@ class _Session:
             allowed_directories=[str(self.workspace_dir)],
         )
         job = build_process_worker_job(request, session_id=self.session_id or None)
-        result = WorkerDispatcher(ProcessWorkerBackend(), backend_name="process").execute(
+        # R0a-1A: backend selection is policy controlled and fails closed.
+        # No host-process inline execution and no backend fallback exists.
+        try:
+            resolved = resolve_execution_backend(UNTRUSTED)
+        except ExecutionPolicyError as exc:
+            return f"[SECURITY_DENIED] {exc}"
+        result = WorkerDispatcher(
+            resolved.backend, backend_name=resolved.backend_name
+        ).execute(
             job,
             self.cancel_event,
         )

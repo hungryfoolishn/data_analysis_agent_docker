@@ -13,13 +13,9 @@ Design constraints:
 
 from __future__ import annotations
 
-import copy
-import io
 import json
 import logging
-import sys
 import threading
-import traceback
 from typing import List, Optional
 
 from langchain_core.tools import tool
@@ -152,26 +148,66 @@ def _factory(session):
         )
         session.state_machine.record_tool_use("delegate_analysis")
 
-        buf = io.StringIO()
-        had_exception = False
+        # ── Execute sub-task through the unified execution boundary (R0a-1A) ──
+        # Delegated code is LLM generated (untrusted). It must never run in
+        # the API/agent host process. It is dispatched through the configured
+        # worker backend and fails closed on policy or backend errors.
+        from langgraph_langchain.execution import (
+            UNTRUSTED,
+            ExecutionPolicyError,
+            PythonExecutionRequest,
+            WorkerDispatcher,
+            build_process_worker_job,
+            resolve_execution_backend,
+        )
 
-        def _target():
-            nonlocal had_exception
-            old_out, old_err = sys.stdout, sys.stderr
-            sys.stdout = sys.stderr = buf
-            try:
-                exec(compile(code, "<delegated>", "exec"), sub_ns)  # noqa: S102
-            except Exception:
-                traceback.print_exc(file=buf)
-                had_exception = True
-            finally:
-                sys.stdout, sys.stderr = old_out, old_err
+        cancel_event = getattr(session, "cancel_event", None)
+        if not isinstance(cancel_event, threading.Event):
+            cancel_event = threading.Event()
+        source_path = getattr(session, "source_path", "") or ""
+        if not isinstance(source_path, str):
+            source_path = ""
+        session_id = getattr(session, "session_id", None)
+        if not isinstance(session_id, str) or not session_id:
+            session_id = None
 
-        t = threading.Thread(target=_target, daemon=True)
-        t.start()
-        t.join(timeout=_CODE_TIMEOUT)
+        try:
+            resolved = resolve_execution_backend(UNTRUSTED)
+        except ExecutionPolicyError as exc:
+            session._delegation_depth -= 1
+            recorder.fail(str(exc), error_type="ExecutionPolicyDenied")
+            return tool_error(f"[SECURITY_DENIED] delegate_analysis refused: {exc}")
 
-        if t.is_alive():
+        execution_request = PythonExecutionRequest(
+            code=code,
+            workspace_dir=str(ws),
+            source_path=source_path,
+            namespace=dict(sub_ns),
+            timeout_seconds=_CODE_TIMEOUT,
+            max_output_chars=_MAX_OUTPUT_LEN,
+            allowed_directories=[str(ws)],
+        )
+        try:
+            job = build_process_worker_job(
+                execution_request,
+                session_id=session_id,
+            )
+            result = WorkerDispatcher(
+                resolved.backend, backend_name=resolved.backend_name
+            ).execute(
+                job,
+                cancel_event,
+            )
+        except Exception as exc:
+            # Fail closed: dispatch/contract errors never trigger inline
+            # execution, and the delegation depth guard stays consistent.
+            session._delegation_depth -= 1
+            recorder.fail(str(exc), error_type=type(exc).__name__)
+            return tool_error(
+                f"[SECURITY_DENIED] delegate_analysis dispatch failed: {exc}"
+            )
+
+        if result.status.value == "timed_out":
             session._delegation_depth -= 1
             recorder.fail(
                 f"Delegated task timed out after {_CODE_TIMEOUT}s",
@@ -181,8 +217,15 @@ def _factory(session):
                 f"Delegated task timed out after {_CODE_TIMEOUT}s. "
                 "Use smaller, more focused code."
             )
+        if result.status.value == "cancelled":
+            session._delegation_depth -= 1
+            recorder.fail("Delegated task was cancelled", error_type="CancelledError")
+            return tool_error("Delegated task was cancelled.")
 
-        output = buf.getvalue()
+        output = result.stdout + ("\n" + result.stderr if result.stderr else "")
+        had_exception = result.status.value != "succeeded"
+        if had_exception and not output.strip() and result.error is not None:
+            output = result.error.safe_message
         if had_exception:
             output = "[ERROR]\n" + output
 
@@ -223,7 +266,8 @@ registry.register(
     factory=_factory,
     description=(
         "Delegate a focused analysis sub-task for a specific dimension or segment. "
-        "Runs code in a fresh namespace with a copy of df. "
+        "Runs code in a fresh namespace with a copy of df through the isolated "
+        "worker execution boundary. "
         "Use for parallel-friendly tasks like segment analysis, trend analysis, "
         "anomaly detection, or group comparison."
     ),

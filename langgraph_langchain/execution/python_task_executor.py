@@ -15,18 +15,23 @@ from langgraph_langchain.execution.task_models import (
     build_execution_result,
 )
 from langgraph_langchain.execution.worker_backend import (
-    ProcessWorkerBackend,
     ProcessWorkerResult,
+)
+from langgraph_langchain.execution.execution_policy import (
+    UNTRUSTED,
+    ExecutionPolicyError,
+    resolve_execution_backend,
 )
 from langgraph_langchain.execution.worker_dispatcher import WorkerDispatcher
 
 
 class PythonTaskExecutor:
-    """Run task code through the worker dispatcher by default.
+    """Run task code through the execution policy and worker dispatcher.
 
-    A caller that explicitly injects the legacy raw executor gets the previous
-    compatibility path. Production and normal Runtime V2 usage use the
-    dispatcher-backed process backend.
+    The dispatcher backend is resolved through ``resolve_execution_backend``
+    (fail closed; no automatic fallback). A caller that explicitly injects
+    the legacy raw executor keeps the previous dev/test compatibility path;
+    product entry points must not use it.
     """
 
     def __init__(
@@ -40,7 +45,9 @@ class PythonTaskExecutor:
         cancel_event_provider: Optional[Callable[[], Any]] = None,
     ) -> None:
         self._legacy_executor = executor
-        self._backend = None if executor is not None else ProcessWorkerBackend()
+        # R0a-1A: the dispatcher backend is resolved lazily through the
+        # execution policy (fail closed). No hardcoded process backend.
+        self._resolved_backend = None
         self._workspace_dir = workspace_dir
         self._source_path = source_path
         self._timeout_seconds = timeout_seconds
@@ -116,6 +123,19 @@ class PythonTaskExecutor:
                 error_message = raw.error_message
                 duration_ms = raw.duration_ms
             else:
+                # R0a-1A: policy-controlled backend resolution, fail closed.
+                if self._resolved_backend is None:
+                    try:
+                        self._resolved_backend = resolve_execution_backend(UNTRUSTED)
+                    except ExecutionPolicyError as exc:
+                        return build_execution_result(
+                            request,
+                            status="failed",
+                            tool_name=tool_name,
+                            stdout_preview="",
+                            error={"type": "ExecutionPolicyDenied", "message": str(exc)},
+                            duration_ms=(time.perf_counter() - started_at) * 1000,
+                        )
                 job = build_process_worker_job(
                     execution_request,
                     session_id=task.session_id,
@@ -123,7 +143,10 @@ class PythonTaskExecutor:
                     execution_id=request.execution_id,
                 )
                 cancellation = cancel_event if cancel_event is not None else threading.Event()
-                result = WorkerDispatcher(self._backend, backend_name="process").execute(
+                result = WorkerDispatcher(
+                    self._resolved_backend.backend,
+                    backend_name=self._resolved_backend.backend_name,
+                ).execute(
                     job,
                     cancellation,
                 )

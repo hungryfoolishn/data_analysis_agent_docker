@@ -26,6 +26,16 @@ from .worker_dispatcher import (
     create_worker_backend,
     worker_backend_from_env,
 )
+from .execution_policy import (
+    UNTRUSTED,
+    TRUSTED_INTERNAL,
+    ExecutionBackendNotConfiguredError,
+    ExecutionPolicyError,
+    ResolvedExecutionBackend,
+    UnsafeExecutionBackendDeniedError,
+    UnknownExecutionBackendError,
+    resolve_execution_backend,
+)
 from .python_executor import IsolatedPythonExecutor
 from .task_models import (
     TaskExecutionRequest,
@@ -63,6 +73,14 @@ __all__ = [
     "WorkerValidationError",
     "create_worker_backend",
     "worker_backend_from_env",
+    "UNTRUSTED",
+    "TRUSTED_INTERNAL",
+    "ExecutionPolicyError",
+    "ExecutionBackendNotConfiguredError",
+    "UnsafeExecutionBackendDeniedError",
+    "UnknownExecutionBackendError",
+    "ResolvedExecutionBackend",
+    "resolve_execution_backend",
     "IsolatedPythonExecutor",
     "PythonExecutionRequest",
     "PythonExecutionResult",

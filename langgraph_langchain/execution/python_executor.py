@@ -75,7 +75,12 @@ def _fork_namespace(namespace: dict[str, Any]) -> dict[str, Any]:
 
 
 def _trim(text: str, maximum: int) -> str:
-    return text if len(text) <= maximum else text[:maximum] + f"\n...[output truncated at {maximum} chars]"
+    if len(text) <= maximum:
+        return text
+    # Keep the marker inside the truncated length so parent-side defense
+    # in depth slicing (ProcessWorkerBackend._map_result) cannot strip it.
+    marker = f"\n...[output truncated at {maximum} chars]"
+    return text[: maximum - len(marker)] + marker
 
 
 def _inside(path: Path, roots: tuple[Path, ...]) -> bool:
