@@ -195,8 +195,24 @@ class SessionPersistence:
 
     @staticmethod
     def deserialize_findings(raw: List[Dict]) -> List[Finding]:
-        """Reconstruct Finding objects from JSON dicts."""
-        return [Finding(**f) for f in raw]
+        """Reconstruct Finding objects from JSON dicts.
+
+        R0a-1C trust boundary: persisted state is data, not a trust grant.
+        Restored evidence is always downgraded to ``unverified`` and its
+        verification link is dropped.  Trust may only be re-established by
+        the live runtime (re-execution + verification), never by the restore
+        path itself.  A tampered state file therefore cannot inject
+        ``verified`` evidence into a resumed session.
+        """
+        findings: List[Finding] = []
+        for raw_finding in raw:
+            finding = Finding(**raw_finding)
+            for item in finding.evidence:
+                if item.verification_status != "unverified":
+                    item.verification_status = "unverified"
+                item.verification_result_id = None
+            findings.append(finding)
+        return findings
 
     @staticmethod
     def deserialize_metric_definitions(raw: List[Dict]) -> List[MetricDefinition]:

@@ -22,7 +22,7 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from langgraph_langchain.data.assets import DataAsset
+from langgraph_langchain.data.assets import DataAsset, SchemaSnapshot, hash_dataframe
 from langgraph_langchain.evidence.operations import collect_operation_evidence
 from langgraph_langchain.runtime.analysis_operations import (
     AnalysisOperationError,
@@ -380,10 +380,16 @@ class ResearchBenchmarkRunner:
     ) -> str:
         """Attach real production operation evidence for one computed metric."""
         output = frames[-1] if frames else pd.DataFrame()
-        output_asset = DataAsset.from_dataframe(
-            dataframe=output,
-            source_path=Path(f"benchmark://{case_id}/{metric}"),
+        # R0a-1C: evidence-grade assets must be content-bound. The benchmark
+        # metric output is an in-memory frame, so its identity is the
+        # dataframe content hash (same binding as register_dataframe).
+        output_asset = DataAsset(
+            name=f"benchmark_{case_id}_{metric}",
             source_type="benchmark",
+            location=None,
+            content_hash=hash_dataframe(output),
+            schema_snapshot=SchemaSnapshot.from_dataframe(output),
+            source_metadata={"benchmark_case": case_id, "benchmark_metric": metric},
         )
         numeric_values: dict[str, float] = {}
         for key, val in parameters.items():

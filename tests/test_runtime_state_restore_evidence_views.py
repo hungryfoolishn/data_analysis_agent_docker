@@ -53,6 +53,10 @@ def test_restored_runtime_artifacts_visible_to_evidence_registry(tmp_path):
         status="succeeded",
         execution_id="exec_restore_view_1",
     )
+    # R0a-1C: verified operation evidence requires content binding, so the
+    # registered output file must exist (register_dataframe hashes the file).
+    out_path = workspace / "out.parquet"
+    frame.to_parquet(out_path, index=False)
     operation_evidence = collect_operation_evidence(
         execution_id=result.execution_id,
         operation="summarize",
@@ -60,7 +64,7 @@ def test_restored_runtime_artifacts_visible_to_evidence_registry(tmp_path):
         input_asset_ids=[asset.asset_id],
         output_asset=restored.register_dataframe(
             dataframe=frame,
-            source_path=workspace / "out.parquet",
+            source_path=out_path,
             source_type="parquet",
             source_metadata={"execution_id": result.execution_id},
         ),

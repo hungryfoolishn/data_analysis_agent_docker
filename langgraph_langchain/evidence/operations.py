@@ -41,8 +41,14 @@ def collect_operation_evidence(
 ) -> OperationEvidence:
     if not execution_id:
         raise ValueError("execution_id is required")
-    if output_asset.content_hash is None and output_asset.location is None:
-        raise ValueError("Operation evidence requires a registered output asset")
+    # R0a-1C: ``verified`` operation evidence must be content-bound to the
+    # registered output asset, not merely backed by a file path.  A location
+    # without a content hash cannot prove the analyzed content identity.
+    if output_asset.content_hash is None:
+        raise ValueError(
+            "Operation evidence requires a registered output asset with a "
+            "content hash"
+        )
     return OperationEvidence(
         execution_id=execution_id,
         operation=operation,

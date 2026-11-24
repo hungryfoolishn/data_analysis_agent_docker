@@ -44,7 +44,6 @@ def collect_sqlite_query_evidence(
     output_asset: DataAsset,
     source_asset_id: str | None = None,
     input_asset_ids: Sequence[str] = (),
-    validation_status: Literal["verified", "unverified"] = "verified",
 ) -> SqliteQueryEvidence:
     """Build evidence from an actual bounded query and registered asset.
 
@@ -57,7 +56,10 @@ def collect_sqlite_query_evidence(
         raise SqliteEvidenceError("result is not a SQLite bounded read")
     if output_asset.source_type != "sqlite":
         raise SqliteEvidenceError("output asset is not a SQLite asset")
-    if validation_status == "verified" and output_asset.content_hash is None:
+    # R0a-1C: trust status is produced by this deterministic collector only.
+    # Callers (and therefore any user/LLM-controlled path) cannot assign it.
+    # ``verified`` requires content binding to the registered output asset.
+    if output_asset.content_hash is None:
         raise SqliteEvidenceError("verified evidence requires output content hash")
 
     metadata = result.metadata
@@ -81,7 +83,7 @@ def collect_sqlite_query_evidence(
         input_asset_ids=list(input_asset_ids),
         output_asset_id=output_asset.asset_id,
         query_fingerprint=metadata.query_sha256 or "",
-        validation_status=validation_status,
+        validation_status="verified",
         truncated=metadata.truncated,
         provenance=provenance,
     )
