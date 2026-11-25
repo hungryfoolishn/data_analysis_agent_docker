@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -45,6 +46,13 @@ load_dotenv(PROJECT_ROOT / ".env", override=True)
 from langgraph_langchain.langgraph_agent import run_analysis_stream
 from langgraph_langchain.schemas import AnalysisStage
 from langgraph_langchain.recovery import get_recovery_executor
+from langgraph_langchain.security import (
+    SessionIdentityError,
+    default_owner_id,
+    validate_owner_id,
+    validate_session_id,
+)
+from langgraph_langchain.execution.path_safety import PathSafetyError, safe_workspace_join
 from langgraph_langchain.stability_metrics import get_metrics_tracker
 from langgraph_langchain.error_messages import format_user_friendly_error
 from langgraph_langchain.tracing import TraceContext
@@ -368,6 +376,10 @@ def _failure_detail(
     return detail
 
 
+class _SessionOwnershipDenied(Exception):
+    """Internal marker preventing cleanup on ownership mismatch."""
+
+
 def _is_report_rejected(output: str) -> bool:
     normalized = (output or "").lstrip()
     return normalized.startswith("REPORT REJECTED") or normalized.startswith("[REPORT REJECTED]")
@@ -378,6 +390,7 @@ def _serialize_session(session: Dict[str, Any]) -> Dict[str, Any]:
         "files": session.get("files", []),
         "artifacts": session.get("artifacts", []),
         "workspace": str(session.get("workspace", "")),
+        "owner_id": str(session.get("owner_id") or default_owner_id()),
         "created_at": session.get("created_at", ""),
         "last_accessed_at": session.get("last_accessed_at", session.get("created_at", "")),
     }
@@ -412,11 +425,14 @@ def _prune_stale_sessions(now: Optional[datetime] = None) -> List[str]:
     for sid, session in list(SESSIONS.items()):
         if not _is_session_stale(session, now=now):
             continue
-        workspace = Path(session.get("workspace", ""))
         _ACTIVE_CANCELS.pop(sid, None)
         _ACTIVE_PAUSES.pop(sid, None)
         SESSIONS.pop(sid, None)
-        if workspace.exists():
+        try:
+            workspace = _resolve_session_workspace(sid, create=False)
+        except (SessionIdentityError, PathSafetyError):
+            workspace = None
+        if workspace is not None and workspace.exists():
             shutil.rmtree(workspace, ignore_errors=True)
         removed.append(sid)
     if removed:
@@ -425,7 +441,7 @@ def _prune_stale_sessions(now: Optional[datetime] = None) -> List[str]:
 
 
 def _load_sessions() -> None:
-    """Reload persisted sessions from disk, skip entries whose workspace is gone or stale."""
+    """Reload persisted sessions, rejecting unsafe identities without deletion."""
     SESSIONS.clear()
     if not _SESSIONS_FILE.exists():
         return
@@ -435,14 +451,23 @@ def _load_sessions() -> None:
         return
     now = datetime.now()
     changed = False
-    for sid, s in data.items():
-        ws = Path(s.get("workspace", ""))
-        if not ws.exists():
+    for sid, raw in data.items():
+        try:
+            validate_session_id(sid)
+            owner = str(raw.get("owner_id") or default_owner_id())
+            validate_owner_id(owner)
+            workspace = _resolve_session_workspace(sid, create=False)
+        except (SessionIdentityError, PathSafetyError, ValueError):
             changed = True
             continue
-        session = _serialize_session(s)
+        if not workspace.exists():
+            changed = True
+            continue
+        raw["owner_id"] = owner
+        raw["workspace"] = str(workspace)
+        session = _serialize_session(raw)
         if _is_session_stale(session, now=now):
-            shutil.rmtree(ws, ignore_errors=True)
+            shutil.rmtree(workspace, ignore_errors=True)
             changed = True
             continue
         SESSIONS[sid] = session
@@ -461,10 +486,28 @@ def _save_sessions() -> None:
         pass
 
 
+def _resolve_session_workspace(session_id: str, *, create: bool = True) -> Path:
+    """Resolve a session workspace under the canonical platform root."""
+    sid = validate_session_id(session_id)
+    try:
+        workspace = safe_workspace_join(WORKSPACE_DIR, sid)
+    except PathSafetyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=_failure_detail(
+                "session_workspace_invalid",
+                "Session not found",
+                status_code=404,
+                error_type="session_error",
+            ),
+        ) from exc
+    if create:
+        workspace.mkdir(exist_ok=True, parents=True)
+    return workspace
+
+
 def get_session_workspace(session_id: str) -> Path:
-    p = WORKSPACE_DIR / session_id
-    p.mkdir(exist_ok=True, parents=True)
-    return p
+    return _resolve_session_workspace(session_id, create=True)
 
 
 def _get_session_steps(session_id: str) -> int:
@@ -476,14 +519,24 @@ def _get_session_steps(session_id: str) -> int:
             import json
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             return metadata.get("total_steps", 0)
-    except Exception:
+    except (SessionIdentityError, PathSafetyError, HTTPException):
         pass
     return 0
 
 
-def _ensure_session_consistency(session_id: str) -> Dict[str, Any]:
-    """Validate session exists and is healthy. Mutations handled by caller under lock."""
-    if session_id not in SESSIONS:
+def _ensure_session_consistency(
+    session_id: str, owner_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Validate session identity, ownership and health under caller lock."""
+    try:
+        sid = validate_session_id(session_id)
+    except SessionIdentityError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=_failure_detail("session_not_found", "Session not found", status_code=404, error_type="session_error"),
+        ) from exc
+    expected_owner = validate_owner_id(owner_id or default_owner_id())
+    if sid not in SESSIONS:
         raise HTTPException(
             status_code=404,
             detail=_failure_detail(
@@ -493,8 +546,22 @@ def _ensure_session_consistency(session_id: str) -> Dict[str, Any]:
                 error_type="session_error",
             ),
         )
-    session = SESSIONS[session_id]
-    workspace = Path(session.get("workspace", ""))
+    session = SESSIONS[sid]
+    if str(session.get("owner_id") or default_owner_id()) != expected_owner:
+        # Do not disclose whether another owner owns this identifier. This is
+        # converted to an HTTP 404 at the boundary without deleting the session.
+        raise _SessionOwnershipDenied()
+    workspace = _resolve_session_workspace(sid, create=False)
+    if str(Path(session.get("workspace", "")).resolve()) != str(workspace.resolve()):
+        raise HTTPException(
+            status_code=404,
+            detail=_failure_detail(
+                "session_workspace_invalid",
+                "Session not found",
+                status_code=404,
+                error_type="session_error",
+            ),
+        )
     if not workspace.exists():
         raise HTTPException(
             status_code=404,
@@ -519,23 +586,39 @@ def _ensure_session_consistency(session_id: str) -> Dict[str, Any]:
 
 
 def _cleanup_session(session_id: str, remove_workspace: bool = False) -> None:
-    """Remove session from SESSIONS and _ACTIVE_CANCELS. Caller must hold _sessions_lock."""
-    session = SESSIONS.get(session_id)
+    """Remove session from memory. Caller must hold _sessions_lock."""
+    try:
+        sid = validate_session_id(session_id)
+    except SessionIdentityError:
+        return
+    session = SESSIONS.get(sid)
     if session and remove_workspace:
-        ws = Path(session.get("workspace", ""))
-        if ws.exists():
-            shutil.rmtree(ws, ignore_errors=True)
-    SESSIONS.pop(session_id, None)
-    _ACTIVE_CANCELS.pop(session_id, None)
-    _ACTIVE_PAUSES.pop(session_id, None)
+        try:
+            workspace = _resolve_session_workspace(sid, create=False)
+            stored = Path(session.get("workspace", "")).resolve()
+            if workspace.exists() and stored == workspace.resolve():
+                shutil.rmtree(workspace, ignore_errors=True)
+        except (SessionIdentityError, PathSafetyError, HTTPException):
+            # Never delete a persisted path that failed identity validation.
+            pass
+    SESSIONS.pop(sid, None)
+    _ACTIVE_CANCELS.pop(sid, None)
+    _ACTIVE_PAUSES.pop(sid, None)
     _save_sessions()
 
 
-async def _check_session(session_id: str) -> Dict[str, Any]:
+async def _check_session(
+    session_id: str, owner_id: Optional[str] = None
+) -> Dict[str, Any]:
     """Validate session and clean up stale entries. Thread-safe."""
     async with _sessions_lock:
         try:
-            session = _ensure_session_consistency(session_id)
+            session = _ensure_session_consistency(session_id, owner_id)
+        except _SessionOwnershipDenied:
+            raise HTTPException(
+                status_code=404,
+                detail=_failure_detail("session_not_found", "Session not found", status_code=404, error_type="session_error"),
+            )
         except HTTPException:
             _cleanup_session(session_id, remove_workspace=True)
             raise
@@ -543,24 +626,38 @@ async def _check_session(session_id: str) -> Dict[str, Any]:
         return session
 
 
-
-async def get_or_create_session(session_id: Optional[str]) -> tuple[str, Dict[str, Any]]:
+async def get_or_create_session(
+    session_id: Optional[str], owner_id: Optional[str] = None
+) -> tuple[str, Dict[str, Any]]:
     async with _sessions_lock:
+        expected_owner = validate_owner_id(owner_id or default_owner_id())
         if session_id and session_id in SESSIONS:
             try:
-                session = _ensure_session_consistency(session_id)
+                session = _ensure_session_consistency(session_id, expected_owner)
+            except _SessionOwnershipDenied:
+                raise HTTPException(
+                    status_code=404,
+                    detail=_failure_detail("session_not_found", "Session not found", status_code=404, error_type="session_error"),
+                )
             except HTTPException:
                 _cleanup_session(session_id, remove_workspace=True)
                 raise
             _mark_session_accessed(session)
             _save_sessions()
             return session_id, session
-        sid = session_id or str(uuid.uuid4())
+        try:
+            sid = validate_session_id(session_id or str(uuid.uuid4()))
+        except SessionIdentityError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=_failure_detail("session_not_found", "Session not found", status_code=404, error_type="session_error"),
+            ) from exc
         workspace = get_session_workspace(sid)
         now = datetime.now().isoformat()
         SESSIONS[sid] = {
             "files": [],
             "artifacts": [],
+            "owner_id": expected_owner,
             "created_at": now,
             "last_accessed_at": now,
             "workspace": str(workspace),
@@ -569,7 +666,13 @@ async def get_or_create_session(session_id: Optional[str]) -> tuple[str, Dict[st
         return sid, SESSIONS[sid]
 
 
-def _resolve_data_file(session: Dict[str, Any], requested_path: Optional[str]) -> str:
+def _resolve_data_file(
+    session: Dict[str, Any],
+    requested_path: Optional[str],
+    *,
+    allow_internal_absolute: bool = False,
+) -> str:
+    """Resolve a data input strictly inside the session's owned workspace."""
     file_path_to_use = requested_path or (session["files"][-1]["path"] if session.get("files") else None)
     if not file_path_to_use:
         raise HTTPException(
@@ -581,7 +684,28 @@ def _resolve_data_file(session: Dict[str, Any], requested_path: Optional[str]) -
                 error_type="request_error",
             ),
         )
-    path = Path(file_path_to_use)
+    raw_path = Path(file_path_to_use)
+    session_workspace = Path(session["workspace"]).resolve()
+    try:
+        if raw_path.is_absolute():
+            if not allow_internal_absolute:
+                raise PathSafetyError("absolute client paths are not accepted")
+            candidate = raw_path.resolve(strict=True)
+            candidate.relative_to(session_workspace)
+            relative = candidate.relative_to(session_workspace).as_posix()
+            path = safe_workspace_join(session_workspace, relative)
+        else:
+            path = safe_workspace_join(session_workspace, raw_path.as_posix())
+    except (PathSafetyError, OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=_failure_detail(
+                "missing_data_file",
+                "Data file does not exist in this session workspace",
+                status_code=404,
+                error_type="request_error",
+            ),
+        ) from exc
     if not path.exists() or not path.is_file():
         raise HTTPException(
             status_code=400,
@@ -594,10 +718,6 @@ def _resolve_data_file(session: Dict[str, Any], requested_path: Optional[str]) -
                 file_path=str(path),
             ),
         )
-    # Return an absolute, resolved path so the agent receives an unambiguous
-    # "Data file: ..." in its prompt. The upload API and session store record
-    # CWD-relative paths ("workspace/<session>/file"); returning them verbatim
-    # caused load_data to mis-resolve on the agent's first step.
     return str(path.resolve())
 
 
@@ -1105,15 +1225,34 @@ def _safe_upload_destination(directory: Path, filename: str) -> Path:
 
 
 def _session_file_response(session_id: str, relative_path: str) -> FileResponse:
-    session_workspace = get_session_workspace(session_id).resolve()
-    requested = (session_workspace / relative_path).resolve()
     try:
-        requested.relative_to(session_workspace)
-    except ValueError as exc:
+        session_workspace = get_session_workspace(session_id).resolve()
+        requested = safe_workspace_join(session_workspace, relative_path)
+    except (SessionIdentityError, PathSafetyError, HTTPException) as exc:
         raise HTTPException(status_code=404, detail="File not found") from exc
     if not requested.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(requested, filename=requested.name)
+
+
+async def _load_run_snapshot(run_id: str) -> Optional[Dict[str, Any]]:
+    """Load a run and authorize its owning session before returning content."""
+    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    if snapshot is None:
+        return None
+    session_id = str((snapshot.get("task") or {}).get("session_id") or "")
+    session = SESSIONS.get(session_id)
+    if session is None:
+        # Legacy archived runs predate R0b ownership metadata. They belong to
+        # the single deployment owner and remain accessible only under that
+        # authenticated API identity.
+        return snapshot
+    # Sessions loaded by the normal R0b loader always have an owner; older
+    # in-memory callers without the field are treated as single deployment
+    # owner for compatibility.
+    if str(session.get("owner_id") or default_owner_id()) != default_owner_id():
+        return None
+    return snapshot
 
 
 @app.post("/release/candidate/assess")
@@ -1252,8 +1391,16 @@ async def download_workspace_file(
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, purge: bool = False):
-    # Validate existence first (outside lock — read-only check)
-    if session_id not in SESSIONS:
+    # Validate identity and ownership before any deletion.
+    try:
+        validate_session_id(session_id)
+    except SessionIdentityError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=_failure_detail("session_not_found", "Session not found", status_code=404, error_type="session_error"),
+        ) from exc
+    session = SESSIONS.get(session_id)
+    if not session or str(session.get("owner_id") or "") != default_owner_id():
         raise HTTPException(
             status_code=404,
             detail=_failure_detail("session_not_found", "Session not found", status_code=404, error_type="session_error"),
@@ -1637,24 +1784,31 @@ async def get_session_runtime(session_id: str):
 
 @app.get("/analysis/runs")
 async def list_analysis_runs(session_id: Optional[str] = None, limit: int = 50):
-    """List archived runs, optionally restricted to one session."""
+    """List archived runs owned by the authenticated deployment owner."""
+    if session_id is not None:
+        await _check_session(session_id)
     runs = RunHistoryStore(WORKSPACE_DIR).list_runs(session_id=session_id, limit=limit)
+    owner = default_owner_id()
+    runs = [
+        item for item in runs
+        if SESSIONS.get(str(item.get("session_id") or ""), {}).get("owner_id", owner) == owner
+    ]
     return {"runs": runs, "count": len(runs)}
 
 
 @app.get("/analysis/runs/{run_id}")
 async def get_analysis_run(run_id: str):
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     return snapshot
 
 
-def _load_mutable_analysis_runtime(run_id: str):
+async def _load_mutable_analysis_runtime(run_id: str):
     """Load the current workspace runtime and reject edits to archived runs."""
     from langgraph_langchain.runtime import AnalysisRuntime
 
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     task = snapshot.get("task") or {}
@@ -1686,7 +1840,7 @@ def _load_mutable_analysis_runtime(run_id: str):
 
 @app.get("/analysis/runs/{run_id}/plan")
 async def get_analysis_plan(run_id: str):
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     run = snapshot.get("run") or {}
@@ -1707,7 +1861,7 @@ async def get_analysis_plan(run_id: str):
 @app.post("/analysis/runs/{run_id}/plan/propose")
 async def propose_analysis_plan(run_id: str, request: PlanProposalRequest):
     """Validate and persist the complete plan before analytical execution."""
-    runtime = _load_mutable_analysis_runtime(run_id)
+    runtime = await _load_mutable_analysis_runtime(run_id)
     try:
         plan = AnalysisPlan(
             goal=request.goal,
@@ -1730,7 +1884,7 @@ async def propose_analysis_plan(run_id: str, request: PlanProposalRequest):
 @app.post("/analysis/runs/{run_id}/plan/pause")
 async def pause_analysis_plan(run_id: str, request: Optional[PlanPauseRequest] = None):
     request = request or PlanPauseRequest()
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     session_id = str((snapshot.get("task") or {}).get("session_id") or "")
@@ -1745,7 +1899,7 @@ async def pause_analysis_plan(run_id: str, request: Optional[PlanPauseRequest] =
                 "plan_status": "pause_requested",
                 "message": "Pause will take effect at the next safe tool boundary",
             }
-    runtime = _load_mutable_analysis_runtime(run_id)
+    runtime = await _load_mutable_analysis_runtime(run_id)
     try:
         run = runtime.pause_plan(
             request.reason,
@@ -1758,7 +1912,7 @@ async def pause_analysis_plan(run_id: str, request: Optional[PlanPauseRequest] =
 
 @app.post("/analysis/runs/{run_id}/plan/revise")
 async def revise_analysis_plan(run_id: str, request: PlanRevisionRequest):
-    runtime = _load_mutable_analysis_runtime(run_id)
+    runtime = await _load_mutable_analysis_runtime(run_id)
     steps = [item.model_dump(exclude_none=True) for item in request.steps]
     try:
         run = runtime.revise_plan(
@@ -1777,7 +1931,7 @@ async def confirm_analysis_plan(
     request: Optional[PlanConfirmationRequest] = None,
 ):
     request = request or PlanConfirmationRequest()
-    runtime = _load_mutable_analysis_runtime(run_id)
+    runtime = await _load_mutable_analysis_runtime(run_id)
     try:
         run = runtime.confirm_plan(
             confirmed_by=request.confirmed_by,
@@ -1790,7 +1944,7 @@ async def confirm_analysis_plan(
 
 @app.get("/analysis/runs/{run_id}/quality")
 async def get_analysis_run_quality(run_id: str):
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     return check_analysis_quality(snapshot).model_dump(mode="json")
@@ -1806,7 +1960,7 @@ async def get_analysis_run_artifacts(run_id: str):
 
 @app.get("/analysis/runs/{run_id}/findings")
 async def list_analysis_run_findings(run_id: str):
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     findings = []
@@ -1825,7 +1979,7 @@ async def list_analysis_run_findings(run_id: str):
 
 @app.get("/analysis/runs/{run_id}/findings/{finding_id}")
 async def get_analysis_run_finding(run_id: str, finding_id: str):
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     detail = expand_finding_lineage(snapshot, finding_id)
@@ -1836,7 +1990,7 @@ async def get_analysis_run_finding(run_id: str, finding_id: str):
 
 @app.get("/analysis/runs/{run_id}/lineage")
 async def get_analysis_run_lineage(run_id: str):
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     return build_runtime_lineage_graph(snapshot)
@@ -1845,7 +1999,7 @@ async def get_analysis_run_lineage(run_id: str):
 @app.get("/analysis/runs/{run_id}/report/rebuild")
 async def download_rebuilt_analysis_report(run_id: str):
     """Deterministically rebuild a report without using the original report or an LLM."""
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     try:
@@ -1870,7 +2024,7 @@ async def download_rebuilt_analysis_report(run_id: str):
 @app.get("/analysis/runs/{run_id}/package")
 async def download_analysis_package(run_id: str):
     """Build and download a portable, hash-manifested analysis package."""
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     try:
@@ -1903,7 +2057,7 @@ async def retry_analysis_step(
     request: Optional[StepRetryRequest] = None,
 ):
     """Retry one failed step as a new, linked and independently auditable run."""
-    snapshot = RunHistoryStore(WORKSPACE_DIR).get_run(run_id)
+    snapshot = await _load_run_snapshot(run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
     run = snapshot["run"]
@@ -1930,7 +2084,7 @@ async def retry_analysis_step(
         ),
         None,
     )
-    file_path_to_use = _resolve_data_file(session, source_path)
+    file_path_to_use = _resolve_data_file(session, source_path, allow_internal_absolute=True)
     reason = ((request.reason if request else None) or "").strip()[:500]
     retry_instruction = (
         "[STEP RETRY]\n"

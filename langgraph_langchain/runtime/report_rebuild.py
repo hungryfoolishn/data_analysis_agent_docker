@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from langgraph_langchain.security import SessionIdentityError, validate_session_id
+from langgraph_langchain.execution.path_safety import PathSafetyError, safe_workspace_join
 from langgraph_langchain.runtime.finding_lineage import expand_finding_lineage
 
 
@@ -194,8 +196,11 @@ def write_rebuilt_report(snapshot: dict[str, Any], workspace_root: Path) -> tupl
     workspace_root = workspace_root.resolve()
     session_id = _clean((snapshot.get("task") or {}).get("session_id"))
     run_id = _clean((snapshot.get("run") or {}).get("run_id"))
-    session_dir = (workspace_root / session_id).resolve()
-    session_dir.relative_to(workspace_root)
+    try:
+        validate_session_id(session_id)
+        session_dir = safe_workspace_join(workspace_root, session_id)
+    except (SessionIdentityError, PathSafetyError, OSError) as exc:
+        raise FileNotFoundError("Run workspace no longer exists") from exc
     if not session_dir.is_dir() or not run_id:
         raise FileNotFoundError("Run workspace no longer exists")
     report = rebuild_report_markdown(snapshot)

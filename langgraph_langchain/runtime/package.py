@@ -10,6 +10,8 @@ import zipfile
 from pathlib import Path
 from typing import Any, Optional
 
+from langgraph_langchain.security import SessionIdentityError, validate_session_id
+from langgraph_langchain.execution.path_safety import PathSafetyError, safe_workspace_join
 from langgraph_langchain.runtime.models import utc_now
 from langgraph_langchain.runtime.report_rebuild import rebuild_report_markdown
 
@@ -132,10 +134,10 @@ def build_analysis_package(
     if not run_id or not session_id:
         raise ValueError("Run snapshot is missing run_id or session_id")
 
-    session_dir = (workspace_root / session_id).resolve()
     try:
-        session_dir.relative_to(workspace_root)
-    except ValueError as exc:
+        validate_session_id(session_id)
+        session_dir = safe_workspace_join(workspace_root, session_id)
+    except (SessionIdentityError, PathSafetyError, OSError) as exc:
         raise ValueError("Run session is outside the workspace") from exc
     if not session_dir.is_dir():
         raise FileNotFoundError("Run workspace no longer exists")

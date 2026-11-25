@@ -33,10 +33,10 @@ class RunHistoryStore:
 
     def _snapshot_paths(self, session_id: Optional[str] = None):
         if session_id:
-            session_dir = (self.workspace_root / session_id).resolve()
             try:
-                session_dir.relative_to(self.workspace_root)
-            except ValueError:
+                validate_session_id(session_id)
+                session_dir = safe_workspace_join(self.workspace_root, session_id)
+            except (SessionIdentityError, PathSafetyError, OSError):
                 return []
             return (session_dir / ".analysis_runs").glob("run_*.json")
         return self.workspace_root.glob("*/.analysis_runs/run_*.json")
