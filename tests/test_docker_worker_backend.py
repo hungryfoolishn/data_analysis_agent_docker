@@ -177,7 +177,10 @@ class TestDockerIntegrationGate:
                 return "fakeid"
 
             def inspect_container(self, container_id):
-                return {"State": {"Running": False, "ExitCode": 0, "OOMKilled": False}}
+                return {
+                    "Image": "sha256:" + "a" * 64,
+                    "State": {"Running": False, "ExitCode": 0, "OOMKilled": False},
+                }
 
             def container_logs(self, container_id, stdout_only=True):
                 return b"garbage not json\n"

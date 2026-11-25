@@ -484,7 +484,13 @@ def _factory(session):
                 message="Finding evidence exists and is bound to this execution",
             )
             runtime.record_verification(verification_result)
-            evidence_item.verification_status = "verified"
+            # R0a Gate (K-2 adjudication): the metadata-only compatibility path
+            # records the existence check for traceability but MUST NOT promote
+            # the evidence to verified. An existence-only check is not a
+            # content verification; trust promotion requires the Runtime V2
+            # provenance gate. The evidence keeps its unverified status and the
+            # verification link, so downstream consumers correctly treat it as
+            # unverified.
             evidence_item.verification_result_id = verification_result.verification_id
             runtime.record_evidence(evidence_item)
             runtime.record_finding(finding)

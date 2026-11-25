@@ -76,6 +76,9 @@ class WorkerResult(BaseModel):
     # R0a-1B: internal analysis state channel (``state__`` artifacts).
     # Content is data-only (parquet/npy/json); never pickled.
     state_files: dict[str, bytes] = Field(default_factory=dict)
+    # R0a Gate (K-1): engine-verified image ID of the container that executed
+    # this job (docker backend only). Audit provenance, not a trust grant.
+    image_id: Optional[str] = None
 
     def model_dump_safe(self) -> dict:
         return self.model_dump(mode="json", exclude_none=True)
@@ -548,6 +551,7 @@ class DockerWorkerBackend:
                     duration_ms=duration_ms,
                     artifacts=artifacts,
                     state_files=state_files,
+                    image_id=handle.image_id or None,
                 )
             if result.error is not None:
                 worker_code = (

@@ -90,6 +90,12 @@ class FakeClient:
             raise self.fail
         return self.image_exists_result
 
+    def inspect_image(self, image):
+        if self.fail:
+            raise self.fail
+        # R0a Gate: fake engine image identity (content-addressed ID).
+        return {"Id": "sha256:" + "a" * 64, "RepoDigests": []}
+
     def create_container(self, config, name):
         if self.fail:
             raise self.fail
@@ -102,7 +108,10 @@ class FakeClient:
     def inspect_container(self, container_id):
         if self.fail:
             raise self.fail
-        return {"State": {"Running": False, "ExitCode": 0, "OOMKilled": False}}
+        return {
+            "Image": "sha256:" + "a" * 64,
+            "State": {"Running": False, "ExitCode": 0, "OOMKilled": False},
+        }
 
     def container_logs(self, container_id, stdout_only=True):
         return b""

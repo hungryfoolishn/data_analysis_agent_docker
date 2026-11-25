@@ -1,0 +1,14 @@
+# R0a Gate Risk Register
+
+| ID | Risk | Severity | Status | Impact | Mitigation | Owner / Future Phase | Blocks R0b? |
+| --- | --- | ---: | --- | --- | --- | --- | --- |
+| R-01 | Worker image digest pinning is optional (`DEEPANALYZE_WORKER_IMAGE_DIGEST` unset resolves but does not pin). | P2 | KNOWN LIMITATION | An operator can run a mutable tag if no digest is configured. | Deployments should set the digest; resolution and container-image verification still fail closed on mismatch. | R0b deployment hardening | No |
+| R-02 | No registry-level image signature/provenance validation. | P2 | KNOWN LIMITATION | A compromised registry could serve a valid image not reviewed by the project. | Pin by digest at deployment; verify worker image build and storage outside application trust. | R0b supply-chain phase | No |
+| R-03 | Docker container hardening is minimal (non-root, read-only rootfs, network disabled, fixed binds) but does not yet declare cap-drop/seccomp/AppArmor. | P2 | KNOWN LIMITATION | The default container capability set is broader than the theoretical minimum. | Add explicit Docker hardening profile after compatibility testing. | R0b hardening phase | No |
+| R-04 | Parquet/NumPy/JSON state deserialization depends on parser libraries. | P2 | KNOWN LIMITATION | A malicious crafted input could exploit a parser vulnerability. | Formats are constrained; NumPy pickle is not enabled; no arbitrary-pickle state channel. Keep dependencies patched. | Runtime dependency management | No |
+| R-05 | Process backend remains available as an explicit developer opt-in. | P2 | CONTROLLED | With both `WORKER_BACKEND=process` and `ALLOW_UNTRUSTED_PROCESS_EXECUTION=1`, isolation is weaker than Docker. | Both flags are required; production/untrusted default remains Docker; Docker failure does not fall back. | R0b deployment policy | No |
+| R-06 | Portable replay packages contain generated code and are executed by the package consumer. | P3 | OUTSIDE HOST BOUNDARY | The host cannot guarantee a consumer's execution environment. | Package is an offline artifact; consumers must review/trust it before execution. | Package consumer guidance | No |
+| R-07 | Test reproducibility depends on Docker daemon and `deepanalyze-worker:1.1.0` availability. | P2 | DOCUMENTED | Environments without the daemon cannot reproduce Docker E2E. | Baseline and image identity are documented; image tests fail closed when unavailable. | CI/deployment | No |
+| R-08 | Dashboard `test_individual_metrics_endpoints` and `test_dashboard_display_format` fail. | P3 | FROZEN BASELINE | No execution/trust-boundary impact; known A1.3.2 baseline. | Must not be repaired in R0a; remains under the Dashboard freeze. | Dashboard work package | No |
+
+No P0 or P1 risk remains open. No listed limitation invalidates the R0a trust boundary.

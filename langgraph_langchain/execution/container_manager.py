@@ -81,6 +81,13 @@ class ContainerLifecycleError(ContainerManagerError):
         super().__init__(message, reason=reason)
 
 
+class ImageIdentityMismatchError(ContainerManagerError):
+    """The container's actual image identity does not match the resolved one."""
+
+    def __init__(self, detail: str):
+        super().__init__(detail, reason="image_identity_mismatch")
+
+
 class _UnixHTTPConnection(http.client.HTTPConnection):
     def __init__(self, unix_path: str):
         super().__init__("localhost")
@@ -133,6 +140,17 @@ class DockerEngineClient:
 
         status, _ = self._request("GET", f"/images/{urllib.parse.quote(image, safe=':@')}/json")
         return status == 200
+
+    def inspect_image(self, image: str) -> dict[str, Any]:
+        """Return the Engine API image inspect payload for one image reference."""
+        import urllib.parse
+
+        status, data = self._request(
+            "GET", f"/images/{urllib.parse.quote(image, safe=':@')}/json"
+        )
+        if status != 200:
+            raise ImageMissingError(image)
+        return json.loads(data)
 
     def create_container(self, config: dict[str, Any], name: str) -> str:
         import urllib.parse
@@ -281,6 +299,21 @@ class ContainerHandle:
     name: str
     spec: ContainerSpec
     created_at: float = field(default_factory=time.monotonic)
+    image_id: str = ""
+
+
+@dataclass
+class ImageIdentity:
+    """Resolved, engine-verified identity of the worker image.
+
+    ``image_id`` is the content-addressed Engine image ID (immutable for the
+    resolved image object); ``repo_digests`` are registry digests when the
+    image was pulled. Tags are recorded for audit context only and are never
+    treated as identity."""
+
+    tag: str
+    image_id: str
+    repo_digests: tuple[str, ...] = ()
 
 
 class ContainerManager:
@@ -483,22 +516,68 @@ class ContainerManager:
             )
         return published
     # -- monitoring --------------------------------------------------------
+    def resolve_image_identity(self) -> ImageIdentity:
+        """Resolve the engine-verified identity of the configured worker image.
+
+        R0a Gate (K-1): a tag is configuration context, not identity. The
+        image ID returned here is content-addressed by the engine and is the
+        identity recorded for execution provenance and verified against the
+        created container."""
+        self.ensure_image()
+        payload = self._client.inspect_image(self._image)
+        image_id = str(payload.get("Id") or "")
+        if not image_id.startswith("sha256:"):
+            raise ContainerLifecycleError(
+                "engine returned an unusable image identity",
+                reason="image_identity_unusable",
+            )
+        repo_digests = tuple(str(d) for d in payload.get("RepoDigests") or [])
+        expected_digest = os.environ.get(
+            "DEEPANALYZE_WORKER_IMAGE_DIGEST", ""
+        ).strip().lower()
+        if expected_digest:
+            candidates = [image_id, *[d.rsplit("@", 1)[-1] for d in repo_digests]]
+            if not any(
+                c == expected_digest or c.endswith(expected_digest)
+                for c in candidates
+            ):
+                raise ImageIdentityMismatchError(
+                    "configured worker image does not match the pinned digest: "
+                    f"expected={expected_digest} image_id={image_id} "
+                    f"repo_digests={list(repo_digests)}"
+                )
+        return ImageIdentity(
+            tag=self._image, image_id=image_id, repo_digests=repo_digests
+        )
+
     def run_container(self, spec: ContainerSpec) -> ContainerHandle:
         """Create and start one container. Cleans up partial containers on failure."""
-        self.ensure_image()
+        identity = self.resolve_image_identity()
         name = f"deepanalyze-worker-{spec.job_id}"
         config = self._build_config(spec)
         container_id = self._client.create_container(config, name)
-        handle = ContainerHandle(container_id=container_id, name=name, spec=spec)
+        handle = ContainerHandle(
+            container_id=container_id, name=name, spec=spec, image_id=identity.image_id
+        )
         try:
             self._client.start_container(container_id)
         except Exception:
             logger.warning("container start failed; removing partial container %s", name)
             self.cleanup(handle)
             raise
+        # R0a Gate: verify the container was actually created from the resolved
+        # image object. A tag re-pointed between resolution and creation yields
+        # a different image ID here; that job fails closed.
+        actual_image_id = self._client.inspect_container(container_id).get("Image", "")
+        if actual_image_id != identity.image_id:
+            self.cleanup(handle)
+            raise ImageIdentityMismatchError(
+                f"container image identity mismatch for job={spec.job_id}: "
+                f"expected={identity.image_id} actual={actual_image_id}"
+            )
         logger.info(
-            "container started job=%s container=%s image=%s",
-            spec.job_id, container_id[:12], self._image,
+            "container started job=%s container=%s image=%s image_id=%s",
+            spec.job_id, container_id[:12], self._image, identity.image_id,
         )
         return handle
 
