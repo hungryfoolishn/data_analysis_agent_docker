@@ -162,11 +162,12 @@ _SYSTEM_PROMPT = _prompt_builder.build()
 
 
 class _Session:
-    def __init__(self, workspace_dir: str, source_path: str, session_id: str = "", user_question: str = "", restore_state: Optional[Dict] = None, semantic_context: Optional[Dict] = None, force_new_run: bool = False, parent_run_id: Optional[str] = None, retry_of_step_id: Optional[str] = None):
+    def __init__(self, workspace_dir: str, source_path: str, session_id: str = "", owner_id: Optional[str] = None, user_question: str = "", restore_state: Optional[Dict] = None, semantic_context: Optional[Dict] = None, force_new_run: bool = False, parent_run_id: Optional[str] = None, retry_of_step_id: Optional[str] = None):
         self.workspace_dir = Path(workspace_dir)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.source_path = source_path
         self.session_id = session_id
+        self.owner_id = owner_id or None
         self.user_question = user_question  # Store user's question for template matching
         self.current_stage: AnalysisStage = "schema_understanding"
         self.stage_history: List[StageResult] = []
@@ -1177,12 +1178,17 @@ class _Session:
                     timeout_seconds=_CODE_TIMEOUT,
                     max_output_chars=_MAX_OUTPUT_LEN,
                     session_id=self.session_id or None,
+                    owner_id=self.owner_id,
                 )
             except ProductStateError as exc:
                 return f"[ERROR] Execution state preparation failed: {exc}"
             job = prepared.job
         else:
-            job = build_process_worker_job(request, session_id=self.session_id or None)
+            job = build_process_worker_job(
+                request,
+                session_id=self.session_id or None,
+                owner_id=self.owner_id,
+            )
         try:
             result = WorkerDispatcher(
                 resolved.backend, backend_name=resolved.backend_name
@@ -2019,6 +2025,7 @@ async def run_analysis_stream(
     model_id: str,
     api_base: str,
     session_id: str = "",
+    owner_id: Optional[str] = None,
     cancel_event: Optional[asyncio.Event] = None,
     pause_event: Optional[asyncio.Event] = None,
     restore_state: Optional[Dict] = None,
@@ -2036,6 +2043,7 @@ async def run_analysis_stream(
         workspace_dir,
         source_path,
         session_id=session_id,
+        owner_id=owner_id,
         user_question=task_question or instruction,
         restore_state=restore_state,
         semantic_context=semantic_context,

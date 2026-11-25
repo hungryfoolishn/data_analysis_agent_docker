@@ -176,6 +176,8 @@ class WorkerJob(BaseModel):
     schema_version: WorkerJobVersion = "worker_job.v1"
     job_id: str = Field(default_factory=new_job_id, min_length=4, max_length=128)
     session_id: Optional[str] = Field(default=None, max_length=128)
+    # R1 additive audit metadata. The worker never receives authorization rights.
+    owner_id: Optional[str] = Field(default=None, max_length=128)
     task_id: Optional[str] = Field(default=None, max_length=128)
     execution_id: Optional[str] = Field(default=None, max_length=128)
     correlation_id: Optional[str] = Field(default=None, max_length=128)
@@ -195,6 +197,12 @@ class WorkerJob(BaseModel):
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
             raise ValueError("job_id may contain only letters, digits, dot, dash and underscore")
         return value
+
+    @field_validator("owner_id")
+    @classmethod
+    def validate_owner(cls, value: Optional[str]) -> Optional[str]:
+        from langgraph_langchain.security import validate_owner_id
+        return validate_owner_id(value) if value else value
 
     @field_validator("session_id", "task_id", "execution_id", "correlation_id")
     @classmethod
@@ -274,12 +282,14 @@ def build_process_worker_job(
     request,
     *,
     session_id: str | None = None,
+    owner_id: str | None = None,
     task_id: str | None = None,
     execution_id: str | None = None,
 ) -> ProcessWorkerJob:
     """Build a process-only job from the existing PythonExecutionRequest."""
     return ProcessWorkerJob(
         session_id=session_id,
+        owner_id=owner_id,
         task_id=task_id,
         execution_id=execution_id,
         code=request.code,

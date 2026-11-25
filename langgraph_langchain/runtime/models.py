@@ -21,6 +21,8 @@ def new_id(prefix: str) -> str:
 class AnalysisTask(BaseModel):
     task_id: str = Field(default_factory=lambda: new_id("task"))
     session_id: str
+    # R1: optional for legacy snapshots; populated by identity-aware Runtime.
+    owner_id: Optional[str] = None
     question: str
     input_asset_ids: list[str] = Field(default_factory=list)
     constraints: dict[str, Any] = Field(default_factory=dict)

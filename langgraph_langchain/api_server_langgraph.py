@@ -826,6 +826,7 @@ async def _run_analysis_stream(
                 model_id=DEEPSEEK_MODEL_ID,
                 api_base=DEEPSEEK_API_BASE,
                 session_id=session_id,
+                owner_id=str(session.get("owner_id") or default_owner_id()),
                 cancel_event=cancel_event,
                 pause_event=pause_event,
                 semantic_context=semantic_context,

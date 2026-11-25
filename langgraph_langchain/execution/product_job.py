@@ -154,6 +154,7 @@ def build_product_worker_job(
     max_output_chars: int = 3000,
     max_artifact_bytes: int = 100 * 1024 * 1024,
     session_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
     task_id: Optional[str] = None,
     execution_id: Optional[str] = None,
 ) -> PreparedProductJob:
@@ -254,6 +255,7 @@ def build_product_worker_job(
 
     job = WorkerJob(
         session_id=session_id,
+        owner_id=owner_id,
         task_id=task_id,
         execution_id=execution_id,
         correlation_id=f"prod_{uuid.uuid4().hex[:12]}",

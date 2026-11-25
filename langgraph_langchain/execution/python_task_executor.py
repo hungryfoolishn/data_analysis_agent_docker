@@ -154,6 +154,7 @@ class PythonTaskExecutor:
                             timeout_seconds=request.timeout_seconds,
                             max_output_chars=request.max_output_chars,
                             session_id=task.session_id,
+                            owner_id=getattr(task, "owner_id", None),
                             task_id=task.task_id,
                             execution_id=request.execution_id,
                         )
@@ -162,6 +163,7 @@ class PythonTaskExecutor:
                         job = build_process_worker_job(
                             execution_request,
                             session_id=task.session_id,
+                            owner_id=getattr(task, "owner_id", None),
                             task_id=task.task_id,
                             execution_id=request.execution_id,
                         )

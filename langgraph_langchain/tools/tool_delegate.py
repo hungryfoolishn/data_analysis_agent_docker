@@ -174,6 +174,9 @@ def _factory(session):
         session_id = getattr(session, "session_id", None)
         if not isinstance(session_id, str) or not session_id:
             session_id = None
+        owner_id = getattr(session, "owner_id", None)
+        if not isinstance(owner_id, str) or not owner_id:
+            owner_id = None
 
         try:
             resolved = resolve_execution_backend(UNTRUSTED)
@@ -196,6 +199,7 @@ def _factory(session):
                     timeout_seconds=_CODE_TIMEOUT,
                     max_output_chars=_MAX_OUTPUT_LEN,
                     session_id=session_id,
+                    owner_id=owner_id,
                 )
                 job = prepared.job
             else:
@@ -211,6 +215,7 @@ def _factory(session):
                 job = build_process_worker_job(
                     execution_request,
                     session_id=session_id,
+                    owner_id=owner_id,
                 )
             result = WorkerDispatcher(
                 resolved.backend, backend_name=resolved.backend_name

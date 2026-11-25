@@ -47,6 +47,7 @@ from langgraph_langchain.runtime.models import (
     new_id,
     utc_now,
 )
+from langgraph_langchain.runtime.identity import RuntimeIdentityContext
 from langgraph_langchain.runtime.plans import (
     AnalysisPlan,
     PlanExecutionValidationError,
@@ -111,6 +112,7 @@ class AnalysisRuntime:
         workspace_dir: Path,
         session_id: str,
         question: str,
+        owner_id: Optional[str] = None,
         external_context: Optional[dict] = None,
         force_new_run: bool = False,
         parent_run_id: Optional[str] = None,
@@ -123,6 +125,11 @@ class AnalysisRuntime:
             self.workspace_dir / ".data_snapshots"
         )
         self.session_id = session_id or "default"
+        self.identity = RuntimeIdentityContext.create(
+            session_id=self.session_id,
+            owner_id=owner_id,
+        )
+        self.owner_id = self.identity.owner_id
         self.assets: dict[str, DataAsset] = {}
         self.artifacts: dict[str, RuntimeArtifact] = {}
         self.evidence_registry = EvidenceRegistry(
@@ -165,6 +172,7 @@ class AnalysisRuntime:
             return
         self.task = AnalysisTask(
             session_id=self.session_id,
+            owner_id=self.owner_id,
             question=question,
             constraints=dict((external_context or {}).get("constraints") or {}),
             external_context=external_context,
@@ -2428,6 +2436,11 @@ class AnalysisRuntime:
                 != _semantic_context_identity(external_context)
             ):
                 return False
+            if self.owner_id and task.owner_id and task.owner_id != self.owner_id:
+                raise RuntimeError("runtime identity mismatch during restore")
+            if self.owner_id and not task.owner_id:
+                # Migrate pre-R1 snapshots to the current deployment owner.
+                task = task.model_copy(update={"owner_id": self.owner_id})
             self.task = task
             self.run = AnalysisRun.model_validate(raw["run"])
             restored_assets = {
