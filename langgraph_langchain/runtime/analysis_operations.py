@@ -90,14 +90,22 @@ def _filter(frame: pd.DataFrame, parameters: Mapping[str, Any]) -> pd.DataFrame:
 
 
 def _group_aggregate(frame: pd.DataFrame, parameters: Mapping[str, Any]) -> pd.DataFrame:
-    _require_columns(frame, parameters.get("group_by"), parameters.get("metric"))
-    group_by = parameters["group_by"]
+    group_by = parameters.get("group_by")
+    if isinstance(group_by, str):
+        group_by = [group_by]
+    if not isinstance(group_by, list) or not group_by:
+        raise AnalysisOperationError("group_aggregate requires group_by")
+    _require_columns(frame, *group_by, parameters.get("metric"))
     metric = parameters["metric"]
     agg = parameters.get("agg", "sum")
     if agg == "count":
         grouped = frame.groupby(group_by, dropna=False)[metric].count()
     else:
-        grouped = _numeric(frame, metric).groupby(frame[group_by], dropna=False).agg(agg)
+        grouped = (
+            _numeric(frame, metric)
+            .groupby([frame[column] for column in group_by], dropna=False)
+            .agg(agg)
+        )
     output = grouped.reset_index(name=f"{metric}_{agg}")
     return output.sort_values(f"{metric}_{agg}", ascending=False).reset_index(drop=True)
 

@@ -178,11 +178,17 @@ class IntentPlanner:
         value_column = self._value_column(metric_id) if metric_id else ""
         agg = _AGG_BY_CONTRACT.get(contract.aggregation if contract else "sum", "sum")
 
-        def add_step(operation: str, parameters: dict, depends: list[str], rationale: str) -> str:
+        def add_step(
+            operation: str,
+            parameters: dict,
+            depends: list[str],
+            rationale: str,
+            input_refs: Optional[list[str]] = None,
+        ) -> str:
             step = GeneralPlanStep(
                 step_id=f"step_{uuid4().hex}",
                 operation=operation,
-                input_refs=[asset_id],
+                input_refs=input_refs if input_refs is not None else [asset_id],
                 parameters=parameters,
                 expected_output="dataframe",
                 depends_on=depends,
@@ -193,27 +199,29 @@ class IntentPlanner:
 
         dim_id = intent.dimensions[0].entity_id if intent.dimensions else None
         if intent.analysis_type is AnalysisType.DRILL_DOWN and intent.drill_down:
-            parent_step = add_step(
+            # Drill-down is a hierarchical breakdown along the verified
+            # parent-child path: one multi-key aggregation over the source
+            # frame.  Sequential single-key aggregations would lose the child
+            # column after the first transform and are not executable.
+            add_step(
                 "group_aggregate",
                 {
-                    "group_by": intent.drill_down.parent_dimension,
+                    "group_by": [
+                        intent.drill_down.parent_dimension,
+                        intent.drill_down.child_dimension,
+                    ],
                     "metric": value_column,
                     "agg": agg,
                 },
                 [previous],
-                f"Level 1: aggregate by {intent.drill_down.parent_dimension} (verified relationship path)",
-            )
-            add_step(
-                "group_aggregate",
-                {
-                    "group_by": intent.drill_down.child_dimension,
-                    "metric": value_column,
-                    "agg": agg,
-                },
-                [parent_step],
-                f"Level 2 drill-down to {intent.drill_down.child_dimension} with filter propagation",
+                (
+                    f"Hierarchical drill-down [{intent.drill_down.parent_dimension}, "
+                    f"{intent.drill_down.child_dimension}] "
+                    f"(verified relationship path)"
+                ),
             )
         elif intent.analysis_type is AnalysisType.RANKING and intent.ranking:
+            aggregated_column = value_column
             if dim_id:
                 previous = add_step(
                     "group_aggregate",
@@ -221,13 +229,24 @@ class IntentPlanner:
                     [previous],
                     f"Aggregate {value_column} by {dim_id} before ranking (collection scope)",
                 )
+                # group_aggregate renames the value column to f"{metric}_{agg}".
+                aggregated_column = f"{value_column}_{agg}"
             params: dict = {
-                "by": value_column,
+                "by": aggregated_column,
                 "ascending": intent.ranking.direction == "asc",
             }
             if intent.ranking.top_n:
                 params["top_n"] = intent.ranking.top_n
-            add_step("sort", params, [previous], "Rank by metric value; TopN enforced at presentation")
+            sort_refs = (
+                [f"{previous}.output"] if previous != inspect.step_id else None
+            )
+            add_step(
+                "sort",
+                params,
+                [previous],
+                "Rank by metric value; TopN enforced at presentation",
+                input_refs=sort_refs,
+            )
         elif intent.analysis_type is AnalysisType.TREND:
             if not time_column:
                 raise PlanningBlockedError(

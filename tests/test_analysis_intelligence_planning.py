@@ -79,7 +79,8 @@ def test_ranking_intent_produces_group_then_sort(planner):
     operations = [s.operation for s in outcome.plan.steps]
     assert operations == ["inspect", "group_aggregate", "sort"]
     sort_params = outcome.plan.steps[2].parameters
-    assert sort_params["by"] == "amount"
+    # group_aggregate renames the value column to "{metric}_{agg}".
+    assert sort_params["by"] == "amount_sum"
     assert sort_params["ascending"] is False
     assert sort_params["top_n"] == 3
 
@@ -88,8 +89,12 @@ def test_drill_down_produces_chained_steps(planner):
     intent = _resolve(planner, "先按部门再按应用下钻分析收入", "i3")
     outcome = planner.plan_from_intent(intent, input_asset_ids=["asset_sales"], asset_columns=ASSET_COLUMNS)
     steps = outcome.plan.steps
-    assert [s.operation for s in steps] == ["inspect", "group_aggregate", "group_aggregate"]
-    assert steps[2].depends_on == [steps[1].step_id]
+    # Drill-down is one executable hierarchical aggregation, not two chained
+    # single-key aggregations (the second would lose the child column).
+    assert [s.operation for s in steps] == ["inspect", "group_aggregate"]
+    assert steps[1].depends_on == [steps[0].step_id]
+    assert steps[1].parameters["group_by"] == ["department", "application"]
+    assert steps[1].parameters["metric"] == "amount"
     assert "verified relationship path" in steps[1].rationale
 
 

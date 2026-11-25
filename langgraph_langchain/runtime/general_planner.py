@@ -106,7 +106,14 @@ def _valid_parameters(operation: str, parameters: Mapping[str, Any]) -> list[str
         group_by = parameters.get("group_by")
         metric = parameters.get("metric")
         agg = parameters.get("agg")
-        if not isinstance(group_by, str) or not group_by:
+        group_by_valid = (
+            isinstance(group_by, str) and bool(group_by)
+        ) or (
+            isinstance(group_by, list)
+            and bool(group_by)
+            and all(isinstance(item, str) and bool(item) for item in group_by)
+        )
+        if not group_by_valid:
             errors.append("group_aggregate requires group_by")
         if not isinstance(metric, str) or not metric:
             errors.append("group_aggregate requires metric")
