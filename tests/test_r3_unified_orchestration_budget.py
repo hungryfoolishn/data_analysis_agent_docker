@@ -147,3 +147,41 @@ def test_unified_budget_failure_does_not_count_against_budget():
     assert blocked.status == "failed"
     assert allowed.status == "succeeded"
     assert budget.snapshot()["calls_by_tool"] == {"load_data": 1}
+
+def test_concurrent_consumers_cannot_over_admit():
+    """F-1 regression: atomic check-and-increment under concurrent consumers.
+
+    Without the internal lock, N threads racing consume() on a budget of size
+    M can admit more than M calls (check-then-increment race). With the lock,
+    exactly M calls succeed regardless of scheduling.
+    """
+    import threading
+
+    budget = ToolCallBudget(max_calls=50)
+    admitted: list[int] = []
+    errors: list[str] = []
+    barrier = threading.Barrier(8)
+
+    def worker():
+        barrier.wait()
+        while True:
+            try:
+                budget.consume("load_data")
+                admitted.append(1)
+            except Exception as exc:  # noqa: BLE001 - test collects all outcomes
+                errors.append(type(exc).__name__)
+                return
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(admitted) == 50
+    assert len(errors) >= 1  # over-budget consumers were rejected, not admitted
+    snapshot = budget.snapshot()
+    assert snapshot["used_calls"] == 50
+    assert snapshot["remaining_calls"] == 0
+    assert snapshot["calls_by_tool"] == {"load_data": 50}
+    assert len(snapshot["history"]) == 50
