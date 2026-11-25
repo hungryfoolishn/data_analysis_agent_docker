@@ -1589,6 +1589,7 @@ async def _run_runtime_v2_graph_stream(
     from langgraph_langchain.execution.structured_executor import StructuredTaskExecutor
     from langgraph_langchain.runtime.context import register_session_artifact
     from langgraph_langchain.runtime.plans import AnalysisPlan
+    from langgraph_langchain.runtime.capability_adapter import ToolCallBudget
     from langgraph_langchain.runtime.skill_retriever import SkillRetriever
     from langgraph_langchain.runtime.verification_policy import VerificationPolicy
 
@@ -1608,6 +1609,8 @@ async def _run_runtime_v2_graph_stream(
         return
 
     tool_map = {getattr(tool, "name", ""): tool for tool in tools}
+    capability_budget = ToolCallBudget(max_calls=max(24, len(plan.steps) * 3))
+    session.runtime_tool_budget = capability_budget
     try:
         runtime.initialize_plan(
             plan,
@@ -1721,6 +1724,7 @@ async def _run_runtime_v2_graph_stream(
     controller = runtime.build_execution_controller(
         structured_executor=StructuredTaskExecutor(
             tool_resolver=lambda name: tool_map.get(name),
+            call_budget=capability_budget,
         ),
         react_executor=react_executor,
         python_executor=PythonTaskExecutor(
