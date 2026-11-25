@@ -1724,7 +1724,6 @@ async def _run_runtime_v2_graph_stream(
     controller = runtime.build_execution_controller(
         structured_executor=StructuredTaskExecutor(
             tool_resolver=lambda name: tool_map.get(name),
-            call_budget=capability_budget,
         ),
         react_executor=react_executor,
         python_executor=PythonTaskExecutor(
@@ -1746,6 +1745,7 @@ async def _run_runtime_v2_graph_stream(
             artifacts=runtime.artifacts,
         ),
         verification_policy=VerificationPolicy(),
+        call_budget=capability_budget,
     )
 
     def _v2_cancel_requested() -> bool:

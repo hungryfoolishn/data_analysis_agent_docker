@@ -23,13 +23,11 @@ class StructuredTaskExecutor:
         *,
         tools: Optional[Mapping[str, Any]] = None,
         tool_resolver: Optional[Callable[[str], Any]] = None,
-        call_budget: Optional[Any] = None,
     ) -> None:
         if tools is None and tool_resolver is None:
             raise ValueError("tools or tool_resolver is required")
         self._tools = dict(tools or {})
         self._tool_resolver = tool_resolver
-        self._call_budget = call_budget
 
     def _resolve_tool(self, name: str) -> Any:
         if self._tool_resolver is not None:
@@ -110,8 +108,6 @@ class StructuredTaskExecutor:
         started_at = time.perf_counter()
         task: AnalysisTask = request.task
         tool_name = task.method or task.task_type
-        if self._call_budget is not None:
-            self._call_budget.consume(tool_name)
         prepared_tool = self._resolve_tool(tool_name)
         arguments, injected = self._prepare_arguments(prepared_tool, request)
         try:

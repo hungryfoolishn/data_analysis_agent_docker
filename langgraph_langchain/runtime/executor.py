@@ -23,10 +23,14 @@ class TaskExecutor:
         structured: Optional[StructuredTaskExecutor] = None,
         react: Optional[ReactTaskExecutor] = None,
         python: Optional[object] = None,
+        call_budget: Optional[object] = None,
     ) -> None:
         self._structured = structured
         self._react = react
         self._python = python
+        # R3: single accounting point for every dispatched task
+        # (structured tool call, react step, python_repl execution).
+        self._call_budget = call_budget
 
     def execute(self, request: TaskExecutionRequest) -> ExecutionResult:
         started_at = time.perf_counter()
@@ -52,6 +56,8 @@ class TaskExecutor:
                 duration_ms=0.0,
             )
         try:
+            if self._call_budget is not None:
+                self._call_budget.consume(tool_name)
             if task.executor_type == "structured":
                 if self._structured is None:
                     raise ValueError("Structured executor is not configured")

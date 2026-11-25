@@ -1309,6 +1309,7 @@ class AnalysisRuntime:
         verifier=None,
         evidence_factory=None,
         verification_policy=None,
+        call_budget=None,
     ):
         """Build the V6 controller around this Runtime-owned scheduler."""
         from langgraph_langchain.runtime.graph import RuntimeV2Controller
@@ -1320,6 +1321,7 @@ class AnalysisRuntime:
             structured=structured_executor,
             react=react_executor,
             python=python_executor,
+            call_budget=call_budget,
         )
         self.configure_executor(
             executor,

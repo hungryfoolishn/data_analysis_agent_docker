@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
+from langgraph_langchain.execution.task_models import TaskExecutionRequest
 from langgraph_langchain.runtime.capability_adapter import (
     CapabilityBudgetExceededError,
     ToolCallBudget,
 )
-from langgraph_langchain.execution.task_models import TaskExecutionRequest
-from langgraph_langchain.execution.structured_executor import StructuredTaskExecutor
+from langgraph_langchain.runtime.executor import TaskExecutor
 from langgraph_langchain.schemas import AnalysisTask
 
 
@@ -18,9 +18,14 @@ class FakeTool:
         return {"ok": True, "arguments": arguments}
 
 
-def _request(method: str = "fake_tool") -> TaskExecutionRequest:
+def _request(method: str = "fake_tool", executor_type: str = "structured") -> TaskExecutionRequest:
     return TaskExecutionRequest(
-        task=AnalysisTask(session_id="session", question="parity probe", method=method),
+        task=AnalysisTask(
+            session_id="session",
+            question="parity probe",
+            method=method,
+            executor_type=executor_type,
+        ),
         run_id="run_1",
         arguments={"value": 1},
     )
@@ -48,7 +53,8 @@ def test_tool_budget_can_restrict_capability_surface():
         budget.consume("python_repl")
 
 
-def test_structured_executor_rejects_budget_exhaustion_before_tool_side_effect():
+def test_task_dispatcher_budget_exhaustion_blocks_tool_side_effect():
+    """R3: accounting moved from StructuredTaskExecutor to the dispatcher."""
     calls = []
 
     class CountingTool(FakeTool):
@@ -58,17 +64,43 @@ def test_structured_executor_rejects_budget_exhaustion_before_tool_side_effect()
 
     budget = ToolCallBudget(max_calls=1)
     budget.consume("fake_tool")
-    executor = StructuredTaskExecutor(tools={"fake_tool": CountingTool()}, call_budget=budget)
-    with pytest.raises(CapabilityBudgetExceededError):
-        executor.execute(_request())
+    dispatcher = TaskExecutor(
+        structured=StructuredExecutorStub(CountingTool()),
+        call_budget=budget,
+    )
+    result = dispatcher.execute(_request())
+    assert result.status == "failed"
+    assert result.error["type"] == "CapabilityBudgetExceededError"
     assert calls == []
 
 
-def test_structured_executor_records_each_legacy_tool_call():
+def test_task_dispatcher_records_each_legacy_tool_call():
     budget = ToolCallBudget(max_calls=3)
-    executor = StructuredTaskExecutor(tools={"fake_tool": FakeTool()}, call_budget=budget)
-    first = executor.execute(_request())
-    second = executor.execute(_request())
+    dispatcher = TaskExecutor(
+        structured=StructuredExecutorStub(FakeTool()),
+        call_budget=budget,
+    )
+    first = dispatcher.execute(_request())
+    second = dispatcher.execute(_request())
     assert first.status == "succeeded"
     assert second.status == "succeeded"
     assert budget.snapshot()["calls_by_tool"] == {"fake_tool": 2}
+
+
+class StructuredExecutorStub:
+    """Minimal structured-executor double for dispatcher-level tests."""
+
+    def __init__(self, tool):
+        self._tool = tool
+
+    def execute(self, request):
+        output = self._tool.invoke(request.arguments)
+        from langgraph_langchain.execution.task_models import build_execution_result
+
+        return build_execution_result(
+            request,
+            status="succeeded",
+            tool_name=request.task.method or request.task.task_type,
+            stdout_preview=str(output),
+            duration_ms=0.0,
+        )

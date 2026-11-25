@@ -10,5 +10,5 @@ R0a freeze: `4ee8f00`; R0b Gate: `16b04c2`; R1 Gate: `689744c`; R2 Gate: `36a390
 | B | R0b identity & path boundary | PASS | `16b04c2` | `01-identity-path-audit.md`, `04-regression-and-gate.md` |
 | C | R1 runtime foundation | PASS | `689744c` | `../r1-runtime-foundation/` |
 | D | R2 capability convergence | PASS | `36a3900` | `../r2-capability-convergence/` |
-| E | R2.5 legacy parity | PASS | pending | `../r2.5-legacy-runtime-parity/` |
-| F | R3 general analysis intelligence | pending | — | — |
+| E | R2.5 legacy parity | PASS | `da2004a` | `../r2.5-legacy-runtime-parity/` |
+| F | R3 general analysis intelligence | PASS | pending | `../r3-general-analysis-intelligence/` |
