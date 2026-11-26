@@ -958,7 +958,7 @@ async def api_security_middleware(request: Request, call_next):
     if (
         not header_token
         and request.method in {"GET", "HEAD"}
-        and request.url.path.startswith("/workspace/files/")
+        and request.url.path.startswith(("/workspace/files/", "/analysis/runs/"))
     ):
         # Browser download links cannot send an Authorization header; the
         # frontend appends the API token as a query parameter instead.

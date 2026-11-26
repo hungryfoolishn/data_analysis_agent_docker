@@ -131,6 +131,25 @@ def apply_runtime_snapshot(
     return updated
 
 
+def _append_download_token(url: str) -> str:
+    """Append the API auth token so browser links can pass the middleware.
+
+    Browser navigation cannot set an Authorization header; the backend
+    accepts the token as a query parameter for read-only download paths.
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        return url
+    try:
+        from config import API_AUTH_TOKEN
+    except ImportError:
+        return url
+    if not API_AUTH_TOKEN:
+        return url
+    from urllib.parse import quote
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}token={quote(API_AUTH_TOKEN)}"
+
+
 def resolve_artifact_url(file_url: str, file_server_base: str) -> str:
     if not file_url:
         return ""
@@ -138,7 +157,9 @@ def resolve_artifact_url(file_url: str, file_server_base: str) -> str:
         path = urlparse(file_url).path
     else:
         path = file_url if file_url.startswith("/") else f"/{file_url}"
-    return f"{file_server_base.rstrip('/')}{path}" if file_server_base else path
+    return _append_download_token(
+        f"{file_server_base.rstrip('/')}{path}" if file_server_base else path
+    )
 
 
 def render_run_summary_html(state: dict[str, Any]) -> str:
@@ -209,11 +230,11 @@ def render_artifacts_html(
     if package_available:
         package_path = f"/analysis/runs/{run_id}/package"
         rebuild_path = f"/analysis/runs/{run_id}/report/rebuild"
-        package_url = (
+        package_url = _append_download_token(
             f"{file_server_base.rstrip('/')}{package_path}"
             if file_server_base else package_path
         )
-        rebuild_url = (
+        rebuild_url = _append_download_token(
             f"{file_server_base.rstrip('/')}{rebuild_path}"
             if file_server_base else rebuild_path
         )
@@ -291,7 +312,7 @@ def render_findings_html(
             for asset_id in item.get("source_asset_ids") or []
         }
         detail_path = f"/analysis/runs/{run_id}/findings/{finding_id}" if run_id and finding_id else ""
-        detail_url = (
+        detail_url = _append_download_token(
             f"{file_server_base.rstrip('/')}{detail_path}"
             if file_server_base and detail_path else detail_path
         )
