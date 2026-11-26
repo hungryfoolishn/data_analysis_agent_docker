@@ -39,6 +39,8 @@ services:
       FILE_SERVER_BASE: ${FILE_SERVER_BASE:-http://localhost:8888}
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8888}
       DEFAULT_MODEL: ${DEFAULT_MODEL:-deepseek-chat}
+      # Minimum findings for the silent-termination report safety net (0 = always synthesize)
+      SYNTHESIZED_REPORT_MIN_FINDINGS: ${SYNTHESIZED_REPORT_MIN_FINDINGS:-2}
       # both | backend | frontend
       START_MODE: ${START_MODE:-both}
     volumes:

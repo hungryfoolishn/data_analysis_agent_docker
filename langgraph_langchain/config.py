@@ -110,6 +110,14 @@ CONVERGENCE_NUDGE_MIN_STEPS: int = int(
 )
 """Even with fewer findings, start nudging toward finish_report after this many tool steps."""
 
+FORCED_FINISH_STEPS: int = int(
+    os.environ.get("FORCED_FINISH_STEPS", "30")
+)
+"""Hard convergence gate for python_repl. Once total_steps reaches this value
+and no report exists yet, python_repl refuses execution and directs the agent
+to record findings and call finish_report immediately. 0 disables the gate.
+Unlike the soft nudge, this gate cannot be ignored by the model."""
+
 SYNTHESIZED_REPORT_MIN_FINDINGS: int = int(
     os.environ.get("SYNTHESIZED_REPORT_MIN_FINDINGS", "2")
 )

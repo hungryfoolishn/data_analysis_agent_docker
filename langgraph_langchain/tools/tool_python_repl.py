@@ -16,6 +16,7 @@ from langgraph_langchain.tools._shared import (
 from langgraph_langchain.config import (
     CONVERGENCE_NUDGE_MIN_FINDINGS as _NUDGE_MIN_FINDINGS,
     CONVERGENCE_NUDGE_MIN_STEPS as _NUDGE_MIN_STEPS,
+    FORCED_FINISH_STEPS as _FORCED_FINISH_STEPS,
 )
 from langgraph_langchain.runtime.context import (
     record_session_execution,
@@ -75,6 +76,23 @@ def _factory(session):
         error_msg = _validate("python_repl")
         if error_msg:
             return f"[ERROR] {error_msg}"
+        if (
+            _FORCED_FINISH_STEPS > 0
+            and getattr(session, "total_steps", 0) >= _FORCED_FINISH_STEPS
+            and not getattr(session, "report", None)
+        ):
+            # Hard convergence gate: the soft nudge appended to tool results can
+            # be (and in practice is) ignored by reasoning models. This gate
+            # physically stops new analysis dimensions so record_finding /
+            # finish_report become the only sensible next actions.
+            return (
+                f"\n[SYSTEM_CONVERGENCE] 分析步数预算已用尽"
+                f"(steps={getattr(session, 'total_steps', 0)} >= {_FORCED_FINISH_STEPS}),"
+                "python_repl 已被运行时闸门拒绝执行。立即执行以下两步,不要再调用 python_repl:"
+                "1) 调用 record_finding 记录关键结论(statement + evidence);"
+                "2) 调用 finish_report 生成最终报告。"
+                "继续调用 python_repl 只会重复本提示。"
+            )
         started_at = time.monotonic()
         execution_id = new_id("exec")
 
