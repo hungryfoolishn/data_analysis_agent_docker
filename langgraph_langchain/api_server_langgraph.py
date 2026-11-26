@@ -954,7 +954,18 @@ async def api_security_middleware(request: Request, call_next):
     from langgraph_langchain.security import verify_bearer_token
     if request.url.path == "/health":
         return await call_next(request)
-    if not verify_bearer_token(request.headers.get("authorization"), API_AUTH_TOKEN):
+    header_token = request.headers.get("authorization")
+    if (
+        not header_token
+        and request.method in {"GET", "HEAD"}
+        and request.url.path.startswith("/workspace/files/")
+    ):
+        # Browser download links cannot send an Authorization header; the
+        # frontend appends the API token as a query parameter instead.
+        query_token = request.query_params.get("token")
+        if query_token:
+            header_token = f"Bearer {query_token}"
+    if not verify_bearer_token(header_token, API_AUTH_TOKEN):
         allow_insecure = (
             API_ENVIRONMENT == "development" and API_ALLOW_INSECURE_AUTH
         )

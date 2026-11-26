@@ -15,7 +15,7 @@ import uuid
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 from config import (
-    API_BASE_URL, FILE_SERVER_BASE, DEFAULT_MODEL,
+    API_BASE_URL, FILE_SERVER_BASE, DEFAULT_MODEL, API_AUTH_TOKEN,
     api_headers,
     QUICK_INSTRUCTIONS, ALLOWED_FILE_TYPES,
     GRADIO_SERVER_NAME, GRADIO_SERVER_PORT, GRADIO_SHARE
@@ -602,6 +602,13 @@ def generate_download_html(generated_files: List[Dict[str, str]]) -> str:
                 from urllib.parse import urlparse
                 parsed = urlparse(file_url)
                 file_url = parsed.path if parsed.path else file_url
+
+        # File downloads hit the API auth middleware; browser links cannot
+        # send an Authorization header, so carry the token via query param.
+        if API_AUTH_TOKEN and file_url.startswith(("http://", "https://")):
+            from urllib.parse import quote
+            separator = "&" if "?" in file_url else "?"
+            file_url = f"{file_url}{separator}token={quote(API_AUTH_TOKEN)}"
 
         download_items.append(
             f'<div style="margin-bottom: 8px;">'
