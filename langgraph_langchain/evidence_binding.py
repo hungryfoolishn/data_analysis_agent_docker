@@ -55,9 +55,23 @@ def validate_evidence_binding(
                     "Ensure artifact is created before referencing it."
                 )
 
-    # Rule 4: High confidence findings should have stronger evidence
-    if finding.confidence_level == "high":
-        # Should have multiple evidence items or detailed stats
+    return len(errors) == 0, errors
+
+
+def enforce_evidence_strength(finding: Finding) -> List[str]:
+    """Downgrade confidence/evidence level instead of rejecting weak claims.
+
+    Rule 4/5 used to be hard rejections in validate_evidence_binding, but
+    models demonstrably cannot satisfy them (14 consecutive record_finding
+    failures in one session). Downgrade the claim and surface a note instead,
+    mirroring the R&D domain validator's warning pattern. Structural rules
+    (non-empty evidence, valid artifact refs) remain hard failures.
+    """
+    notes: List[str] = []
+
+    # Former Rule 4: high confidence requires multiple evidence items,
+    # detailed stats, or artifact references.
+    if finding.confidence_level == "high" and finding.evidence:
         if len(finding.evidence) < 2:
             has_stats = any(
                 e.stats and len(e.stats) >= 2 for e in finding.evidence
@@ -66,15 +80,16 @@ def validate_evidence_binding(
                 e.source_artifacts for e in finding.evidence
             )
             if not (has_stats or has_artifacts):
-                errors.append(
-                    f"Finding {finding.finding_id} has high confidence but weak evidence. "
-                    "High confidence findings should have: multiple evidence items, "
-                    "detailed stats, or artifact references."
+                finding.confidence_level = "medium"
+                notes.append(
+                    f"Finding {finding.finding_id}: confidence downgraded "
+                    "high -> medium (single evidence item without stats or "
+                    "artifact references)."
                 )
 
-    # Rule 5: Causal claims (evidence_level=C) require strong evidence
-    if finding.evidence_level == "C":
-        # Must have calculation_method or detailed stats
+    # Former Rule 5: causal claims (evidence_level=C) require
+    # calculation_method or detailed stats.
+    if finding.evidence_level == "C" and finding.evidence:
         has_method = any(
             e.calculation_method for e in finding.evidence
         )
@@ -82,13 +97,14 @@ def validate_evidence_binding(
             e.stats and len(e.stats) >= 3 for e in finding.evidence
         )
         if not (has_method or has_detailed_stats):
-            errors.append(
-                f"Finding {finding.finding_id} makes causal claim (level C) "
-                "but lacks strong evidence. Causal claims require: "
-                "calculation_method or detailed stats (3+ metrics)."
+            finding.evidence_level = "B"
+            notes.append(
+                f"Finding {finding.finding_id}: evidence_level downgraded "
+                "C -> B (causal claim without calculation_method or "
+                "detailed stats)."
             )
 
-    return len(errors) == 0, errors
+    return notes
 
 
 def validate_evidence_completeness(

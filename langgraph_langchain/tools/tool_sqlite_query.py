@@ -114,7 +114,7 @@ def _factory(session):
         evidence_metadata = recorder.register_artifact(evidence_path)
         canonical_evidence = canonical_from_sqlite_query_evidence(
             evidence,
-            task_id=session.current_runtime_step_id,
+            task_id=runtime.run.task_id,
             artifact_ids=[evidence_metadata.get("artifact_id")],
         )
         session.current_asset_id = output_asset.asset_id

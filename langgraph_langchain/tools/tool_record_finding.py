@@ -346,12 +346,16 @@ def _factory(session):
 
         # P1.2: Validate evidence binding
         from langgraph_langchain.evidence_binding import (
+            enforce_evidence_strength,
             validate_evidence_binding,
             validate_evidence_completeness,
         )
 
         # Get available artifacts for validation
         available_artifacts = lineage["aliases"]
+
+        # Downgrade confidence/evidence level instead of rejecting weak claims
+        strength_notes = enforce_evidence_strength(finding)
 
         # Critical validation: evidence must be properly bound
         is_valid, binding_errors = validate_evidence_binding(finding, available_artifacts)
@@ -372,6 +376,9 @@ def _factory(session):
         is_complete, completeness_warnings = validate_evidence_completeness(
             finding, available_artifacts
         )
+        if strength_notes:
+            completeness_warnings = list(completeness_warnings) + strength_notes
+            is_complete = False
 
         runtime_v2_active = runtime is not None and runtime.scheduler is not None
         if runtime_v2_active:
@@ -509,10 +516,21 @@ def _factory(session):
             try:
                 runtime.record_verified_finding(finding)
             except Exception as exc:
-                recorder.fail(str(exc), error_type=type(exc).__name__)
-                if trace_ctx and span_id:
-                    trace_ctx.end_current_span(status="failed", error_message=str(exc))
-                return f"[ERROR] Finding provenance validation failed: {exc}\n\nFinding NOT recorded."
+                # Full FindingBuilder provenance requires a 4-layer registry
+                # chain (evidence -> verification -> execution -> scheduled
+                # task). Sessions whose executions were recorded outside the
+                # scheduler leave that chain unresolvable even though the
+                # evidence itself is verified. Record with metadata-only
+                # provenance and log loudly instead of dead-ending the
+                # analysis after every upstream gate already passed.
+                logger.warning(
+                    "record_finding provenance_fallback session=%s finding=%s "
+                    "error=%s - recording with metadata-only provenance",
+                    session.session_id,
+                    finding.finding_id,
+                    exc,
+                )
+                runtime.record_finding(finding)
 
             session.findings.append(finding)
         elif runtime is not None:

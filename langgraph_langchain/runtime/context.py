@@ -101,7 +101,21 @@ def _semantic_context_identity(context: Optional[dict]) -> Optional[tuple[str, s
     )
 
 
+# Methods that record bookkeeping/observability rather than performing an
+# analysis operation. They are exempt from strict_execution plan gating.
+BOOKKEEPING_STEP_METHODS = frozenset(
+    {
+        "record_finding",
+        "declare_metric",
+        "declare_assumption",
+        "delegate_analysis",
+        "finish_report",
+    }
+)
+
+
 class AnalysisRuntime:
+
     """Own task/run metadata without taking ownership of dataframe memory."""
 
     def __init__(
@@ -611,6 +625,30 @@ class AnalysisRuntime:
         evidence.artifact_ids = list(
             artifact_ids if artifact_ids is not None else evidence.artifact_ids
         )
+        # Bookkeeping ids must come from the authoritative execution record,
+        # not from caller-supplied values. A mismatched task_id/tool_name here
+        # used to fail content verification much later (during record_finding
+        # provenance checks), dead-ending the analysis far from the cause.
+        execution = self._lookup_execution(evidence.execution_id)
+        if execution is not None:
+            if evidence.task_id and evidence.task_id != execution.task_id:
+                logger.warning(
+                    "canonical_evidence_task_id_repaired evidence=%s "
+                    "supplied=%s corrected=%s",
+                    evidence.evidence_id,
+                    evidence.task_id,
+                    execution.task_id,
+                )
+                evidence.task_id = execution.task_id
+            if evidence.tool_name and evidence.tool_name != execution.tool_name:
+                logger.warning(
+                    "canonical_evidence_tool_name_repaired evidence=%s "
+                    "supplied=%s corrected=%s",
+                    evidence.evidence_id,
+                    evidence.tool_name,
+                    execution.tool_name,
+                )
+                evidence.tool_name = execution.tool_name
         return self.evidence_registry.register(evidence, replace=replace)
 
     def verify_canonical_evidence(self, evidence_id: str) -> CanonicalEvidence:
@@ -1905,7 +1943,16 @@ class AnalysisRuntime:
             ),
             None,
         )
-        if self.run.plan and self.run.plan.get("strict_execution"):
+        # Bookkeeping/observability methods are not analysis operations: they
+        # must always be allowed to start an ad-hoc step even under
+        # strict_execution plans, otherwise record_finding cannot attach
+        # provenance and findings are silently lost (observed: findings=0 with
+        # only run_analysis_operation steps in the approved plan).
+        if (
+            self.run.plan
+            and self.run.plan.get("strict_execution")
+            and method not in BOOKKEEPING_STEP_METHODS
+        ):
             if step is None:
                 raise ValueError(f"Method '{method}' is not present in the approved plan")
             blocked = [

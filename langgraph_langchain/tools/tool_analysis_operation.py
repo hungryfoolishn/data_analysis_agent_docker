@@ -120,7 +120,7 @@ def _factory(session):
         )
         canonical_evidence = canonical_from_operation_evidence(
             operation_evidence,
-            task_id=session.current_runtime_step_id,
+            task_id=runtime.run.task_id,
             artifact_ids=[metadata.get("artifact_id")],
         )
         session.current_asset_id = asset.asset_id
