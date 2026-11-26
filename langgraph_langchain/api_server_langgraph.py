@@ -1036,7 +1036,22 @@ def _validate_upload_file(path: Path, suffix: str) -> None:
         if suffix == ".csv":
             import pandas as pd
 
-            pd.read_csv(path, nrows=2)
+            # Upload validation must accept common Windows exports (GBK/GB18030),
+            # not only UTF-8. Keep this cascade aligned with
+            # FileDataSource._csv_encoding() so runtime loading succeeds
+            # whenever validation passes.
+            last_error: Exception | None = None
+            for encoding in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
+                try:
+                    pd.read_csv(path, nrows=2, encoding=encoding)
+                    break
+                except UnicodeDecodeError as exc:
+                    last_error = exc
+                    continue
+            else:
+                raise ValueError(
+                    "CSV content is not decodable with utf-8/gb18030 encodings"
+                ) from last_error
         elif suffix in {".xlsx"}:
             if not zipfile.is_zipfile(path):
                 raise ValueError("XLSX must be a ZIP container")
